@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DEMO_CASES, ROOM_CATEGORIES } from "../../lib/demoCases";
+import { ROOM_CATEGORIES } from "../../lib/demoCases";
 import type { City, MarketplaceStats } from "../../lib/types";
 
 interface Props {
@@ -8,154 +8,140 @@ interface Props {
 }
 
 /**
- * Inspiration-first hero (plan §21.9 + §22 funnel correction).
+ * Inspiration-platform hero (план §22.4).
  *
- * Wir reposition the home around the project's actual concept: people come
- * for inspiration, leave with a master and a renovation. So the hero leads
- * with idea-browsing, not master-search:
+ * Базовый принцип: «Главный товар — РЕЗУЛЬТАТ РЕМОНТА». Hero — витрина, не
+ * marketplace мастеров.
  *
- *   1. headline + lead targeted at "find an idea" not "find a contractor"
- *   2. search form returns ремонтные кейсы in /raboty (the inspiration
- *      catalog), not masters in /mastera
- *   3. quick-pick chips deep-link into /raboty?room=... or
- *      /raboty?service=... so the second click is still a browse
- *   4. live platform stats stay inline as credibility
- *   5. 3-photo collage strip remains as the visual anchor
+ *   1. Heading: «Самая большая база реальных ремонтов в России»
+ *   2. Subheading: «Найдите ремонт, который хотите повторить»
+ *   3. Search-bar «Что хотите сделать?» — submit в /raboty
+ *   4. Visual category chips (4 крупные cards-chip с фото) — Ванная, Кухня,
+ *      Санузел, Квартира. Это deep-link в `/raboty?room=...`. Не select,
+ *      а photo-cards чтобы тон был «витрина», а не «utility».
+ *   5. Live stats: «N ремонтов в каталоге · M городов · K мастеров готовы повторить»
+ *
+ * Изменения относительно §21.9:
+ *   • убран двойной select-фильтр в форме (только текст-поле)
+ *   • убран hero-collage (его роль теперь у category chips)
+ *   • убраны quick-pick chips (12 текстовых ссылок) — заменены на 4 photo-card
  */
-export function HomeHero({ stats, cities }: Props) {
-  const collage = [
-    DEMO_CASES[1],
-    DEMO_CASES[0],
-    DEMO_CASES[3],
-  ].filter((d): d is NonNullable<typeof d> => Boolean(d));
+export function HomeHero({ stats, cities: _cities }: Props) {
+  // Топ-4 категории для visual chips: Ванная, Кухня, Санузел (=ванная-санузел),
+  // Квартира (= общая навигация в /raboty без room-фильтра).
+  const visualChips: Array<{ slug: string | null; label: string; imageUrl: string; alt: string }> = [
+    {
+      slug: "vannaya",
+      label: "Ванная",
+      imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "vannaya")!.imageUrl,
+      alt: "Идеи ремонта ванной",
+    },
+    {
+      slug: "kuhnya",
+      label: "Кухня",
+      imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "kuhnya")!.imageUrl,
+      alt: "Идеи ремонта кухни",
+    },
+    {
+      slug: "spalnya",
+      label: "Спальня",
+      imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "spalnya")!.imageUrl,
+      alt: "Идеи ремонта спальни",
+    },
+    {
+      slug: null,
+      label: "Квартира",
+      imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "gostinaya")!.imageUrl,
+      alt: "Идеи ремонта квартиры под ключ",
+    },
+  ];
 
   return (
     <section className="bg-[var(--color-surface)]">
-      <div className="mx-auto max-w-6xl px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-14">
-        <p className="font-eyebrow">Планировщик ремонта</p>
-        <h1 className="font-editorial mt-4 max-w-3xl text-3xl text-[var(--color-text)] sm:text-4xl lg:text-[2.75rem]">
-          Найдите идею ремонта — мастера найдём потом.
+      <div className="mx-auto max-w-6xl px-4 pb-12 pt-12 sm:px-6 sm:pb-14 sm:pt-16">
+        <p className="font-eyebrow">Каталог ремонтов</p>
+        <h1 className="font-editorial mt-4 max-w-3xl text-3xl leading-tight text-[var(--color-text)] sm:text-4xl lg:text-[2.75rem]">
+          Самая большая база реальных ремонтов в России.
         </h1>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
-          Тысячи реальных ремонтов с фото и ценами, AI-визуализация интерьера,
-          калькулятор бюджета по сделкам в вашем городе. Вдохновение — первое,
-          мастер — когда уже знаете, чего хотите.
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
+          Найдите ремонт, который хотите повторить. Сохраните в подборку, посмотрите
+          бюджет и сроки. Когда определитесь — мастер сам напишет.
         </p>
 
-        {/* Search form — submits to /raboty (idea catalog), not /mastera */}
+        {/* Search-bar — single text field, submits to /raboty */}
         <form
           action="/raboty"
           method="GET"
-          className="mt-7 grid grid-cols-1 gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-cozy sm:grid-cols-[1fr_1fr_auto] sm:gap-2"
+          className="mt-7 flex max-w-2xl rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-cozy focus-within:border-[var(--color-primary)] focus-within:shadow-cozy-md"
         >
-          <SearchSelect
-            name="room"
-            ariaLabel="Что ремонтируем"
-            placeholder="Что ремонтируем"
-            options={ROOM_CATEGORIES.map((r) => ({ value: r.slug, label: r.label }))}
-          />
-          <SearchSelect
-            name="city"
-            ariaLabel="Город"
-            placeholder="Любой город"
-            options={cities.slice(0, 60).map((c) => ({ value: c.slug, label: c.name }))}
+          <input
+            type="text"
+            name="q"
+            aria-label="Что хотите сделать"
+            placeholder="Что хотите сделать? Например, ванную в скандинавском стиле"
+            className="h-11 min-w-0 flex-1 rounded-full bg-transparent px-4 text-sm text-[var(--color-text)] placeholder-[var(--color-faint)] focus:outline-none"
           />
           <button
             type="submit"
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[var(--color-primary)] px-7 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
+            className="inline-flex h-11 flex-shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)] sm:px-7"
+            aria-label="Смотреть идеи"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-4-4" />
             </svg>
-            Смотреть идеи
+            <span className="hidden sm:inline">Смотреть идеи</span>
           </button>
         </form>
 
-        {/* Live platform stats */}
-        <p className="mt-5 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--color-muted)]">
-          <StatItem value={formatCount(stats.publishedCases)} label="идей в каталоге" />
+        {/* Visual category chips — 4 крупные cards-chip, photo-led */}
+        <ul className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+          {visualChips.map((chip) => (
+            <li key={chip.label}>
+              <VisualChip chip={chip} />
+            </li>
+          ))}
+        </ul>
+
+        {/* Live stats — приземлённое доверие, не маркетинговое преувеличение */}
+        <p className="mt-10 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--color-muted)]">
+          <StatItem value={formatCount(stats.publishedCases)} label="ремонтов в каталоге" />
           <StatItem value={formatCount(stats.citiesCount)} label="городов" />
           <StatItem value={formatCount(Math.max(stats.publishedMasters, 0))} label="мастеров готовы повторить" />
           {stats.completedOrders > 0 ? (
-            <StatItem value={formatCount(stats.completedOrders)} label="ремонтов завершено" />
+            <StatItem value={formatCount(stats.completedOrders)} label="завершённых ремонтов" />
           ) : null}
         </p>
-
-        {/* Quick category chips — deep-link into /raboty (browse), not /mastera */}
-        <div className="mt-7">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
-            Популярные направления
-          </p>
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {QUICK_PICKS.map((item) => (
-              <li key={item.label}>
-                <Link
-                  href={item.href}
-                  className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-                >
-                  {item.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      {/* Visual banner — 3-photo strip */}
-      <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6 sm:pb-16">
-        <div className="grid h-44 grid-cols-3 gap-2 sm:h-56 sm:gap-3">
-          {collage.map((data, idx) => (
-            <CollageTile key={`${data.imageUrl}-${idx}`} data={data} />
-          ))}
-        </div>
       </div>
     </section>
   );
 }
 
-const QUICK_PICKS: { label: string; href: string }[] = [
-  { label: "Ванная под ключ", href: "/raboty?room=vannaya" },
-  { label: "Кухня", href: "/raboty?room=kuhnya" },
-  { label: "Гостиная", href: "/raboty?room=gostinaya" },
-  { label: "Спальня", href: "/raboty?room=spalnya" },
-  { label: "Прихожая", href: "/raboty?room=prihozhaya" },
-  { label: "Балкон / лоджия", href: "/raboty?room=balkon" },
-  { label: "Современный стиль", href: "/raboty?style=sovremennyy" },
-  { label: "Скандинавский", href: "/raboty?style=skandinavskiy" },
-  { label: "Лофт", href: "/raboty?style=loft" },
-  { label: "Минимализм", href: "/raboty?style=minimalizm" },
-  { label: "Неоклассика", href: "/raboty?style=neoklassika" },
-  { label: "Светлый ремонт", href: "/raboty?style=svetlyy" },
-];
-
 // ── Subcomponents ──────────────────────────────────────────────────────────
 
-function SearchSelect({
-  name,
-  ariaLabel,
-  placeholder,
-  options,
+function VisualChip({
+  chip,
 }: {
-  name: string;
-  ariaLabel: string;
-  placeholder: string;
-  options: { value: string; label: string }[];
+  chip: { slug: string | null; label: string; imageUrl: string; alt: string };
 }) {
+  const href = chip.slug ? `/raboty?room=${chip.slug}` : "/raboty";
   return (
-    <select
-      name={name}
-      aria-label={ariaLabel}
-      defaultValue=""
-      className="h-12 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-soft)]"
+    <Link
+      href={href}
+      className="group relative block aspect-[4/3] overflow-hidden rounded-xl bg-[var(--color-border)] transition hover:shadow-cozy-md sm:aspect-[3/4]"
     >
-      <option value="">{placeholder}</option>
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={chip.imageUrl}
+        alt={chip.alt}
+        loading="eager"
+        className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.06]"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
+      <span className="absolute inset-x-0 bottom-0 px-4 pb-4 text-base font-semibold text-white sm:text-lg">
+        {chip.label}
+      </span>
+    </Link>
   );
 }
 
@@ -165,26 +151,6 @@ function StatItem({ value, label }: { value: string; label: string }) {
       <span className="text-base font-bold text-[var(--color-text)]">{value}</span>
       <span>{label}</span>
     </span>
-  );
-}
-
-function CollageTile({ data }: { data: (typeof DEMO_CASES)[number] }) {
-  return (
-    <Link
-      href="/raboty"
-      className="group relative overflow-hidden rounded-lg bg-[var(--color-border)]"
-    >
-      <img
-        src={data.imageUrl}
-        alt={data.alt}
-        loading="lazy"
-        className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-      />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60" />
-      <span className="absolute bottom-2.5 left-2.5 inline-flex rounded bg-[var(--color-surface)]/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text)]">
-        {data.category}
-      </span>
-    </Link>
   );
 }
 

@@ -115,3 +115,28 @@ body {
 .shadow-cozy-md {
   box-shadow: var(--shadow-cozy-md);
 }
+
+
+/* ─── Pinterest-style masonry (план §22.4) ───────────────────────
+   CSS columns подход: дёшево, server-render-friendly, не требует JS.
+   Карточки заполняют колонки сверху вниз; высота естественно
+   варьируется за счёт portrait-ориентации в ObjectCard.
+   ─────────────────────────────────────────────────────────────── */
+.masonry {
+  column-count: 1;
+  column-gap: 1rem;
+}
+@media (min-width: 640px) {
+  .masonry { column-count: 2; column-gap: 1.25rem; }
+}
+@media (min-width: 1024px) {
+  .masonry { column-count: 3; column-gap: 1.5rem; }
+}
+.masonry-item {
+  break-inside: avoid;
+  margin-bottom: 1.5rem;
+  display: block;
+}
+@media (min-width: 640px) {
+  .masonry-item { margin-bottom: 2rem; }
+}
