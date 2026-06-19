@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 interface CaseAIDesignsProps {
   /** room slug used to deep-link into /dizajn/new with a preset (e.g. 'vannaya'). */
@@ -47,7 +47,7 @@ export function CaseAIDesigns({ roomSlug }: CaseAIDesignsProps) {
           {presets.map((preset) => (
             <li key={preset.slug}>
               <Link href={preset.href} className="group block">
-                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
+                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] shadow-cozy transition group-hover:shadow-cozy-md">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={preset.imageUrl}

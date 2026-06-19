@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import type { Master } from "../../lib/types";
 import { buildMasterAvatarAlt } from "../../lib/seoMeta";
 
@@ -63,7 +63,7 @@ export function CaseMasterSummary({ master, masterName, stats }: CaseMasterSumma
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
         <p className="font-eyebrow">Автор работы</p>
 
-        <div className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 sm:p-7">
+        <div className="mt-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 sm:p-7">
           {/* Top row: avatar + name + rating */}
           <div className="flex items-start gap-5">
             {master.avatarUrl ? (

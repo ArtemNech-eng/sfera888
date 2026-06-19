@@ -108,7 +108,7 @@ export default async function RabotyIndexPage(
       />
 
       {/* ── Compact inspiration header ──────────────────────────── */}
-      <header className="bg-[var(--color-surface)]">
+      <header className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 pb-7 pt-10 sm:px-6 sm:pt-14">
           <nav className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
             <Link href="/" className="hover:text-[var(--color-text)]">Главная</Link>
@@ -116,18 +116,18 @@ export default async function RabotyIndexPage(
             <span className="text-[var(--color-text)]">Идеи</span>
           </nav>
 
-          <p className="font-eyebrow mt-7">Каталог ремонтов</p>
-          <h1 className="font-editorial mt-3 max-w-3xl text-3xl text-[var(--color-text)] sm:text-4xl">
-            Самая большая база реальных ремонтов.
+          <h1 className="font-display mt-7 max-w-3xl text-4xl text-[var(--color-text)] sm:text-5xl">
+            Ремонты, которые хочется повторить.
           </h1>
-          <p className="mt-3 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
-            Сохраняйте идеи, что зацепили. Подбор мастера, который повторит — на странице каждой работы.
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
+            Сохраняйте идеи, что зацепили. Подбор мастера, который повторит — на
+            странице каждой работы.
           </p>
         </div>
       </header>
 
       {/* ── Sticky browse-by chip rails (AirBnB-style filters) ─── */}
-      <section className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur">
+      <section className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-background)]/95 backdrop-blur">
         <div className="mx-auto max-w-6xl space-y-3 px-4 py-4 sm:px-6 sm:py-5">
           <ChipRail
             label="По комнатам"
@@ -151,23 +151,13 @@ export default async function RabotyIndexPage(
       </section>
 
       {/* ── Masonry grid (Pinterest-feel) ────────────────────────── */}
-      <section className="bg-[var(--color-surface)]">
+      <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="mb-8 flex flex-wrap items-baseline justify-between gap-3 text-sm text-[var(--color-muted)]">
-            <span>
-              {data.total > 0 ? (
-                <>
-                  <span className="font-bold text-[var(--color-text)]">{formatNumber(data.total)}</span>{" "}
-                  {pluralRemonts(data.total)}
-                </>
-              ) : (
-                "Каталог формируется"
-              )}
-              {totalPages > 1 ? (
-                <span className="ml-3 text-[var(--color-faint)]">стр. {page} из {totalPages}</span>
-              ) : null}
-            </span>
-          </div>
+          {totalPages > 1 ? (
+            <div className="mb-8 text-sm text-[var(--color-faint)]">
+              Стр. {page} из {totalPages}
+            </div>
+          ) : null}
 
           {isDemoMode ? <DemoNotice /> : null}
 
@@ -282,7 +272,7 @@ function ChipRail({
 
 function DemoNotice() {
   return (
-    <div className="mb-12 rounded-lg border border-[var(--color-border)] bg-[var(--color-cream-deep)] p-6 sm:p-7">
+    <div className="mb-12 rounded-2xl border border-[var(--color-border)] bg-[var(--color-cream-deep)] p-6 sm:p-7">
       <p className="font-eyebrow">Каталог формируется</p>
       <p className="mt-3 text-base font-semibold text-[var(--color-text)]">
         Пока мастера публикуют работы, мы показываем стилевые референсы.
@@ -344,13 +334,4 @@ function parseNumeric(value: string | null | undefined): number | null {
 
 function formatNumber(n: number): string {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
-}
-
-function pluralRemonts(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return "ремонтов";
-  if (mod10 === 1) return "ремонт";
-  if (mod10 >= 2 && mod10 <= 4) return "ремонта";
-  return "ремонтов";
 }

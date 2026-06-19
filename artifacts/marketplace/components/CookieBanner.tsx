@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -57,7 +57,7 @@ export function CookieBanner() {
       aria-label="Уведомление об использовании cookie"
       className="fixed inset-x-3 bottom-3 z-40 sm:inset-x-auto sm:right-4 sm:bottom-4 sm:max-w-sm"
     >
-      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-cozy-md sm:p-5">
+      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-cozy-md sm:p-5">
         <p className="text-sm text-[var(--color-text)]">
           <span className="font-bold">Используем cookie</span> для работы сохранений и
           защиты от ботов. Технические параметры устройства (браузер, экран, часовой пояс)

@@ -1,4 +1,4 @@
-import type { PortfolioEstimate } from "../../lib/types";
+﻿import type { PortfolioEstimate } from "../../lib/types";
 
 interface CaseEstimateProps {
   estimate: PortfolioEstimate | null;
@@ -36,7 +36,7 @@ export function CaseEstimate({ estimate }: CaseEstimateProps) {
             Из чего сложился бюджет.
           </h2>
 
-          <div className="mt-8 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+          <div className="mt-8 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
             <Row label="Стоимость работ" value={works} />
             <Row label="Материалы" value={materials} />
             <Row label="Итого" value={total} highlight />

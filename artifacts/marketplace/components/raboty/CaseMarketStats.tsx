@@ -1,4 +1,4 @@
-import type { MarketStatsResponse } from "../../lib/types";
+﻿import type { MarketStatsResponse } from "../../lib/types";
 
 interface CaseMarketStatsProps {
   data: MarketStatsResponse | null;
@@ -52,7 +52,7 @@ export function CaseMarketStats({ data }: CaseMarketStatsProps) {
               accent
             />
           ) : (
-            <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/50 p-6 text-sm text-[var(--color-muted)] sm:p-7">
+            <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/50 p-6 text-sm text-[var(--color-muted)] sm:p-7">
               <p className="font-eyebrow">В вашем городе</p>
               <p className="mt-3">
                 Пока недостаточно опубликованных кейсов для города, чтобы
@@ -81,7 +81,7 @@ function Bucket({
 }) {
   return (
     <div
-      className={`rounded-xl border p-6 sm:p-7 ${
+      className={`rounded-2xl border p-6 sm:p-7 ${
         accent
           ? "border-[var(--color-primary)] bg-[var(--color-surface)]"
           : "border-[var(--color-border)] bg-[var(--color-surface)]"

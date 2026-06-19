@@ -392,7 +392,7 @@ function BeforeAfterCompact({
 
 function PairTile({ src, label, alt }: { src: string; label: string; alt: string }) {
   return (
-    <figure className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[var(--color-border)]">
+    <figure className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-[var(--color-border)]">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={src} alt={alt} loading="lazy" className="block h-full w-full object-cover" />
       <span className="absolute left-3 top-3 inline-flex items-center rounded bg-[var(--color-text)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
@@ -430,7 +430,7 @@ function ClientReview({ text, rating }: { text: string; rating: number }) {
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-14">
         <div className="max-w-3xl">
           <p className="font-eyebrow">Отзыв клиента</p>
-          <blockquote className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy sm:p-8">
+          <blockquote className="mt-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy sm:p-8">
             <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-bold text-[var(--color-primary)]">
               <span aria-hidden>★</span>
               <span>{rating} / 5</span>

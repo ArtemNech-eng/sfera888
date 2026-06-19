@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope } from "next/font/google";
+import { Manrope, Lora } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "../components/Header";
@@ -8,9 +8,7 @@ import { CookieBanner } from "../components/CookieBanner";
 import { YandexMetrika } from "../components/YandexMetrika";
 import { publicUrl } from "../lib/env";
 
-// Manrope — the only typeface in the portal. Body, UI, headings, numerals.
-// We dropped the editorial serif so pages read as "infrastructure portal"
-// rather than "interior studio".
+// Manrope — body / UI / numerals / buttons.
 const manrope = Manrope({
   subsets: ["latin", "cyrillic"],
   variable: "--font-manrope",
@@ -18,11 +16,22 @@ const manrope = Manrope({
   display: "swap",
 });
 
+// Lora — display serif для H1 главных страниц (home / raboty / case).
+// Variable font с поддержкой кириллицы — Fraunces (первый выбор) кириллицу
+// не поддерживает, а Lora имеет тот же humanist-warm-magazine характер.
+// `next/font/google` self-hosts шрифт и устраняет CLS.
+const lora = Lora({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-display",
+  weight: ["500", "600"],
+  display: "swap",
+});
+
 // Theme color drives the iOS / Chrome status-bar tint when the cabinet is
-// installed as a PWA. Brand green matches the manifest theme_color and
-// the app/icon.svg accent.
+// installed as a PWA. Switched from emerald to magazine warm-red to match
+// the new home-magazine palette.
 export const viewport = {
-  themeColor: "#0E7C5E",
+  themeColor: "#D9342B",
 };
 
 /**
@@ -81,7 +90,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const ownChrome = isOwnChromeRoute(pathname);
 
   return (
-    <html lang="ru" className={manrope.variable}>
+    <html lang="ru" className={`${manrope.variable} ${lora.variable}`}>
       <body>
         {ownChrome ? null : <Header />}
         <main className="flex-1">{children}</main>

@@ -8,29 +8,28 @@ interface Props {
 }
 
 /**
- * «Популярные объекты» — главный блок главной (план §22.4 п.2).
+ * «Популярные объекты» — главный inspiration-блок главной (home-magazine-redesign).
  *
- * Заменяет старый HomeRecentCases. Использует CaseCard как central UI primitive
- * платформы — каждый кейс трактуется как ОБЪЕКТ (результат ремонта), не как
- * текстовая карточка работы мастера.
+ * 4 col на desktop (sm:2, md:3, lg:4) с mixed aspect ratios — карточки
+ * варьируются 4:5/4:3/1:1 по `index % 3`, что даёт masonry-feel без CSS columns
+ * (избегаем visual gaps на keyboard navigation).
  *
- * Когда реальных кейсов <3 → показываем 6 demo-карточек со стилевыми
+ * Когда реальных кейсов <3 → показываем 8 demo-карточек со стилевыми
  * референсами (Unsplash CC0). Они помечены бейджем «Пример», без счётчиков
- * и без price — чтобы не путать с реальными кейсами.
+ * и без price.
  */
 export function HomePopularObjects({ cases }: Props) {
   const isDemoMode = cases.length < 3;
-  const realVisible = cases.slice(0, 9);
+  const realVisible = cases.slice(0, 12);
 
   if (!isDemoMode && realVisible.length === 0) return null;
 
   return (
-    <section className="bg-[var(--color-surface)]">
+    <section className="bg-[var(--color-background)]">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
-            <p className="font-eyebrow">{isDemoMode ? "Идеи" : "Популярные объекты"}</p>
-            <h2 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
+            <h2 className="font-display text-3xl text-[var(--color-text)] sm:text-4xl">
               {isDemoMode
                 ? "Стилевые референсы, чтобы было от чего оттолкнуться."
                 : "Ремонты, которые хочется повторить."}
@@ -43,15 +42,15 @@ export function HomePopularObjects({ cases }: Props) {
           </div>
           <Link
             href="/raboty"
-            className="hidden text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-primary)] decoration-2 underline-offset-4 transition hover:decoration-[var(--color-text)] sm:inline"
+            className="hidden text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-text)] decoration-2 underline-offset-4 transition hover:text-[var(--color-primary)] hover:decoration-[var(--color-primary)] sm:inline"
           >
-            Все идеи →
+            Все ремонты →
           </Link>
         </div>
 
-        <ul className="mt-10 grid gap-x-4 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="mt-10 grid gap-x-4 gap-y-10 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {isDemoMode
-            ? DEMO_CASES.slice(0, 6).map((d) => (
+            ? DEMO_CASES.slice(0, 8).map((d, idx) => (
                 <li key={d.id}>
                   <CaseCard
                     href="/raboty"
@@ -61,12 +60,16 @@ export function HomePopularObjects({ cases }: Props) {
                     metaParts={[d.category, "стилевой референс"]}
                     priceLabel={null}
                     badge={{ tone: "demo", label: "Пример" }}
+                    aspectVariant={pickAspect(idx)}
                   />
                 </li>
               ))
-            : realVisible.map((c) => (
+            : realVisible.map((c, idx) => (
                 <li key={c.id}>
-                  <CaseCard {...rabotyToCaseCardProps(c)} />
+                  <CaseCard
+                    {...rabotyToCaseCardProps(c)}
+                    aspectVariant={pickAspect(idx)}
+                  />
                 </li>
               ))}
         </ul>
@@ -74,14 +77,22 @@ export function HomePopularObjects({ cases }: Props) {
         <div className="mt-8 sm:hidden">
           <Link
             href="/raboty"
-            className="text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-primary)] decoration-2 underline-offset-4"
+            className="text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-text)] decoration-2 underline-offset-4"
           >
-            Все идеи →
+            Все ремонты →
           </Link>
         </div>
       </div>
     </section>
   );
+}
+
+/** Variation across the grid: 4:5 portrait (default), 4:3 landscape, 1:1 square. */
+function pickAspect(idx: number): "4:5" | "4:3" | "1:1" {
+  const m = idx % 3;
+  if (m === 0) return "4:5";
+  if (m === 1) return "4:3";
+  return "1:1";
 }
 
 /**

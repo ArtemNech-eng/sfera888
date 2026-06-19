@@ -1,170 +1,109 @@
 import Link from "next/link";
 import { ROOM_CATEGORIES } from "../../lib/demoCases";
-import type { City, MarketplaceStats } from "../../lib/types";
-
-interface Props {
-  stats: MarketplaceStats;
-  cities: City[];
-}
 
 /**
- * Inspiration-platform hero (план §22.4).
+ * Magazine hero (home-magazine-redesign).
  *
- * Базовый принцип: «Главный товар — РЕЗУЛЬТАТ РЕМОНТА». Hero — витрина, не
- * marketplace мастеров.
+ * Принципы:
+ *   • один-единственный месседж: «Найдите ремонт, который хотите повторить»
+ *   • Fraunces serif H1 — журнальный тон, не utility-portal
+ *   • photo-collage 3 фото asymmetric — главная визуальная зона
+ *   • один primary CTA, никаких search-bar / 4 chips / stats-line
+ *   • счётчики «1 ремонтов · 3 городов» убраны полностью — пока данных
+ *     мало они психологически убивают доверие
  *
- *   1. Heading: «Самая большая база реальных ремонтов в России»
- *   2. Subheading: «Найдите ремонт, который хотите повторить»
- *   3. Search-bar «Что хотите сделать?» — submit в /raboty
- *   4. Visual category chips (4 крупные cards-chip с фото) — Ванная, Кухня,
- *      Санузел, Квартира. Это deep-link в `/raboty?room=...`. Не select,
- *      а photo-cards чтобы тон был «витрина», а не «utility».
- *   5. Live stats: «N ремонтов в каталоге · M городов · K мастеров готовы повторить»
- *
- * Изменения относительно §21.9:
- *   • убран двойной select-фильтр в форме (только текст-поле)
- *   • убран hero-collage (его роль теперь у category chips)
- *   • убраны quick-pick chips (12 текстовых ссылок) — заменены на 4 photo-card
+ * Photo collage использует существующие Unsplash-референсы из ROOM_CATEGORIES
+ * (CC0). Когда мастера наполнят каталог — заменим на реальные кейсы из feed'а.
  */
-export function HomeHero({ stats, cities: _cities }: Props) {
-  // Топ-4 категории для visual chips: Ванная, Кухня, Санузел (=ванная-санузел),
-  // Квартира (= общая навигация в /raboty без room-фильтра).
-  const visualChips: Array<{ slug: string | null; label: string; imageUrl: string; alt: string }> = [
-    {
-      slug: "vannaya",
-      label: "Ванная",
-      imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "vannaya")!.imageUrl,
-      alt: "Идеи ремонта ванной",
-    },
-    {
-      slug: "kuhnya",
-      label: "Кухня",
-      imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "kuhnya")!.imageUrl,
-      alt: "Идеи ремонта кухни",
-    },
-    {
-      slug: "spalnya",
-      label: "Спальня",
-      imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "spalnya")!.imageUrl,
-      alt: "Идеи ремонта спальни",
-    },
-    {
-      slug: null,
-      label: "Квартира",
-      imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "gostinaya")!.imageUrl,
-      alt: "Идеи ремонта квартиры под ключ",
-    },
-  ];
+export function HomeHero() {
+  // 3 фото для asymmetric collage: 1 большое (4:5 portrait) + 2 узких (1:1).
+  // Подобраны так, чтобы стилистически читались как «один разворот журнала».
+  const cover = ROOM_CATEGORIES.find((r) => r.slug === "kuhnya")!;
+  const top = ROOM_CATEGORIES.find((r) => r.slug === "vannaya")!;
+  const bottom = ROOM_CATEGORIES.find((r) => r.slug === "gostinaya")!;
 
   return (
-    <section className="bg-[var(--color-surface)]">
-      <div className="mx-auto max-w-6xl px-4 pb-12 pt-12 sm:px-6 sm:pb-14 sm:pt-16">
-        <p className="font-eyebrow">Каталог ремонтов</p>
-        <h1 className="font-editorial mt-4 max-w-3xl text-3xl leading-tight text-[var(--color-text)] sm:text-4xl lg:text-[2.75rem]">
-          Самая большая база реальных ремонтов в России.
-        </h1>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
-          Найдите ремонт, который хотите повторить. С фото, ценами и сроками.
-          Понравился — оставьте заявку, подберём мастера, который сделает похоже.
-        </p>
+    <section className="bg-[var(--color-background)]">
+      <div className="mx-auto max-w-6xl px-4 pb-16 pt-10 sm:px-6 sm:pb-24 sm:pt-16">
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,_1fr)_minmax(0,_1.05fr)] lg:gap-14">
+          {/* ── Headline column ─────────────────────────────── */}
+          <div>
+            <h1 className="font-display text-[2.4rem] text-[var(--color-text)] sm:text-5xl lg:text-[3.5rem]">
+              Найдите ремонт,
+              <br />
+              который хотите
+              <br />
+              повторить.
+            </h1>
+            <p className="mt-5 max-w-md text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
+              Тысячи реальных ремонтов и AI-дизайнов с ценами, сроками и
+              мастерами. Понравился объект — нажмите «Хочу такой же».
+            </p>
+            <div className="mt-7">
+              <Link
+                href="/raboty"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
+              >
+                Смотреть ремонты
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+          </div>
 
-        {/* Search-bar — single text field, submits to /raboty */}
-        <form
-          action="/raboty"
-          method="GET"
-          className="mt-7 flex max-w-2xl rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-cozy focus-within:border-[var(--color-primary)] focus-within:shadow-cozy-md"
-        >
-          <input
-            type="text"
-            name="q"
-            aria-label="Что хотите сделать"
-            placeholder="Что хотите сделать? Например, ванную в скандинавском стиле"
-            className="h-11 min-w-0 flex-1 rounded-full bg-transparent px-4 text-sm text-[var(--color-text)] placeholder-[var(--color-faint)] focus:outline-none"
-          />
-          <button
-            type="submit"
-            className="inline-flex h-11 flex-shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)] sm:px-7"
-            aria-label="Смотреть идеи"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-4-4" />
-            </svg>
-            <span className="hidden sm:inline">Смотреть идеи</span>
-          </button>
-        </form>
-
-        {/* Visual category chips — 4 cards-chip in Airbnb category style:
-            landscape photo + label below (not overlaid). Keeps the strip
-            compact (~200 px tall) so it doesn't dominate the hero. */}
-        <div className="mt-9">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-faint)]">
-            Что хотите сделать?
-          </p>
-          <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-            {visualChips.map((chip) => (
-              <li key={chip.label}>
-                <VisualChip chip={chip} />
-              </li>
-            ))}
-          </ul>
+          {/* ── Photo collage column ────────────────────────── */}
+          <div className="grid grid-cols-5 gap-3 sm:gap-4">
+            {/* Big centerpiece (4:5 portrait, takes 3 columns, full height) */}
+            <div className="col-span-3 row-span-2 overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy">
+              <div className="relative aspect-[4/5] w-full">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={cover.imageUrl}
+                  alt={cover.alt}
+                  loading="eager"
+                  className="block h-full w-full object-cover"
+                />
+              </div>
+            </div>
+            {/* Top-right (1:1) */}
+            <div className="col-span-2 overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy">
+              <div className="relative aspect-[1/1] w-full">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={top.imageUrl}
+                  alt={top.alt}
+                  loading="eager"
+                  className="block h-full w-full object-cover"
+                />
+              </div>
+            </div>
+            {/* Bottom-right (1:1) */}
+            <div className="col-span-2 overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy">
+              <div className="relative aspect-[1/1] w-full">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={bottom.imageUrl}
+                  alt={bottom.alt}
+                  loading="eager"
+                  className="block h-full w-full object-cover"
+                />
+              </div>
+            </div>
+          </div>
         </div>
-
-        {/* Live stats — приземлённое доверие, не маркетинговое преувеличение */}
-        <p className="mt-10 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--color-muted)]">
-          <StatItem value={formatCount(stats.publishedCases)} label="ремонтов в каталоге" />
-          <StatItem value={formatCount(stats.citiesCount)} label="городов" />
-          <StatItem value={formatCount(Math.max(stats.publishedMasters, 0))} label="мастеров готовы повторить" />
-          {stats.completedOrders > 0 ? (
-            <StatItem value={formatCount(stats.completedOrders)} label="завершённых ремонтов" />
-          ) : null}
-        </p>
       </div>
     </section>
   );
-}
-
-// ── Subcomponents ──────────────────────────────────────────────────────────
-
-function VisualChip({
-  chip,
-}: {
-  chip: { slug: string | null; label: string; imageUrl: string; alt: string };
-}) {
-  const href = chip.slug ? `/raboty?room=${chip.slug}` : "/raboty";
-  return (
-    <Link
-      href={href}
-      className="group block focus:outline-none"
-    >
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-[var(--color-cream-deep)] shadow-cozy transition group-hover:shadow-cozy-md">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={chip.imageUrl}
-          alt={chip.alt}
-          loading="eager"
-          className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.06]"
-        />
-      </div>
-      <p className="mt-2.5 px-1 text-sm font-semibold text-[var(--color-text)] transition group-hover:text-[var(--color-primary)] sm:text-base">
-        {chip.label}
-      </p>
-    </Link>
-  );
-}
-
-function StatItem({ value, label }: { value: string; label: string }) {
-  return (
-    <span className="inline-flex items-baseline gap-1.5">
-      <span className="text-base font-bold text-[var(--color-text)]">{value}</span>
-      <span>{label}</span>
-    </span>
-  );
-}
-
-function formatCount(n: number): string {
-  if (n >= 1000) {
-    return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(".", ",")}K+`;
-  }
-  return new Intl.NumberFormat("ru-RU").format(n);
 }

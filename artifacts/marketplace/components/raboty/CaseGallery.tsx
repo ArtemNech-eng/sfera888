@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 
@@ -54,7 +54,7 @@ export function CaseGallery({ title, cityName, beforePhotos, afterPhotos }: Case
           <button
             type="button"
             onClick={() => openAt(0)}
-            className="relative block aspect-[4/3] w-full overflow-hidden rounded-xl bg-[var(--color-border)] transition hover:opacity-95"
+            className="relative block aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] transition hover:opacity-95"
             aria-label="Открыть фото в полном размере"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -85,7 +85,7 @@ export function CaseGallery({ title, cityName, beforePhotos, afterPhotos }: Case
                       key={`bot-${idx}`}
                       type="button"
                       onClick={() => openAt(idx + 3)}
-                      className="relative block aspect-[4/3] w-full overflow-hidden rounded-xl bg-[var(--color-border)] transition hover:opacity-95"
+                      className="relative block aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] transition hover:opacity-95"
                       aria-label={`Открыть фото ${idx + 4}`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -117,7 +117,7 @@ export function CaseGallery({ title, cityName, beforePhotos, afterPhotos }: Case
                 <button
                   type="button"
                   onClick={() => openAt(idx)}
-                  className="relative block aspect-[4/3] w-[85vw] max-w-[480px] overflow-hidden rounded-xl bg-[var(--color-border)]"
+                  className="relative block aspect-[4/3] w-[85vw] max-w-[480px] overflow-hidden rounded-2xl bg-[var(--color-border)]"
                   aria-label={`Открыть фото ${idx + 1}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -167,7 +167,7 @@ function Thumb({ photo, caption, onClick }: { photo: GalleryPhoto; caption: stri
     <button
       type="button"
       onClick={onClick}
-      className="relative block aspect-[4/3] w-full overflow-hidden rounded-xl bg-[var(--color-border)] transition hover:opacity-95"
+      className="relative block aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-border)] transition hover:opacity-95"
       aria-label="Открыть фото"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}

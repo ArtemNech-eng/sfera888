@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import type { City, Master, Service } from "../../lib/types";
 import { LeadForm } from "../LeadForm";
 
@@ -78,7 +78,7 @@ export function CaseLeadBlock({
           </div>
 
           {/* Right column: form */}
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy sm:p-7">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy sm:p-7">
             {fallbackCity && fallbackService ? (
               <LeadForm
                 citySlug={fallbackCity.slug}
