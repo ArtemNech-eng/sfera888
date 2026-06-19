@@ -245,8 +245,13 @@ router.post("/generate", upload.single("image"), async (req: Request, res: Respo
       },
     });
   } catch (e) {
-    console.error("[dizajn/generate]", e);
-    res.status(500).json({ ok: false, error: "internal_error" });
+    const errMessage = e instanceof Error ? e.message : String(e);
+    console.error("[dizajn/generate]", errMessage, e);
+    res.status(500).json({
+      ok: false,
+      error: "internal_error",
+      message: errMessage.slice(0, 500),
+    });
   }
 });
 

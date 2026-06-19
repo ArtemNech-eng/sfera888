@@ -71,6 +71,13 @@
       "when": 1781855688127,
       "tag": "0009_user_saves",
       "breakpoints": false
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781900000000,
+      "tag": "0010_designs_extension",
+      "breakpoints": false
     }
   ]
 }

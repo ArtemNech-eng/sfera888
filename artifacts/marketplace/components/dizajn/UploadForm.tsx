@@ -99,6 +99,7 @@ export function UploadForm({ cities }: Props) {
       const data = await res.json();
       if (!res.ok || !data.ok) {
         const code: string = data.error ?? "unknown";
+        const detail: string | undefined = data.message;
         const msg =
           code === "rate_limit"
             ? "Лимит на сегодня — 5 дизайнов. Попробуйте завтра."
@@ -112,7 +113,9 @@ export function UploadForm({ cities }: Props) {
                     ? "Хранилище не настроено. Сообщите в поддержку."
                     : code === "upstream_unreachable"
                       ? "Сервер недоступен. Попробуйте через минуту."
-                      : `Не удалось запустить генерацию (${code}).`;
+                      : detail
+                        ? `Ошибка генерации (${code}): ${detail}`
+                        : `Не удалось запустить генерацию (${code}).`;
         setError(msg);
         setSubmitting(false);
         return;
