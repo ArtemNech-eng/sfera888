@@ -4,7 +4,7 @@ import { publicUrl } from "../../../lib/env";
 // Static legal page — no API, no DB. Safe to prerender.
 export const dynamic = "force-static";
 
-const LAST_UPDATED = "16 июня 2026";
+const LAST_UPDATED = "18 июня 2026";
 
 export function generateMetadata(): Metadata {
   return {
@@ -85,8 +85,50 @@ export default function PrivacyPolicyPage() {
           </p>
         </section>
 
+        <section id="cookies" className="scroll-mt-20">
+          <h2 className="text-xl font-semibold">7. Cookie и технические параметры устройства</h2>
+          <p className="mt-2 text-[var(--color-muted)]">
+            Сервис использует cookie и обрабатывает технические параметры устройства для
+            работы базовой функциональности и защиты от автоматических злоупотреблений.
+            Использование сервиса означает согласие с условиями этого раздела.
+          </p>
+
+          <h3 className="mt-4 text-base font-semibold text-[var(--color-text)]">Какие cookie используем</h3>
+          <ul className="mt-2 ml-5 list-disc space-y-1 text-[var(--color-muted)]">
+            <li>
+              <span className="font-medium text-[var(--color-text)]">kiro_anon_id</span> — анонимный
+              идентификатор устройства (UUID v4) для сохранения избранных кейсов
+              без регистрации. Срок жизни — 1 год.
+            </li>
+            <li>
+              <span className="font-medium text-[var(--color-text)]">sessions</span> — сессионная cookie
+              для авторизации в личном кабинете мастера. Срок жизни — 30 дней.
+            </li>
+            <li>
+              <span className="font-medium text-[var(--color-text)]">_ym_*</span> — служебные cookie
+              Яндекс.Метрики для подсчёта посетителей и анализа поведения.
+            </li>
+          </ul>
+
+          <h3 className="mt-4 text-base font-semibold text-[var(--color-text)]">Технические параметры</h3>
+          <p className="mt-2 text-[var(--color-muted)]">
+            При посещении страниц сервис обрабатывает технические параметры браузера
+            (User-Agent, разрешение экрана, часовой пояс, язык) для защиты от ботов
+            и rate-limit на форму заявки и кнопку сохранения. Эти данные не связываются
+            с конкретным человеком и не передаются третьим лицам кроме Яндекс.Метрики.
+          </p>
+
+          <h3 className="mt-4 text-base font-semibold text-[var(--color-text)]">Как удалить</h3>
+          <p className="mt-2 text-[var(--color-muted)]">
+            Cookie можно удалить в настройках браузера в любой момент. Удаление cookie
+            kiro_anon_id приведёт к потере списка сохранённых кейсов на этом устройстве.
+            Чтобы запросить полное удаление связанных с устройством записей на стороне
+            сервиса, напишите нам через форму обратной связи.
+          </p>
+        </section>
+
         <section>
-          <h2 className="text-xl font-semibold">7. Изменения политики</h2>
+          <h2 className="text-xl font-semibold">8. Изменения политики</h2>
           <p className="mt-2 text-[var(--color-muted)]">
             Сервис может изменять текст этой политики. Актуальная версия всегда доступна
             по адресу /policy/privacy. Дата обновления указана в начале документа.
