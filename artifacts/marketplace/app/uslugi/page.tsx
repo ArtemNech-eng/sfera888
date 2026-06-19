@@ -28,24 +28,6 @@ function formatNumber(n: number): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
 }
 
-function pluralServices(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return "услуг";
-  if (mod10 === 1) return "услуга";
-  if (mod10 >= 2 && mod10 <= 4) return "услуги";
-  return "услуг";
-}
-
-function pluralCities(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 14) return "городов";
-  if (mod10 === 1) return "город";
-  if (mod10 >= 2 && mod10 <= 4) return "города";
-  return "городов";
-}
-
 export default async function ServicesPage() {
   const [services, cities] = await Promise.all([fetchServices(), fetchCities()]);
   const fallbackCity = pickCitySlug(cities);
@@ -63,48 +45,26 @@ export default async function ServicesPage() {
       />
 
       {/* ── Hero ── */}
-      <section className="bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+      <section className="bg-[var(--color-background)]">
+        <div className="mx-auto max-w-6xl px-4 pb-10 pt-10 sm:px-6 sm:pb-14 sm:pt-14">
           <nav className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
             <Link href="/" className="hover:text-[var(--color-text)]">Главная</Link>
             <span aria-hidden>/</span>
             <span className="text-[var(--color-text)]">Услуги</span>
           </nav>
 
-          <p className="font-eyebrow mt-7">Каталог</p>
-          <h1 className="font-editorial mt-3 max-w-3xl text-3xl text-[var(--color-text)] sm:text-4xl">
-            Все услуги Честных мастеров
+          <h1 className="font-display mt-8 max-w-3xl text-4xl text-[var(--color-text)] sm:text-5xl">
+            Все услуги.
           </h1>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
-            Сантехника, электрика, отделочные работы, монтаж, демонтаж — всё в одном каталоге.
-            Каждая услуга открывает страницу мастеров с ценами и подбором по вашему городу.
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
+            Сантехника, электрика, отделочные работы, монтаж, демонтаж — каждая
+            услуга открывает страницу с ценами и подбором мастера в вашем городе.
           </p>
 
-          <p className="mt-6 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--color-muted)]">
-            {services.length > 0 ? (
-              <span className="inline-flex items-baseline gap-1.5">
-                <span className="text-base font-bold text-[var(--color-text)]">
-                  {formatNumber(services.length)}
-                </span>
-                <span>{pluralServices(services.length)} в каталоге</span>
-              </span>
-            ) : (
-              <span>Каталог формируется</span>
-            )}
-            {cities.length > 0 ? (
-              <span className="inline-flex items-baseline gap-1.5">
-                <span className="text-base font-bold text-[var(--color-text)]">
-                  {formatNumber(cities.length)}
-                </span>
-                <span>{pluralCities(cities.length)}</span>
-              </span>
-            ) : null}
-          </p>
-
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/kalkulyator"
-              className="inline-flex h-11 items-center gap-2 rounded-md bg-[var(--color-primary)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-6 text-sm font-semibold text-white shadow-cozy transition hover:bg-[var(--color-primary-hover)]"
             >
               Прикинуть бюджет
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -114,7 +74,7 @@ export default async function ServicesPage() {
             </Link>
             <Link
               href="/raboty"
-              className="inline-flex h-11 items-center rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)]"
+              className="inline-flex h-12 items-center rounded-full border border-[var(--color-text)] bg-transparent px-6 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white"
             >
               Посмотреть работы
             </Link>
@@ -123,81 +83,74 @@ export default async function ServicesPage() {
       </section>
 
       {/* ── Services grid ── */}
-      <section className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-        {services.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-white p-8 text-center">
-            <p className="text-base font-semibold text-[var(--color-text)]">
-              Каталог обновляется
-            </p>
-            <p className="mt-1 text-sm text-[var(--color-muted)]">
-              Зайдите чуть позже — мы доформируем список услуг.
-            </p>
-          </div>
-        ) : (
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {services.map((service: Service) => {
-              const href = fallbackCity ? `/${service.slug}/${fallbackCity}` : `/uslugi`;
-              return (
-                <li key={service.id}>
-                  <Link
-                    href={href}
-                    className="group relative flex h-full flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5 transition hover:border-[var(--color-primary)] sm:p-6"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
-                        <ServiceIcon />
-                      </span>
-                      <h2 className="text-base font-bold text-[var(--color-text)] group-hover:text-[var(--color-primary)] sm:text-lg">
+      <section className="bg-[var(--color-background)]">
+        <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-20">
+          {services.length === 0 ? (
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center">
+              <p className="font-display text-2xl text-[var(--color-text)]">
+                Каталог обновляется.
+              </p>
+              <p className="mt-2 text-sm text-[var(--color-muted)]">
+                Зайдите чуть позже — мы доформируем список услуг.
+              </p>
+            </div>
+          ) : (
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {services.map((service: Service) => {
+                const href = fallbackCity ? `/${service.slug}/${fallbackCity}` : `/uslugi`;
+                return (
+                  <li key={service.id}>
+                    <Link
+                      href={href}
+                      className="group flex h-full flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy transition hover:-translate-y-0.5 hover:border-[var(--color-text)] hover:shadow-cozy-md"
+                    >
+                      <h2 className="font-display text-xl leading-snug text-[var(--color-text)] transition group-hover:text-[var(--color-primary)] sm:text-2xl">
                         {service.name}
                       </h2>
-                    </div>
-                    {service.description ? (
-                      <p className="mt-3 line-clamp-3 text-sm text-[var(--color-muted)]">
-                        {service.description}
-                      </p>
-                    ) : null}
-                    <div className="mt-auto flex items-end justify-between gap-3 pt-4">
-                      {service.priceFrom != null && service.priceFrom > 0 ? (
-                        <div>
-                          <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted)]">от</span>
-                          <span className="ml-1 text-base font-bold text-[var(--color-text)]">
-                            {formatNumber(service.priceFrom)} ₽
+                      {service.description ? (
+                        <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-[var(--color-muted)]">
+                          {service.description}
+                        </p>
+                      ) : null}
+                      <div className="mt-auto flex items-end justify-between gap-3 pt-6">
+                        {service.priceFrom != null && service.priceFrom > 0 ? (
+                          <span className="text-sm text-[var(--color-muted)]">
+                            от{" "}
+                            <span className="font-semibold text-[var(--color-text)]">
+                              {formatNumber(service.priceFrom)} ₽
+                            </span>
                           </span>
-                        </div>
-                      ) : <span />}
-                      <span className="inline-flex items-center text-sm font-semibold text-[var(--color-primary)] transition group-hover:translate-x-1">
-                        Подобрать
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="ml-1" aria-hidden>
-                          <path d="M5 12h14" />
-                          <path d="m12 5 7 7-7 7" />
-                        </svg>
-                      </span>
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                        ) : <span />}
+                        <span className="inline-flex items-center text-sm font-medium text-[var(--color-text)] transition group-hover:translate-x-1 group-hover:text-[var(--color-primary)]">
+                          Подобрать →
+                        </span>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </section>
 
       {/* ── Cities rail ── */}
       {cities.length > 0 ? (
         <section className="border-t border-[var(--color-border)] bg-[var(--color-cream-deep)]">
-          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-            <p className="font-eyebrow">Города</p>
-            <h2 className="font-editorial mt-3 text-2xl text-[var(--color-text)] sm:text-3xl">
-              Работаем по всей стране
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+            <h2 className="font-display text-3xl text-[var(--color-text)] sm:text-4xl">
+              Работаем по всей стране.
             </h2>
-            <p className="mt-3 max-w-2xl text-sm text-[var(--color-muted)]">
-              В каждом городе свои мастера — выбирайте локального для быстрого выезда.
+            <p className="mt-3 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
+              В каждом городе свои мастера — выбирайте локального для быстрого
+              выезда.
             </p>
-            <ul className="mt-6 flex flex-wrap gap-2">
+            <ul className="mt-8 flex flex-wrap gap-2">
               {cities.map((c) => (
                 <li key={c.slug}>
                   <Link
                     href={`/mastera?city=${encodeURIComponent(c.slug)}`}
-                    className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                    className="inline-flex h-11 items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-5 text-sm font-medium text-[var(--color-text)] transition hover:-translate-y-0.5 hover:border-[var(--color-text)] hover:shadow-cozy"
                   >
                     {c.name}
                   </Link>
@@ -208,13 +161,5 @@ export default async function ServicesPage() {
         </section>
       ) : null}
     </>
-  );
-}
-
-function ServiceIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </svg>
   );
 }

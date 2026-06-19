@@ -127,18 +127,17 @@ export default async function MasteraPage(
       />
 
       {/* Hero */}
-      <section className="bg-[var(--color-surface)]">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+      <section className="bg-[var(--color-background)]">
+        <div className="mx-auto max-w-6xl px-4 pb-10 pt-10 sm:px-6 sm:pb-14 sm:pt-14">
           <nav className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
             <Link href="/" className="hover:text-[var(--color-text)]">Главная</Link>
             <span aria-hidden>/</span>
             <span className="text-[var(--color-text)]">Мастера</span>
           </nav>
-          <p className="font-eyebrow mt-7">Каталог</p>
-          <h1 className="font-editorial mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
-            {h1}
+          <h1 className="font-display mt-8 text-4xl text-[var(--color-text)] sm:text-5xl">
+            {h1}.
           </h1>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
             Проверенные специалисты с рейтингом и реальными отзывами клиентов.
             Договор с каждым мастером, без авансов.
           </p>
@@ -243,14 +242,14 @@ export default async function MasteraPage(
         {/* Pagination */}
         {totalPages > 1 ? (
           <nav
-            className="mt-8 flex items-center justify-between gap-3 text-sm"
+            className="mt-12 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-8 text-sm"
             aria-label="Пагинация"
           >
             {hasPrev ? (
               <Link
                 href={buildUrl({ page: page - 1 })}
                 rel="prev"
-                className="rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-4 py-2 hover:border-[var(--color-text)]"
+                className="inline-flex h-11 items-center rounded-full border border-[var(--color-text)] bg-transparent px-5 font-medium text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white"
               >
                 ← Назад
               </Link>
@@ -262,7 +261,7 @@ export default async function MasteraPage(
               <Link
                 href={buildUrl({ page: page + 1 })}
                 rel="next"
-                className="rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-white hover:bg-[var(--color-primary-hover)]"
+                className="inline-flex h-11 items-center rounded-full bg-[var(--color-primary)] px-5 font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
               >
                 Далее →
               </Link>
