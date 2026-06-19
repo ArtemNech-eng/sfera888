@@ -116,6 +116,75 @@ export async function falGenerate(input: FalGenerationInput): Promise<FalGenerat
 }
 
 /**
+ * Text-to-image вызов Fal.ai (без init image). Используется seed-скриптом
+ * для генерации starter-designs без user-upload, а также если в будущем
+ * добавим «генерация без фото» в публичную форму.
+ *
+ * Endpoint: `fal-ai/flux/dev` (text2img, без /image-to-image suffix).
+ */
+export async function falGenerateText(input: {
+  prompt: string;
+  aspectRatio?: "16:9" | "4:3" | "1:1";
+}): Promise<FalGenerationResult> {
+  const apiKey = process.env.FAL_API_KEY;
+  if (!apiKey) {
+    throw new Error("FAL_API_KEY is not set");
+  }
+  const model = process.env.FAL_MODEL_TEXT ?? "fal-ai/flux/dev";
+  const url = `${FAL_BASE_URL}/${model}`;
+
+  const body = {
+    prompt: input.prompt,
+    num_inference_steps: 28,
+    guidance_scale: 3.5,
+    image_size: aspectToImageSize(input.aspectRatio ?? "4:3"),
+    num_images: 1,
+    enable_safety_checker: true,
+  };
+
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(`Fal.ai network error (text2img): ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Fal.ai text2img HTTP ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const data = (await response.json()) as {
+    images?: Array<{ url: string; width?: number; height?: number }>;
+    has_nsfw_concepts?: boolean[];
+  };
+
+  if (!data.images || data.images.length === 0) {
+    throw new Error("Fal.ai text2img returned no images");
+  }
+  if (data.has_nsfw_concepts?.some((flag) => flag === true)) {
+    throw new Error("Fal.ai text2img flagged image as NSFW");
+  }
+
+  const first = data.images[0]!;
+  return {
+    imageUrl: first.url,
+    width: first.width ?? 1024,
+    height: first.height ?? 768,
+    generationMs: Date.now() - startedAt,
+    costKopeks: APPROX_COST_KOPEKS,
+  };
+}
+
+/**
  * Скачивает изображение по URL и возвращает буфер. Используется в воркере
  * после генерации Fal.ai чтобы загрузить результат в наш R2 (Fal.ai хранит
  * результаты только 24h).

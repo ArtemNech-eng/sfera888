@@ -24,7 +24,7 @@ import {
 } from "@workspace/db";
 import { and, eq, lt } from "drizzle-orm";
 import { objectStorageClient, signObjectURL } from "./objectStorage.js";
-import { falGenerate, downloadImage } from "./falAi.js";
+import { falGenerate, falGenerateText, downloadImage } from "./falAi.js";
 import { generateDesignContent } from "./designContent.js";
 import { extractPalette } from "./colorExtraction.js";
 
@@ -173,8 +173,108 @@ async function processDesign(designId: number): Promise<void> {
   const { design } = job;
 
   if (!design.inputImageUrl) {
-    throw new Error("inputImageUrl is missing");
+    // Text2img mode (seed-designs): нет user-uploaded init image, генерим
+    // полностью по prompt. Используется seed-script'ом для создания
+    // starter-content без user upload.
+    const areaNumNoInput = design.area ? parseFloat(design.area) : null;
+    const bucketIdNoInput = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketIdNoInput) {
+      throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID is not set");
+    }
+
+    const prompts = buildViewPrompts(design.roomType, design.style, areaNumNoInput);
+
+    const [renderResults, content] = await Promise.all([
+      Promise.all(
+        prompts.map((p) =>
+          falGenerateText({
+            prompt: p.prompt,
+            aspectRatio: p.aspect,
+          }).then((result) => ({ ...result, view: p.view, prompt: p.prompt })),
+        ),
+      ),
+      generateDesignContent({
+        room: design.roomType,
+        style: design.style,
+        area: areaNumNoInput,
+        budget: design.budget,
+        durationWeeks: design.durationWeeks,
+        cityName: job.city?.name ?? null,
+      }),
+    ]);
+
+    let mainResultPublicUrlNoInput: string | null = null;
+    let mainImageBufferNoInput: Buffer | null = null;
+
+    for (let i = 0; i < renderResults.length; i++) {
+      const result = renderResults[i]!;
+      const buffer = await downloadImage(result.imageUrl);
+
+      const resultFilename = `${design.id}_${result.view}.jpg`;
+      await objectStorageClient
+        .bucket(bucketIdNoInput)
+        .file(`dizajn/results/${resultFilename}`)
+        .save(buffer, { contentType: "image/jpeg" });
+
+      const publicUrl = `/api/marketplace/dizajn/img/results/${resultFilename}`;
+
+      await db.insert(designImagesTable).values({
+        designId: design.id,
+        type: result.view,
+        url: publicUrl,
+        width: result.width,
+        height: result.height,
+        sortOrder: i,
+      });
+
+      await db.insert(designGenerationsTable).values({
+        designId: design.id,
+        provider: "fal-ai",
+        model: process.env.FAL_MODEL_TEXT ?? "fal-ai/flux/dev",
+        prompt: result.prompt,
+        roomType: design.roomType,
+        style: design.style,
+        status: "success",
+        costKopeks: result.costKopeks,
+        providerResponse: { generationMs: result.generationMs, view: result.view, mode: "text2img" },
+        completedAt: new Date(),
+      });
+
+      if (i === 0) {
+        mainResultPublicUrlNoInput = publicUrl;
+        mainImageBufferNoInput = buffer;
+      }
+    }
+
+    if (!mainResultPublicUrlNoInput || !mainImageBufferNoInput) {
+      throw new Error("Main render not produced (text2img)");
+    }
+
+    const colorPalette = await extractPalette(mainImageBufferNoInput, 5);
+
+    await db
+      .update(designsTable)
+      .set({
+        status: "completed",
+        resultImageUrl: mainResultPublicUrlNoInput,
+        h1: content.h1,
+        seoTitle: content.seoTitle,
+        seoDescription: content.seoDescription,
+        description: content.description,
+        materials: content.materials,
+        estimate: content.estimate,
+        solutions: content.solutions,
+        colorPalette: colorPalette,
+        isPublic: true,
+        publicConsentAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(designsTable.id, design.id));
+
+    return; // text2img path complete
   }
+
+  // ── img2img mode (default — user uploaded a photo) ──────────────────────
   const areaNum = design.area ? parseFloat(design.area) : null;
   const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
   if (!bucketId) {
