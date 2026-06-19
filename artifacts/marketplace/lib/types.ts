@@ -330,3 +330,79 @@ export interface CalculatorEstimate {
   /** How many published cases match the (city, area±30%) bucket — for social proof. */
   matchingRealCasesCount: number;
 }
+
+
+// ── AI-designer types (см. .kiro/specs/ai-designer) ──────────────────────────
+
+export interface DesignMaterialDTO {
+  category: string;
+  description: string;
+}
+
+export interface DesignEstimateItemDTO {
+  category: string;
+  amountKopeks: number;
+}
+
+export interface DesignSolutionDTO {
+  text: string;
+}
+
+export interface DesignColorSwatchDTO {
+  hex: string;
+  name?: string | null;
+}
+
+export interface DesignImageDTO {
+  type: string; // 'input' | 'view_1_entrance' | 'view_2_main' | 'view_3_storage' | 'view_4_window'
+  url: string;
+  width: number | null;
+  height: number | null;
+  sortOrder: number;
+}
+
+export type DesignStatus = "draft" | "generating" | "completed" | "failed" | "private";
+
+/**
+ * Полный DTO дизайн-проекта возвращаемый GET /api/marketplace/dizajn/:slug.
+ * Часть полей null пока status='generating'.
+ */
+export interface DesignFullDTO {
+  id: number;
+  slug: string;
+  status: DesignStatus;
+  roomType: string;
+  style: string;
+  area: number | null;
+  budget: number | null;
+  durationWeeks: number | null;
+  cityName: string | null;
+  citySlug: string | null;
+  h1: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  description: string | null;
+  materials: DesignMaterialDTO[] | null;
+  estimate: DesignEstimateItemDTO[] | null;
+  solutions: DesignSolutionDTO[] | null;
+  colorPalette: DesignColorSwatchDTO[] | null;
+  resultImageUrl: string | null;
+  images: DesignImageDTO[];
+  viewCount: number;
+  saveCount: number;
+  /** 0-100, оценка прогресса генерации (для UI прогресс-бара). */
+  progress: number;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface DesignFeedItemDTO {
+  id: number;
+  slug: string;
+  roomType: string;
+  style: string;
+  h1: string | null;
+  resultImageUrl: string | null;
+  viewCount: number;
+  saveCount: number;
+}

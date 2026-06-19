@@ -1,24 +1,19 @@
 import Link from "next/link";
 import { ROOM_CATEGORIES } from "../../lib/demoCases";
+import { fetchRecentDesigns } from "../../lib/api";
 
 /**
- * AI-дизайн teaser (home-magazine-redesign).
+ * AI-дизайн teaser (home-magazine-redesign + AI-designer Iter 1).
  *
- * Содержательный посыл: «Создайте свой дизайн комнаты», не «попробуйте
- * стили». В стратегии v3 AI-дизайны = главный SEO-двигатель, контент
- * который генерируют сами пользователи (~100К страниц через комбинаторику).
+ * Server-component с live-feed недавних опубликованных дизайнов через
+ * `fetchRecentDesigns`. Когда дизайнов мало (<3) — рендерим placeholder
+ * style-cards (Unsplash CC0 рефересы), как в первой версии.
  *
- * Photo-led teaser: 3 style-cards с before/after хинтом + один primary CTA
- * в `/dizajn`. Сама генерация — отдельный спек (Fal.ai/Replicate backend).
+ * После Iter 1 AI-designer: пользователи реально создают дизайны —
+ * HomeAIDesigns показывает их живыми примерами.
  */
 
-interface Style {
-  label: string;
-  imageUrl: string;
-  alt: string;
-}
-
-const STYLES: Style[] = [
+const STYLE_PLACEHOLDERS = [
   {
     label: "Современный",
     imageUrl: ROOM_CATEGORIES.find((r) => r.slug === "kuhnya")!.imageUrl,
@@ -36,7 +31,10 @@ const STYLES: Style[] = [
   },
 ];
 
-export function HomeAIDesigns() {
+export async function HomeAIDesigns() {
+  const recent = await fetchRecentDesigns({ limit: 3 }).catch(() => []);
+  const showLive = recent.length >= 3;
+
   return (
     <section className="bg-[var(--color-background)]">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
@@ -46,36 +44,59 @@ export function HomeAIDesigns() {
             Создайте свой дизайн комнаты.
           </h2>
           <p className="mt-3 text-base leading-relaxed text-[var(--color-muted)]">
-            Загрузите фото своей комнаты — покажем, как она будет выглядеть в
-            выбранном стиле. Сохраните дизайн и подберите мастера, который его
-            повторит.
+            Загрузите фото своей комнаты — AI нарисует 4 ракурса в выбранном
+            стиле, подберёт материалы и составит смету. Сохраните дизайн и
+            подберите мастера, который его повторит.
           </p>
         </div>
 
         <ul className="mt-10 grid gap-4 sm:grid-cols-3">
-          {STYLES.map((style) => (
-            <li key={style.label}>
-              <Link
-                href={`/dizajn?style=${encodeURIComponent(style.label.toLowerCase())}`}
-                className="group block focus:outline-none"
-              >
-                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy transition group-hover:shadow-cozy-md">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={style.imageUrl}
-                    alt={style.alt}
-                    loading="lazy"
-                    className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-4 sm:p-5">
-                    <p className="text-base font-semibold text-white sm:text-lg">
-                      {style.label}
-                    </p>
-                  </div>
-                </div>
-              </Link>
-            </li>
-          ))}
+          {showLive
+            ? recent.slice(0, 3).map((d) => (
+                <li key={d.id}>
+                  <Link href={`/dizajn/${d.slug}`} className="group block focus:outline-none">
+                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy transition group-hover:shadow-cozy-md">
+                      {d.resultImageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={d.resultImageUrl}
+                          alt={d.h1 ?? `Дизайн ${d.roomType}`}
+                          loading="lazy"
+                          className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                        />
+                      ) : null}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-4 sm:p-5">
+                        <p className="line-clamp-2 text-sm font-semibold text-white sm:text-base">
+                          {d.h1 ?? `Дизайн ${d.roomType}`}
+                        </p>
+                      </div>
+                    </div>
+                  </Link>
+                </li>
+              ))
+            : STYLE_PLACEHOLDERS.map((style) => (
+                <li key={style.label}>
+                  <Link
+                    href={`/dizajn?style=${encodeURIComponent(style.label.toLowerCase())}`}
+                    className="group block focus:outline-none"
+                  >
+                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy transition group-hover:shadow-cozy-md">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={style.imageUrl}
+                        alt={style.alt}
+                        loading="lazy"
+                        className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-4 sm:p-5">
+                        <p className="text-base font-semibold text-white sm:text-lg">
+                          {style.label}
+                        </p>
+                      </div>
+                    </div>
+                  </Link>
+                </li>
+              ))}
         </ul>
 
         <div className="mt-10">

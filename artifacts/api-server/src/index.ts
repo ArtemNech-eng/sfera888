@@ -314,6 +314,11 @@ runDrizzleMigrations()
     backfillReceiptTransactions()
       .then(n => { if (n > 0) console.log(`[backfill] Created ${n} receipt transactions`); })
       .catch(e => console.error("[backfill] Receipt transactions error:", e));
+    // AI-designer background worker — каждые 5s забирает 1 design в status='generating'
+    // и обрабатывает (Fal.ai × 4 view + GPT artefacts + color extraction + DB updates).
+    import("./lib/designWorker.js").then(({ startDesignWorker }) => {
+      startDesignWorker();
+    }).catch(e => console.error("[designWorker] failed to load:", e));
   })
   .catch((err) => {
     console.error("[startup] Migration/bootstrap failed:", err);

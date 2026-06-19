@@ -378,3 +378,61 @@ export async function fetchSaves(anonId: string): Promise<SavedRabotyItem[]> {
     throw e;
   }
 }
+
+
+// ── AI-designer API ─────────────────────────────────────────────────────────
+
+import type { DesignFullDTO, DesignFeedItemDTO } from "./types";
+
+/**
+ * Получить полный дизайн-проект по slug. На client-side используется через
+ * Next route handler `/api/dizajn/[slug]`, который проксирует сюда. На SSR
+ * используется напрямую (server component).
+ */
+export async function fetchDesign(slug: string): Promise<DesignFullDTO | null> {
+  try {
+    const r = await call<{ ok: true; design: DesignFullDTO }>(
+      `/dizajn/${encodeURIComponent(slug)}`,
+      { noStore: true }, // status может меняться (generating → completed), нельзя кэшировать
+    );
+    // Абсолютизируем URL'ы (api-server-relative → absolute https://sfera-master.ru/...).
+    const design = r.design;
+    design.resultImageUrl = absolutizeApiUrl(design.resultImageUrl);
+    design.images = design.images.map((img) => ({
+      ...img,
+      url: absolutizeApiUrl(img.url) ?? img.url,
+    }));
+    return design;
+  } catch (e) {
+    if (e instanceof MarketplaceApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
+ * Recent published feed (для homepage HomeAIDesigns + future SEO landings).
+ * Кэшируется 5 минут на стороне marketplace + 5 минут на api-server.
+ */
+export async function fetchRecentDesigns(opts: {
+  limit?: number;
+  room?: string;
+  style?: string;
+} = {}): Promise<DesignFeedItemDTO[]> {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.room) params.set("room", opts.room);
+  if (opts.style) params.set("style", opts.style);
+  const qs = params.toString();
+  try {
+    const r = await call<{ items: DesignFeedItemDTO[] }>(
+      `/dizajn${qs ? `?${qs}` : ""}`,
+      { revalidate: 300 },
+    );
+    return r.items.map((item) => ({
+      ...item,
+      resultImageUrl: absolutizeApiUrl(item.resultImageUrl),
+    }));
+  } catch {
+    return [];
+  }
+}
