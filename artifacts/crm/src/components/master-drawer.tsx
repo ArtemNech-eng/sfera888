@@ -205,7 +205,7 @@ export interface DrawerMaster {
 }
 
 interface MasterTask { id: number; masterId: number; text: string; dueAt: string | null; isCompleted: boolean; createdBy: string | null; createdAt: string; }
-interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; leadId: number | null; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; orderAmount: number | null; commission: number | null; paymentStatus: string | null; remainingCommission: number | null; }
+interface HistoryOrder { id: number; status: string; serviceType: string; district: string; city: string; leadId: number | null; clientName: string | null; clientPhone: string | null; scheduledAt: string | null; completedAt: string | null; createdAt: string; orderAmount: number | null; commission: number | null; paymentStatus: string | null; remainingCommission: number | null; proposedAmount: number | null; }
 interface ChatMessage { id: number; text: string; photoUrl: string | null; fromMaster: boolean; senderName: string | null; isRead: boolean; createdAt: string; }
 interface PendingTx { id: number; orderId: number; orderAmount: number; commission: number; prepaymentDeducted?: number; netPayable?: number; }
 interface MasterReview { id: number; masterId: number; orderId: number | null; sentiment: string; text: string; createdBy: string | null; createdAt: string; }
@@ -1067,6 +1067,10 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
 
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
+  // Inline amount edit / complete / confirm-proposed actions on orders tab
+  const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
+  const [orderAmountInput, setOrderAmountInput] = useState<string>("");
+  const [savingOrderId, setSavingOrderId] = useState<number | null>(null);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
@@ -1264,6 +1268,7 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
     setPwaPassword("");
     setTab("profile");
     setOrders([]); setOrdersLoaded(false);
+    setEditingOrderId(null); setOrderAmountInput(""); setSavingOrderId(null);
     setChatMessages([]); setChatLoaded(false); setPendingTxs([]);
     setReviews([]); setReviewsLoaded(false); setAiRecommendation(null);
     setReviewText(""); setReviewSentiment("positive");
@@ -1299,6 +1304,77 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
       setChatLoaded(true);
       await fetch(`/api/master-chat/${master.id}/read`, { method: "PATCH" });
     }
+  };
+
+  // ── Order amount / completion actions (orders tab) ────────────────────────
+  // Backend (PATCH /api/orders/:id) auto-recalculates commission from orderAmount
+  // and syncs transactions table. We just send the body and reload.
+  const reloadOrders = async () => {
+    const r = await fetch(`/api/masters/${master.id}/orders`, { credentials: "include" });
+    if (r.ok) {
+      const d = await r.json();
+      setOrders(Array.isArray(d) ? d : []);
+    }
+  };
+
+  const patchOrder = async (orderId: number, body: Record<string, any>): Promise<boolean> => {
+    setSavingOrderId(orderId);
+    try {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(`Не удалось обновить заказ: ${err?.error ?? r.statusText}`);
+        return false;
+      }
+      await reloadOrders();
+      return true;
+    } catch (e: any) {
+      alert(`Ошибка сети: ${e?.message ?? "неизвестная"}`);
+      return false;
+    } finally {
+      setSavingOrderId(null);
+    }
+  };
+
+  const saveOrderAmount = async (orderId: number, raw: string) => {
+    const amount = Number(raw.replace(/\s/g, "").replace(",", "."));
+    if (!Number.isFinite(amount) || amount < 0) {
+      alert("Некорректная сумма");
+      return;
+    }
+    const ok = await patchOrder(orderId, { orderAmount: amount });
+    if (ok) {
+      setEditingOrderId(null);
+      setOrderAmountInput("");
+    }
+  };
+
+  const completeOrder = async (o: HistoryOrder) => {
+    let amount = o.orderAmount && o.orderAmount > 0 ? o.orderAmount : null;
+    if (amount === null) {
+      const input = window.prompt(`Завершение заказа #${o.id}\n\nВведите итоговую сумму (₽):`);
+      if (!input) return;
+      const parsed = Number(input.replace(/\s/g, "").replace(",", "."));
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        alert("Некорректная сумма");
+        return;
+      }
+      amount = parsed;
+    } else {
+      if (!window.confirm(`Завершить заказ #${o.id} на сумму ${amount.toLocaleString("ru-RU")} ₽?\nКомиссия пересчитается автоматически.`)) return;
+    }
+    await patchOrder(o.id, { orderAmount: amount, status: "completed" });
+  };
+
+  const confirmProposed = async (o: HistoryOrder) => {
+    if (!o.proposedAmount) return;
+    if (!window.confirm(`Подтвердить сумму ${o.proposedAmount.toLocaleString("ru-RU")} ₽ для заказа #${o.id}?\nКомиссия пересчитается автоматически, мастер получит уведомление.`)) return;
+    await patchOrder(o.id, { acceptProposed: true });
   };
 
   const confirmPayment = async (txId: number) => {
@@ -2599,20 +2675,102 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                       )}
                     </div>
                   )}
-                  {/* Financial data */}
-                  {o.orderAmount != null && (
-                    <div className="mt-2 flex items-center gap-3 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100">
-                      <div className="text-[11px]">
-                        <span className="text-gray-400">Сумма: </span>
-                        <span className="font-semibold text-gray-700">{o.orderAmount.toLocaleString("ru-RU")} ₽</span>
-                      </div>
-                      {o.commission != null && (
-                        <>
+                  {/* Financial data — context-aware: edit / complete / confirm-proposed */}
+                  {(() => {
+                    const ACTIVE = ["master_assigned", "in_progress", "on_site", "awaiting_estimate"];
+                    const isActive = ACTIVE.includes(o.status);
+                    const hasConfirmedAmount = o.orderAmount != null && o.orderAmount > 0;
+                    const isCompletedAwaitingConfirm =
+                      o.status === "completed" && !hasConfirmedAmount && o.proposedAmount != null && o.proposedAmount > 0;
+                    const isEditing = editingOrderId === o.id;
+                    const isSaving = savingOrderId === o.id;
+                    const showConfirmedBlock = hasConfirmedAmount && o.commission != null && !isEditing;
+
+                    // Inline edit form (active with non-zero amount, OR explicit edit click)
+                    if (isEditing) {
+                      return (
+                        <div className="mt-2 flex items-center gap-2 bg-white rounded-lg px-2.5 py-2 border border-blue-200">
+                          <span className="text-[11px] text-gray-500">Сумма:</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            autoFocus
+                            value={orderAmountInput}
+                            onChange={(e) => setOrderAmountInput(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); saveOrderAmount(o.id, orderAmountInput); }
+                              if (e.key === "Escape") { e.preventDefault(); setEditingOrderId(null); setOrderAmountInput(""); }
+                            }}
+                            disabled={isSaving}
+                            placeholder="0"
+                            className="w-24 text-[11px] border border-gray-200 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-blue-100 disabled:opacity-50"
+                          />
+                          <span className="text-[11px] text-gray-400">₽</span>
+                          <span className="text-[10px] text-gray-300 italic">комиссия пересчитается</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); saveOrderAmount(o.id, orderAmountInput); }}
+                            disabled={isSaving || !orderAmountInput.trim()}
+                            className="ml-auto px-2 py-1 bg-blue-500 text-white rounded text-[10px] font-semibold hover:bg-blue-600 disabled:opacity-40"
+                          >
+                            {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Сохранить"}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingOrderId(null); setOrderAmountInput(""); }}
+                            disabled={isSaving}
+                            className="px-2 py-1 border border-gray-200 text-gray-500 rounded text-[10px] hover:bg-gray-50 disabled:opacity-40"
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // State B: master pressed "Завершить" in PWA, operator must confirm proposed amount
+                    if (isCompletedAwaitingConfirm) {
+                      return (
+                        <div className="mt-2 flex items-center gap-2 bg-amber-50 rounded-lg px-2.5 py-2 border border-amber-200 flex-wrap">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                          <div className="text-[11px]">
+                            <span className="text-amber-700">Мастер предложил: </span>
+                            <span className="font-bold text-amber-900">{o.proposedAmount!.toLocaleString("ru-RU")} ₽</span>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); confirmProposed(o); }}
+                            disabled={isSaving}
+                            className="ml-auto px-2.5 py-1 bg-emerald-500 text-white rounded text-[10px] font-semibold hover:bg-emerald-600 disabled:opacity-40 flex items-center gap-1"
+                          >
+                            {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            Подтвердить
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingOrderId(o.id);
+                              setOrderAmountInput(String(o.proposedAmount ?? ""));
+                            }}
+                            disabled={isSaving}
+                            className="px-2.5 py-1 border border-amber-300 text-amber-700 rounded text-[10px] font-medium hover:bg-amber-100 disabled:opacity-40"
+                          >
+                            Изменить
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // State C: confirmed (existing read-only display)
+                    if (showConfirmedBlock) {
+                      return (
+                        <div className="mt-2 flex items-center gap-3 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100 flex-wrap">
+                          <div className="text-[11px]">
+                            <span className="text-gray-400">Сумма: </span>
+                            <span className="font-semibold text-gray-700">{o.orderAmount!.toLocaleString("ru-RU")} ₽</span>
+                          </div>
                           <div className="w-px h-3 bg-gray-200" />
                           <div className="text-[11px]">
                             <span className="text-gray-400">Комиссия: </span>
                             <span className={`font-semibold ${o.paymentStatus === "paid" ? "text-emerald-600" : "text-violet-600"}`}>
-                              {o.commission.toLocaleString("ru-RU")} ₽
+                              {o.commission!.toLocaleString("ru-RU")} ₽
                             </span>
                           </div>
                           {o.paymentStatus === "paid" && (
@@ -2635,7 +2793,21 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                               </div>
                             </>
                           )}
-                          {user?.role === "admin" && o.commission != null && (
+                          {/* Operators can still adjust amount on completed-but-unpaid orders */}
+                          {o.paymentStatus !== "paid" && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingOrderId(o.id);
+                                setOrderAmountInput(String(o.orderAmount ?? ""));
+                              }}
+                              className="ml-auto text-[10px] text-blue-500 hover:text-blue-700 underline font-medium"
+                              title="Изменить сумму (комиссия пересчитается)"
+                            >
+                              Изменить
+                            </button>
+                          )}
+                          {user?.role === "admin" && (
                             <button
                               onClick={async (e) => {
                                 e.stopPropagation();
@@ -2652,16 +2824,75 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
                                   alert("Ошибка обновления комиссии");
                                 }
                               }}
-                              className="ml-auto text-[9px] text-blue-500 hover:text-blue-700 underline"
+                              className="text-[9px] text-gray-400 hover:text-blue-700 underline"
                               title="Пересчитать комиссию от суммы сметы"
                             >
-                              Исправить
+                              Пересчитать
                             </button>
                           )}
-                        </>
-                      )}
-                    </div>
-                  )}
+                        </div>
+                      );
+                    }
+
+                    // State A: active order — editable amount + complete button
+                    if (isActive) {
+                      return (
+                        <div className="mt-2 flex items-center gap-2 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100 flex-wrap">
+                          <div className="text-[11px]">
+                            <span className="text-gray-400">Сумма: </span>
+                            <span className="font-semibold text-gray-700">
+                              {hasConfirmedAmount ? `${o.orderAmount!.toLocaleString("ru-RU")} ₽` : "—"}
+                            </span>
+                          </div>
+                          {hasConfirmedAmount && o.commission != null && (
+                            <>
+                              <div className="w-px h-3 bg-gray-200" />
+                              <div className="text-[11px]">
+                                <span className="text-gray-400">Комиссия: </span>
+                                <span className="font-semibold text-violet-600">
+                                  {o.commission.toLocaleString("ru-RU")} ₽
+                                </span>
+                              </div>
+                            </>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingOrderId(o.id);
+                              setOrderAmountInput(o.orderAmount && o.orderAmount > 0 ? String(o.orderAmount) : "");
+                            }}
+                            className="ml-auto text-[10px] text-blue-500 hover:text-blue-700 underline font-medium"
+                            title="Изменить сумму (комиссия пересчитается автоматически)"
+                          >
+                            {hasConfirmedAmount ? "Изменить" : "Указать сумму"}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); completeOrder(o); }}
+                            disabled={isSaving}
+                            className="px-2.5 py-1 bg-emerald-500 text-white rounded text-[10px] font-semibold hover:bg-emerald-600 disabled:opacity-40 flex items-center gap-1"
+                            title="Перевести заказ в статус «Завершён»"
+                          >
+                            {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                            Завершить
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // State D: cancelled / other — no financial controls (display amount if any)
+                    if (hasConfirmedAmount && o.commission != null) {
+                      return (
+                        <div className="mt-2 flex items-center gap-3 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100 opacity-70">
+                          <div className="text-[11px]">
+                            <span className="text-gray-400">Сумма: </span>
+                            <span className="font-medium text-gray-500">{o.orderAmount!.toLocaleString("ru-RU")} ₽</span>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
                   <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-300">
                     {o.scheduledAt && <span><Calendar className="w-3 h-3 inline mr-0.5" />{dateShort(o.scheduledAt)}</span>}
                     <span>{timeAgo(o.createdAt)}</span>

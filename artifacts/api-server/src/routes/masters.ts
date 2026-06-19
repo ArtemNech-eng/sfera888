@@ -718,6 +718,8 @@ router.get("/:id/orders", allMasterRoles, async (req, res) => {
       commission: tx ? Number(tx.commission) : null,
       remainingCommission: remainingCommission > 0 ? remainingCommission : null,
       paymentStatus: tx?.paymentStatus ?? null,
+      // Master-proposed amount (set when master pressed "Завершить" in PWA before operator confirmed)
+      proposedAmount: o.proposedAmount ? Number(o.proposedAmount) : null,
     };
   }));
 });
