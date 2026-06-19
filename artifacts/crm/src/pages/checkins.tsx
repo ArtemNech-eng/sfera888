@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,8 +12,9 @@ import {
   CheckCircle2, XCircle, Clock, RefreshCw, ChevronLeft, ChevronRight,
   Send, Users, MapPin, BotMessageSquare, AlarmClock, Save, Bell,
   MessageSquare, ChevronDown, ChevronUp, Download, Flame, Filter,
-  AlertTriangle, TrendingUp, TrendingDown, Minus, BarChart2,
+  AlertTriangle, TrendingUp, TrendingDown, Minus, BarChart2, Loader2,
 } from "lucide-react";
+import { MasterDrawer, type DrawerMaster, type DrawerColumn } from "@/components/master-drawer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -253,11 +254,54 @@ function CheckinsContent() {
   const [editTime, setEditTime] = useState<string | null>(null);
   const [editReminderTime, setEditReminderTime] = useState<string | null>(null);
   const [localReminderEnabled, setLocalReminderEnabled] = useState<boolean | null>(null);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [cityFilter, setCityFilter] = useState<string>("all");
   const [showChart, setShowChart] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [rowLimit, setRowLimit] = useState<number | null>(10);
+  // Master card drawer (opened on row click — shows phone, contact info, full history)
+  const [drawerMaster, setDrawerMaster] = useState<DrawerMaster | null>(null);
+  const [loadingMasterId, setLoadingMasterId] = useState<number | null>(null);
+  const [voronkaColumns, setVoronkaColumns] = useState<DrawerColumn[]>([]);
+
+  async function openMasterCard(id: number) {
+    if (loadingMasterId !== null) return; // already fetching
+    setLoadingMasterId(id);
+    try {
+      const r = await fetch(`/api/masters/${id}`, { credentials: "include" });
+      if (!r.ok) {
+        toast({ title: "Не удалось загрузить мастера", variant: "destructive" });
+        return;
+      }
+      const m = await r.json();
+      setDrawerMaster({
+        ...m,
+        // Drawer requires these — fill defaults if API didn't include them
+        avatarUrl: m.avatarUrl ?? m.customAvatarUrl ?? null,
+        activeOrders: m.activeOrders ?? [],
+        specializations: m.specializations ?? [],
+        tags: m.tags ?? [],
+      } as DrawerMaster);
+    } catch {
+      toast({ title: "Ошибка сети", variant: "destructive" });
+    } finally {
+      setLoadingMasterId(null);
+    }
+  }
+
+  // Lazy-load voronka columns when drawer opens (drawer needs them for the kanban-column field)
+  useEffect(() => {
+    if (drawerMaster && voronkaColumns.length === 0) {
+      fetch("/api/voronka/columns", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((cols) => Array.isArray(cols) && setVoronkaColumns(cols))
+        .catch(() => {});
+    }
+  }, [drawerMaster, voronkaColumns.length]);
+
+  function updateDrawerMasterLocal(id: number, data: Partial<DrawerMaster>) {
+    setDrawerMaster((prev) => (prev && prev.id === id ? { ...prev, ...data } : prev));
+    qc.invalidateQueries({ queryKey: ["/api/masters/checkins", date] });
+  }
 
   function toggleSection(label: string) {
     setCollapsedSections((prev) => {
@@ -684,99 +728,62 @@ function CheckinsContent() {
                   <table className="w-full text-sm">
                     <tbody>
                       {visibleItems.map((m, i) => (
-                        <>
-                          <tr
-                            key={m.id}
-                            onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                            className={`${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"} hover:bg-blue-50/30 transition-colors cursor-pointer`}
-                          >
-                            <td className="px-4 py-2.5">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-gray-900">{m.alias}</span>
-                                <StreakBadge streak={m.streak} />
-                                {expandedId === m.id
-                                  ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
-                                  : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-                                }
-                              </div>
-                            </td>
-                            <td className="px-4 py-2.5 text-gray-500">
-                              <span className="flex items-center gap-1">
-                                <MapPin className="w-3 h-3 shrink-0" />{m.city || "—"}
-                              </span>
-                            </td>
-                            <td className="px-4 py-2.5">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <StatusBadge checkin={m.checkin} />
-                                {m.checkin?.isAvailable === false && <ReasonBadge reason={m.checkin.reason} />}
-                              </div>
-                            </td>
-                            <td className="px-4 py-2.5 text-gray-400 text-xs hidden md:table-cell">
-                              {m.checkin?.respondedAt
-                                ? format(new Date(m.checkin.respondedAt), "HH:mm", { locale: ru })
-                                : "—"}
-                            </td>
-                            <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center gap-1.5 justify-end">
-                                {m.checkin?.isAvailable !== true && (
-                                  <button onClick={() => overrideMutation.mutate({ masterId: m.id, isAvailable: true })}
-                                    disabled={overrideMutation.isPending} title="Отметить как Готов"
-                                    className="p-1 rounded-md text-green-600 hover:bg-green-50 transition-colors disabled:opacity-40">
-                                    <CheckCircle2 className="w-4 h-4" />
-                                  </button>
-                                )}
-                                {m.checkin?.isAvailable !== false && (
-                                  <button onClick={() => overrideMutation.mutate({ masterId: m.id, isAvailable: false })}
-                                    disabled={overrideMutation.isPending} title="Отметить как Не готов"
-                                    className="p-1 rounded-md text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40">
-                                    <XCircle className="w-4 h-4" />
-                                  </button>
-                                )}
-                                {(!m.checkin || m.checkin.respondedAt === null) && (
-                                  <button onClick={() => nudgeMutation.mutate(m.id)}
-                                    disabled={nudgeMutation.isPending} title="Напомнить в Max"
-                                    className="p-1 rounded-md text-blue-500 hover:bg-blue-50 transition-colors disabled:opacity-40">
-                                    <MessageSquare className="w-4 h-4" />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-
-                          {/* Expanded history row */}
-                          {expandedId === m.id && (
-                            <tr key={`${m.id}-history`} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
-                              <td colSpan={5} className="px-4 pb-3 pt-0">
-                                <div className="border-t border-gray-100 pt-2.5 space-y-2.5">
-                                  <div className="flex items-center gap-4 text-xs text-gray-600 flex-wrap">
-                                    <span>
-                                      Отвечает <span className="font-semibold text-gray-800">{m.responseRate}%</span> дней
-                                    </span>
-                                    {m.avgResponseTime && (
-                                      <span>
-                                        Обычно в <span className="font-semibold text-gray-800">{m.avgResponseTime}</span>
-                                      </span>
-                                    )}
-                                    {m.streak >= 2 && (
-                                      <span className="flex items-center gap-1 text-orange-600">
-                                        <Flame className="w-3 h-3" /> {m.streak} дней подряд готов
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div>
-                                    <p className="text-xs text-gray-400 font-medium mb-1.5">История последних 14 дней</p>
-                                    <HistoryGrid history={m.history} />
-                                  </div>
-                                  <div className="flex gap-3 text-xs text-gray-400">
-                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-400 inline-block" /> Готов</span>
-                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-300 inline-block" /> Не готов</span>
-                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> Нет ответа</span>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </>
+                        <tr
+                          key={m.id}
+                          onClick={() => openMasterCard(m.id)}
+                          className={`${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"} hover:bg-blue-50/30 transition-colors cursor-pointer`}
+                        >
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-gray-900 hover:text-blue-700 transition-colors">{m.alias}</span>
+                              <StreakBadge streak={m.streak} />
+                              {loadingMasterId === m.id && (
+                                <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-500">
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3 shrink-0" />{m.city || "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <StatusBadge checkin={m.checkin} />
+                              {m.checkin?.isAvailable === false && <ReasonBadge reason={m.checkin.reason} />}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-400 text-xs hidden md:table-cell">
+                            {m.checkin?.respondedAt
+                              ? format(new Date(m.checkin.respondedAt), "HH:mm", { locale: ru })
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-1.5 justify-end">
+                              {m.checkin?.isAvailable !== true && (
+                                <button onClick={() => overrideMutation.mutate({ masterId: m.id, isAvailable: true })}
+                                  disabled={overrideMutation.isPending} title="Отметить как Готов"
+                                  className="p-1 rounded-md text-green-600 hover:bg-green-50 transition-colors disabled:opacity-40">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                </button>
+                              )}
+                              {m.checkin?.isAvailable !== false && (
+                                <button onClick={() => overrideMutation.mutate({ masterId: m.id, isAvailable: false })}
+                                  disabled={overrideMutation.isPending} title="Отметить как Не готов"
+                                  className="p-1 rounded-md text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40">
+                                  <XCircle className="w-4 h-4" />
+                                </button>
+                              )}
+                              {(!m.checkin || m.checkin.respondedAt === null) && (
+                                <button onClick={() => nudgeMutation.mutate(m.id)}
+                                  disabled={nudgeMutation.isPending} title="Напомнить в Max"
+                                  className="p-1 rounded-md text-blue-500 hover:bg-blue-50 transition-colors disabled:opacity-40">
+                                  <MessageSquare className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>
@@ -795,6 +802,16 @@ function CheckinsContent() {
           );
           })}
         </div>
+      )}
+
+      {/* Master card drawer — opens on row click; shows phone, contact, full history, etc. */}
+      {drawerMaster && (
+        <MasterDrawer
+          master={drawerMaster}
+          columns={voronkaColumns}
+          onClose={() => setDrawerMaster(null)}
+          onMasterUpdate={updateDrawerMasterLocal}
+        />
       )}
     </div>
   );
