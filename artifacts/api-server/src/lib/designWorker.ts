@@ -27,6 +27,7 @@ import { objectStorageClient, signObjectURL } from "./objectStorage.js";
 import { falGenerate, falGenerateText, downloadImage } from "./falAi.js";
 import { generateDesignContent } from "./designContent.js";
 import { extractPalette } from "./colorExtraction.js";
+import { pingIndexNow } from "./indexNow.js";
 
 const TICK_INTERVAL_MS = 5000;
 const STUCK_TIMEOUT_MIN = 10;
@@ -101,10 +102,35 @@ async function tick(): Promise<void> {
 }
 
 /**
- * Промпты для четырёх view-ракурсов. Все они используют ОДНО и то же
- * входное фото, но описывают разные section-фокусы. Фактически — четыре
- * стилистические вариации одной комнаты с разными точками зрения.
+ * Ping IndexNow с URL'ами свеже-опубликованного дизайна. Вызывается
+ * fire-and-forget после UPDATE status='completed'. Мгновенное уведомление
+ * Yandex/Bing — индексируется за минуты вместо недель sitemap-crawl'a.
+ *
+ * Submitted URLs:
+ *   • /dizajn/{slug} — сама страница дизайна
+ *   • /dizajn/{room}-{style} — aggregate landing (на случай если новый
+ *     дизайн добавил свежий контент в aggregate-страницу)
  */
+async function pingForDesign(slug: string, room: string, style: string): Promise<void> {
+  const roomSlug = room.replace(/_/g, "-");
+  const urls = [
+    `/dizajn/${slug}`,
+    `/dizajn/${roomSlug}-${style}`,
+    `/dizajn/${roomSlug}`,
+    `/dizajn/${style}`,
+  ];
+  try {
+    const sent = await pingIndexNow(urls);
+    if (sent > 0) {
+      console.log(`[designWorker] IndexNow pinged ${sent} URLs for design ${slug}`);
+    }
+  } catch (e) {
+    console.error("[designWorker] IndexNow ping failed:", e instanceof Error ? e.message : e);
+    // Non-fatal — design still marked completed.
+  }
+}
+
+
 function buildViewPrompts(room: string, style: string, area: number | null): Array<{
   view: string;
   prompt: string;
@@ -271,6 +297,9 @@ async function processDesign(designId: number): Promise<void> {
       })
       .where(eq(designsTable.id, design.id));
 
+    // IndexNow ping fire-and-forget — мгновенное уведомление Yandex/Bing.
+    void pingForDesign(design.slug ?? "", design.roomType, design.style);
+
     return; // text2img path complete
   }
 
@@ -390,4 +419,7 @@ async function processDesign(designId: number): Promise<void> {
       updatedAt: new Date(),
     })
     .where(eq(designsTable.id, design.id));
+
+  // 6. IndexNow ping fire-and-forget — Yandex/Bing индексируют за минуты.
+  void pingForDesign(design.slug ?? "", design.roomType, design.style);
 }
