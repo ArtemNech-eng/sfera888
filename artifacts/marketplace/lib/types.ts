@@ -390,6 +390,7 @@ export interface DesignFullDTO {
   images: DesignImageDTO[];
   viewCount: number;
   saveCount: number;
+  isSavedByCurrentUser: boolean;
   /** 0-100, оценка прогресса генерации (для UI прогресс-бара). */
   progress: number;
   errorMessage: string | null;

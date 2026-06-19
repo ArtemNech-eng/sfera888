@@ -13,6 +13,8 @@ import type {
   RabotyListResponse,
   RabotyDetailResponse,
   SavedRabotyItem,
+  DesignFullDTO,
+  DesignFeedItemDTO,
 } from "./types";
 
 /**
@@ -358,12 +360,20 @@ export async function fetchMarketStats(input: {
 }
 
 /**
- * Cases saved by the current anonymous visitor (plan §22 Iter 4).
- * Used by `/izbrannoe` server component. Per-visitor data — never cache.
+ * Cases + AI-designs saved by the current anonymous visitor (plan §22 Iter 4
+ * + AI-designer Iter 3). Used by `/izbrannoe` server component. Per-visitor
+ * data — never cache.
  */
-export async function fetchSaves(anonId: string): Promise<SavedRabotyItem[]> {
+export async function fetchSaves(anonId: string): Promise<{
+  cases: SavedRabotyItem[];
+  designs: DesignFeedItemDTO[];
+}> {
   try {
-    const res = await call<{ items: SavedRabotyItem[]; total: number }>(
+    const res = await call<{
+      items: SavedRabotyItem[];
+      designs: DesignFeedItemDTO[];
+      total: number;
+    }>(
       `/saves?anonId=${encodeURIComponent(anonId)}`,
       { noStore: true },
     );
@@ -372,27 +382,33 @@ export async function fetchSaves(anonId: string): Promise<SavedRabotyItem[]> {
       item.afterPhotos = (item.afterPhotos ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
       item.master.avatarUrl = absolutizeApiUrl(item.master.avatarUrl);
     }
-    return res.items;
+    const designs = (res.designs ?? []).map((d) => ({
+      ...d,
+      resultImageUrl: absolutizeApiUrl(d.resultImageUrl),
+    }));
+    return { cases: res.items, designs };
   } catch (e) {
-    if (e instanceof MarketplaceApiError && e.status === 400) return [];
+    if (e instanceof MarketplaceApiError && e.status === 400) return { cases: [], designs: [] };
     throw e;
   }
 }
-
-
 // ── AI-designer API ─────────────────────────────────────────────────────────
-
-import type { DesignFullDTO, DesignFeedItemDTO } from "./types";
 
 /**
  * Получить полный дизайн-проект по slug. На client-side используется через
  * Next route handler `/api/dizajn/[slug]`, который проксирует сюда. На SSR
  * используется напрямую (server component).
+ *
+ * Опциональный `anonId` — передаётся как query, api-server возвращает
+ * `isSavedByCurrentUser: boolean` для рендера save-state без extra fetch.
  */
-export async function fetchDesign(slug: string): Promise<DesignFullDTO | null> {
+export async function fetchDesign(slug: string, anonId: string | null = null): Promise<DesignFullDTO | null> {
+  const params = new URLSearchParams();
+  if (anonId) params.set("anonId", anonId);
+  const qs = params.toString();
   try {
     const r = await call<{ ok: true; design: DesignFullDTO }>(
-      `/dizajn/${encodeURIComponent(slug)}`,
+      `/dizajn/${encodeURIComponent(slug)}${qs ? `?${qs}` : ""}`,
       { noStore: true }, // status может меняться (generating → completed), нельзя кэшировать
     );
     // Абсолютизируем URL'ы (api-server-relative → absolute https://sfera-master.ru/...).

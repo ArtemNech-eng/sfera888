@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import { fetchDesign, fetchRecentDesigns } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
@@ -222,7 +223,9 @@ export default async function DesignSlugPage(
   if (!parsed) notFound();
 
   if (parsed.kind === "design" && parsed.slug) {
-    const design = await fetchDesign(parsed.slug);
+    const cookieStore = await cookies();
+    const anonId = cookieStore.get("kiro_anon_id")?.value ?? null;
+    const design = await fetchDesign(parsed.slug, anonId);
     if (!design) notFound();
 
     const jsonLd = design.status === "completed" && design.resultImageUrl

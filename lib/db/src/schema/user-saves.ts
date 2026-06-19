@@ -1,26 +1,27 @@
-import { pgTable, bigserial, integer, uuid, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, bigserial, integer, uuid, timestamp, index, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { masterPortfolioTable } from "./master-portfolio";
+import { designsTable } from "./designs";
 
 /**
- * user_saves — анонимные/привязанные сохранения кейсов из марcкетплейса.
+ * user_saves — анонимные/привязанные сохранения объектов из marketplace'а.
  *
- * Plan §22 Iteration 4. Pinterest-style «save», работает без логина:
+ * Plan §22 Iteration 4 + AI-designer Iter 3. Pinterest-style «save» работает
+ * без логина:
  *   • До login — `anon_id` (UUID v4 в HTTP-only cookie `kiro_anon_id`)
  *   • После login клиента (когда подключим client-accounts) — `user_id`
- *   • Auto-claim flow на login: UPDATE user_saves SET user_id = X
- *     WHERE anon_id = current_anon_id (один раз)
+ *
+ * Polymorphic targets: либо `portfolio_id` (мастерский кейс из master_portfolio),
+ * либо `ai_design_id` (AI-сгенерированный дизайн из designs). CHECK-инвариант
+ * гарантирует что задан **ровно один** target (XOR).
  *
  * Хотя бы один из `anon_id` / `user_id` обязателен — но проверка на уровне
- * приложения, чтобы не блокировать INSERT'ы при race conditions. CHECK
- * constraint можно добавить отдельной миграцией позже, когда стабилизируем.
+ * приложения, чтобы не блокировать INSERT'ы при race conditions.
  *
- * Уникальность: один пользователь не может сохранить один кейс дважды.
- * Реализована через partial unique indexes (один по anon_id, другой по
- * user_id) — это надёжнее `NULLS NOT DISTINCT` (PG 15+) для миграций
- * существующих БД.
+ * Уникальность: один пользователь не может сохранить один объект дважды.
+ * Реализована через partial unique indexes по target_type × owner_type.
  *
- * `save_count` на `master_portfolio` инкрементится приложением в одной
+ * Counter (`save_count`) на target таблице инкрементится приложением в одной
  * транзакции с INSERT'ом — без триггеров, чтобы не привносить новой
  * зависимости в схему.
  */
@@ -30,26 +31,46 @@ export const userSavesTable = pgTable(
     id: bigserial("id", { mode: "number" }).primaryKey(),
     /** Cookie-id для анонимных пользователей. UUID v4. */
     anonId: uuid("anon_id"),
-    /** Зарезервировано под client-accounts (когда подключим). FK добавим тогда же. */
+    /** Зарезервировано под client-accounts. */
     userId: integer("user_id"),
-    portfolioId: integer("portfolio_id")
-      .notNull()
-      .references(() => masterPortfolioTable.id, { onDelete: "cascade" }),
+    /** Target #1: мастерский кейс. Либо это либо `aiDesignId` (XOR). */
+    portfolioId: integer("portfolio_id").references(() => masterPortfolioTable.id, {
+      onDelete: "cascade",
+    }),
+    /** Target #2: AI-сгенерированный дизайн. */
+    aiDesignId: integer("ai_design_id").references(() => designsTable.id, {
+      onDelete: "cascade",
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({
-    // Lookup-индексы на оба идентификатора (для GET /saves).
+    // Lookup-индексы.
     anonIdIdx: index("user_saves_anon_id_idx").on(t.anonId),
     userIdIdx: index("user_saves_user_id_idx").on(t.userId),
     portfolioIdIdx: index("user_saves_portfolio_id_idx").on(t.portfolioId),
-    // Уникальность сохранения. Partial unique indexes — каждый вариант
-    // владельца уникален в своём измерении.
+    aiDesignIdIdx: index("user_saves_ai_design_id_idx")
+      .on(t.aiDesignId)
+      .where(sql`${t.aiDesignId} IS NOT NULL`),
+
+    // Уникальность сохранения per-owner × per-target.
     anonPortfolioUniq: uniqueIndex("user_saves_anon_portfolio_uniq")
       .on(t.anonId, t.portfolioId)
       .where(sql`${t.anonId} IS NOT NULL`),
     userPortfolioUniq: uniqueIndex("user_saves_user_portfolio_uniq")
       .on(t.userId, t.portfolioId)
       .where(sql`${t.userId} IS NOT NULL`),
+    anonDesignUniq: uniqueIndex("user_saves_anon_ai_design_uniq")
+      .on(t.anonId, t.aiDesignId)
+      .where(sql`${t.anonId} IS NOT NULL AND ${t.aiDesignId} IS NOT NULL`),
+    userDesignUniq: uniqueIndex("user_saves_user_ai_design_uniq")
+      .on(t.userId, t.aiDesignId)
+      .where(sql`${t.userId} IS NOT NULL AND ${t.aiDesignId} IS NOT NULL`),
+
+    // XOR target: ровно один из (portfolio_id, ai_design_id) задан.
+    targetRequired: check(
+      "user_saves_target_required",
+      sql`(${t.portfolioId} IS NOT NULL AND ${t.aiDesignId} IS NULL) OR (${t.portfolioId} IS NULL AND ${t.aiDesignId} IS NOT NULL)`,
+    ),
   }),
 );
 

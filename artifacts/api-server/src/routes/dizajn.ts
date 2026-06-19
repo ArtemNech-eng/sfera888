@@ -22,6 +22,8 @@ import {
   designsTable,
   designImagesTable,
   citiesTable,
+  userSavesTable,
+  leadsTable,
 } from "@workspace/db";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -263,6 +265,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
     res.status(400).json({ ok: false, error: "missing_slug" });
     return;
   }
+  const anonIdParam = typeof req.query.anonId === "string" && UUID_RE.test(req.query.anonId) ? req.query.anonId : null;
 
   try {
     const [row] = await db
@@ -293,6 +296,22 @@ router.get("/:slug", async (req: Request, res: Response) => {
         .set({ viewCount: sql`${designsTable.viewCount} + 1` })
         .where(eq(designsTable.id, row.design.id))
         .catch(() => undefined);
+    }
+
+    // Resolve isSavedByCurrentUser if anonId provided.
+    let isSavedByCurrentUser = false;
+    if (anonIdParam && row.design.status === "completed") {
+      const [save] = await db
+        .select({ id: userSavesTable.id })
+        .from(userSavesTable)
+        .where(
+          and(
+            eq(userSavesTable.anonId, anonIdParam),
+            eq(userSavesTable.aiDesignId, row.design.id),
+          ),
+        )
+        .limit(1);
+      isSavedByCurrentUser = !!save;
     }
 
     // Estimate progress на основе времени с createdAt (для UI прогресс-бара).
@@ -336,6 +355,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
         })),
         viewCount: row.design.viewCount,
         saveCount: row.design.saveCount,
+        isSavedByCurrentUser,
         progress,
         errorMessage: row.design.errorMessage,
         createdAt: row.design.createdAt,
@@ -390,10 +410,203 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-// ── GET /img/:type/:filename — stream R2 image (public, cached) ────────────
+// ── POST /:slug/save — toggle save (anon-id) ───────────────────────────────
 //
-// Custom proxy для AI-design изображений. Не зависит от PRIVATE_OBJECT_DIR
-// или public ACL — читает напрямую из bucket по type+filename.
+// Mirror /raboty/:slug/save logic (marketplace.ts). Polymorphic user_saves
+// разруливает target_type через ai_design_id колонку.
+
+const PG_UNIQUE_VIOLATION = "23505";
+
+router.post("/:slug/save", async (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+  const slug = typeof req.params.slug === "string" ? req.params.slug : "";
+  if (!slug) {
+    res.status(404).json({ ok: false, error: "not_found" });
+    return;
+  }
+
+  const bodyAnonId = (req.body as { anonId?: unknown })?.anonId;
+  if (typeof bodyAnonId !== "string" || !UUID_RE.test(bodyAnonId)) {
+    res.status(400).json({ ok: false, error: "missing_anon_id" });
+    return;
+  }
+  const anonId = bodyAnonId;
+
+  try {
+    const [design] = await db
+      .select({ id: designsTable.id })
+      .from(designsTable)
+      .where(
+        and(
+          eq(designsTable.slug, slug),
+          eq(designsTable.isPublic, true),
+          eq(designsTable.status, "completed"),
+        ),
+      )
+      .limit(1);
+    if (!design) {
+      res.status(404).json({ ok: false, error: "not_found" });
+      return;
+    }
+
+    const result = await db.transaction(async (tx): Promise<{ saved: boolean; count: number }> => {
+      try {
+        await tx.insert(userSavesTable).values({ anonId, aiDesignId: design.id });
+        const [updated] = await tx
+          .update(designsTable)
+          .set({ saveCount: sql`${designsTable.saveCount} + 1` })
+          .where(eq(designsTable.id, design.id))
+          .returning({ count: designsTable.saveCount });
+        return { saved: true, count: Number(updated?.count ?? 0) };
+      } catch (err: unknown) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code !== PG_UNIQUE_VIOLATION) throw err;
+        await tx
+          .delete(userSavesTable)
+          .where(
+            and(
+              eq(userSavesTable.anonId, anonId),
+              eq(userSavesTable.aiDesignId, design.id),
+            ),
+          );
+        const [updated] = await tx
+          .update(designsTable)
+          .set({ saveCount: sql`GREATEST(${designsTable.saveCount} - 1, 0)` })
+          .where(eq(designsTable.id, design.id))
+          .returning({ count: designsTable.saveCount });
+        return { saved: false, count: Number(updated?.count ?? 0) };
+      }
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (e: unknown) {
+    console.error("[dizajn/:slug/save]", e instanceof Error ? e.message : e);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+// ── POST /:slug/lead — create lead with prefill from design ────────────────
+//
+// «Хочу такой же» CTA на странице дизайна. Создаёт лид связанный с
+// `designs.lead_id` для будущей аналитики conversion.
+
+router.post("/:slug/lead", async (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+  const slug = typeof req.params.slug === "string" ? req.params.slug : "";
+  if (!slug) {
+    res.status(404).json({ ok: false, error: "not_found" });
+    return;
+  }
+
+  const body = req.body as {
+    clientName?: string;
+    clientPhone?: string;
+    comment?: string;
+  };
+  const clientName = (body.clientName ?? "").trim();
+  const clientPhone = (body.clientPhone ?? "").trim();
+  const comment = (body.comment ?? "").trim();
+
+  if (clientName.length < 2 || clientPhone.length < 10) {
+    res.status(400).json({ ok: false, error: "validation_error" });
+    return;
+  }
+
+  try {
+    // 1. Resolve design.
+    const [row] = await db
+      .select({
+        design: designsTable,
+        city: { name: citiesTable.name, slug: citiesTable.slug },
+      })
+      .from(designsTable)
+      .leftJoin(citiesTable, eq(designsTable.cityId, citiesTable.id))
+      .where(
+        and(
+          eq(designsTable.slug, slug),
+          eq(designsTable.isPublic, true),
+          eq(designsTable.status, "completed"),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      res.status(404).json({ ok: false, error: "not_found" });
+      return;
+    }
+
+    // 2. Build lead context.
+    const designUrl = `/dizajn/${slug}`;
+    const styleLabel = STYLE_LABELS_RU[row.design.style] ?? row.design.style;
+    const roomLabel = ROOM_LABELS_RU[row.design.roomType] ?? row.design.roomType;
+    const fullComment = [
+      `AI-дизайн: ${row.design.h1 ?? `${roomLabel} в стиле ${styleLabel}`}`,
+      `URL: ${designUrl}`,
+      comment ? `Комментарий клиента: ${comment}` : null,
+    ]
+      .filter((x): x is string => Boolean(x))
+      .join("\n");
+
+    // 3. Insert lead. Reuse existing schema fields.
+    const [lead] = await db
+      .insert(leadsTable)
+      .values({
+        clientName,
+        clientPhone,
+        city: row.city?.name ?? "Не указан",
+        district: "",
+        serviceType: `Дизайн ${roomLabel}`,
+        // area NOT NULL — fall back to "0.00" если в дизайне не указана.
+        area: row.design.area ?? "0.00",
+        comment: fullComment,
+        source: "marketplace",
+        sourcePageType: "ai_design",
+        sourcePageUrl: designUrl,
+        citySlug: row.city?.slug ?? null,
+        marketplaceContext: { aiDesignSlug: slug } as Record<string, unknown>,
+        status: "new",
+        designId: row.design.id,
+      })
+      .returning({ id: leadsTable.id });
+
+    if (!lead) {
+      res.status(500).json({ ok: false, error: "insert_failed" });
+      return;
+    }
+
+    // 4. Link lead back to design (if not yet).
+    if (!row.design.leadId) {
+      await db
+        .update(designsTable)
+        .set({ leadId: lead.id, updatedAt: new Date() })
+        .where(eq(designsTable.id, row.design.id));
+    }
+
+    res.json({ ok: true, leadId: lead.id });
+  } catch (e: unknown) {
+    console.error("[dizajn/:slug/lead]", e instanceof Error ? e.message : e);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+const ROOM_LABELS_RU: Record<string, string> = {
+  bathroom: "ванной",
+  kitchen: "кухни",
+  living_room: "гостиной",
+  bedroom: "спальни",
+  hallway: "прихожей",
+  apartment: "квартиры",
+};
+
+const STYLE_LABELS_RU: Record<string, string> = {
+  modern: "современный",
+  scandinavian: "скандинавский",
+  loft: "лофт",
+  minimalism: "минимализм",
+  neoclassic: "неоклассика",
+  japandi: "японди",
+};
+
+// ── GET /img/:type/:filename — stream R2 image (public, cached) ────────────
 
 router.get("/img/:type/:filename", async (req: Request, res: Response) => {
   const type = typeof req.params.type === "string" ? req.params.type : "";

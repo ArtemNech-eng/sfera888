@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { DesignFullDTO } from "../../lib/types";
 import { FloorPlanSVG } from "./FloorPlanSVG";
+import { SaveButton } from "./SaveButton";
+import { DesignLeadForm } from "./DesignLeadForm";
 
 /**
  * Magazine-board layout для готового AI-дизайн-проекта (status='completed').
@@ -62,6 +64,25 @@ export function DesignBoard({ design }: Props) {
           <h1 className="font-display mt-3 max-w-4xl text-3xl text-[var(--color-text)] sm:text-4xl lg:text-[2.75rem]">
             {design.h1 ?? `Дизайн ${roomGen} в стиле ${styleLabel}`}
           </h1>
+
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            <a
+              href="#design-lead"
+              className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
+            >
+              Хочу такой же
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
+            </a>
+            <SaveButton
+              slug={design.slug}
+              initialSaved={design.isSavedByCurrentUser}
+              initialCount={design.saveCount}
+              variant="pill"
+            />
+          </div>
         </div>
       </header>
 
@@ -241,35 +262,38 @@ export function DesignBoard({ design }: Props) {
         </section>
       ) : null}
 
-      {/* ── Master matching CTA ─────────────────────────── */}
-      <section className="bg-[var(--color-background)]">
+      {/* ── Lead form: «Хочу такой же» ─────────────────── */}
+      <section id="design-lead" className="scroll-mt-20 bg-[var(--color-text)]">
         <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-          <div className="rounded-2xl bg-[var(--color-text)] p-8 sm:p-12 lg:p-16">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-primary-ring)]">
-              Хочу такой же
-            </p>
-            <h2 className="font-display mt-4 max-w-3xl text-3xl text-white sm:text-4xl lg:text-5xl">
-              Подберём мастера, который сделает похоже.
-            </h2>
-            <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 sm:text-lg">
-              Оставьте заявку — мы найдём проверенного мастера{design.cityName ? ` в ${design.cityName}` : ""},
-              который работает в стиле {styleLabel.toLowerCase()} и сможет повторить этот проект.
-            </p>
-            <div className="mt-8">
-              <Link
-                href={
-                  design.citySlug
-                    ? `/kompleksnyy-remont/${design.citySlug}`
-                    : `/uslugi`
-                }
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
-              >
-                Найти мастера
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M5 12h14" />
-                  <path d="m12 5 7 7-7 7" />
-                </svg>
-              </Link>
+          <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:gap-16">
+            {/* Left column: pitch */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-primary-ring)]">
+                Хочу такой же
+              </p>
+              <h2 className="font-display mt-4 max-w-3xl text-3xl text-white sm:text-4xl lg:text-5xl">
+                Подберём мастера, который сделает похоже.
+              </h2>
+              <p className="mt-5 max-w-xl text-base leading-relaxed text-white/70 sm:text-lg">
+                Оставьте контакт — мы найдём проверенного мастера{design.cityName ? ` в ${design.cityName}` : ""},
+                который работает в стиле {styleLabel.toLowerCase()} и сможет повторить
+                этот проект.
+              </p>
+              <ul className="mt-7 space-y-2 text-sm text-white/85">
+                <li className="flex items-center gap-2"><Tick /> Без авансов и блокировок счёта</li>
+                <li className="flex items-center gap-2"><Tick /> Договор на каждом заказе</li>
+                <li className="flex items-center gap-2"><Tick /> Оплата после выполнения</li>
+                {design.budget ? (
+                  <li className="flex items-center gap-2"><Tick /> Учтём ваш бюджет до {formatRub(design.budget)} ₽</li>
+                ) : null}
+              </ul>
+            </div>
+
+            {/* Right column: form */}
+            <div>
+              <div className="rounded-2xl border border-white/15 bg-[var(--color-surface)] p-6 shadow-cozy-md sm:p-8">
+                <DesignLeadForm slug={design.slug} />
+              </div>
             </div>
           </div>
         </div>
@@ -329,6 +353,25 @@ function ParamRow({ label, value }: { label: string; value: string }) {
       <dt className="text-[var(--color-muted)]">{label}</dt>
       <dd className="font-semibold text-[var(--color-text)] text-right">{value}</dd>
     </div>
+  );
+}
+
+function Tick() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="text-[var(--color-primary-ring)]"
+      aria-hidden
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
   );
 }
 

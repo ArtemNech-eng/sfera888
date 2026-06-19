@@ -78,6 +78,13 @@
       "when": 1781900000000,
       "tag": "0010_designs_extension",
       "breakpoints": false
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781920000000,
+      "tag": "0011_user_saves_ai_designs",
+      "breakpoints": false
     }
   ]
 }

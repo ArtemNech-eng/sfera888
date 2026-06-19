@@ -28,6 +28,7 @@ import {
   masterReviewsPublicTable,
   ordersTable,
   userSavesTable,
+  designsTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
@@ -1615,40 +1616,65 @@ router.get("/saves", async (req, res) => {
   const anonId = anonIdParam.toLowerCase();
 
   try {
-    const rows = await db
-      .select({
-        portfolio: masterPortfolioTable,
-        service: { name: serviceTypesTable.name, slug: serviceTypesTable.slug },
-        city: { name: citiesTable.name, slug: citiesTable.slug },
-        master: {
-          id: mastersTable.id,
-          slug: mastersTable.slug,
-          alias: mastersTable.alias,
-          publicTitle: mastersTable.publicTitle,
-          avatarUrl: mastersTable.customAvatarUrl,
-          publicRating: mastersTable.publicRating,
-          publicReviewsCount: mastersTable.publicReviewsCount,
-          city: mastersTable.city,
-        },
-        savedAt: userSavesTable.createdAt,
-      })
-      .from(userSavesTable)
-      .innerJoin(masterPortfolioTable, eq(userSavesTable.portfolioId, masterPortfolioTable.id))
-      .innerJoin(mastersTable, eq(masterPortfolioTable.masterId, mastersTable.id))
-      .leftJoin(serviceTypesTable, eq(masterPortfolioTable.serviceTypeId, serviceTypesTable.id))
-      .leftJoin(citiesTable, eq(masterPortfolioTable.cityId, citiesTable.id))
-      .where(and(
-        eq(userSavesTable.anonId, anonId),
-        // Hide unpublished cases — master could have unpublished after the user saved.
-        eq(masterPortfolioTable.isPublished, true),
-        eq(mastersTable.isPublished, true),
-        isNotNull(mastersTable.slug),
-      ))
-      .orderBy(desc(userSavesTable.createdAt))
-      .limit(100);
+    const [portfolioRows, designRows] = await Promise.all([
+      db
+        .select({
+          portfolio: masterPortfolioTable,
+          service: { name: serviceTypesTable.name, slug: serviceTypesTable.slug },
+          city: { name: citiesTable.name, slug: citiesTable.slug },
+          master: {
+            id: mastersTable.id,
+            slug: mastersTable.slug,
+            alias: mastersTable.alias,
+            publicTitle: mastersTable.publicTitle,
+            avatarUrl: mastersTable.customAvatarUrl,
+            publicRating: mastersTable.publicRating,
+            publicReviewsCount: mastersTable.publicReviewsCount,
+            city: mastersTable.city,
+          },
+          savedAt: userSavesTable.createdAt,
+        })
+        .from(userSavesTable)
+        .innerJoin(masterPortfolioTable, eq(userSavesTable.portfolioId, masterPortfolioTable.id))
+        .innerJoin(mastersTable, eq(masterPortfolioTable.masterId, mastersTable.id))
+        .leftJoin(serviceTypesTable, eq(masterPortfolioTable.serviceTypeId, serviceTypesTable.id))
+        .leftJoin(citiesTable, eq(masterPortfolioTable.cityId, citiesTable.id))
+        .where(and(
+          eq(userSavesTable.anonId, anonId),
+          // Hide unpublished cases — master could have unpublished after the user saved.
+          eq(masterPortfolioTable.isPublished, true),
+          eq(mastersTable.isPublished, true),
+          isNotNull(mastersTable.slug),
+        ))
+        .orderBy(desc(userSavesTable.createdAt))
+        .limit(100),
+
+      // AI-designs saves (added in AI-designer Iter 3).
+      db
+        .select({
+          id: designsTable.id,
+          slug: designsTable.slug,
+          roomType: designsTable.roomType,
+          style: designsTable.style,
+          h1: designsTable.h1,
+          resultImageUrl: designsTable.resultImageUrl,
+          viewCount: designsTable.viewCount,
+          saveCount: designsTable.saveCount,
+          savedAt: userSavesTable.createdAt,
+        })
+        .from(userSavesTable)
+        .innerJoin(designsTable, eq(userSavesTable.aiDesignId, designsTable.id))
+        .where(and(
+          eq(userSavesTable.anonId, anonId),
+          eq(designsTable.isPublic, true),
+          eq(designsTable.status, "completed"),
+        ))
+        .orderBy(desc(userSavesTable.createdAt))
+        .limit(100),
+    ]);
 
     res.json({
-      items: rows.map((r) => ({
+      items: portfolioRows.map((r) => ({
         id: r.portfolio.id,
         slug: r.portfolio.slug,
         title: r.portfolio.title,
@@ -1677,7 +1703,8 @@ router.get("/saves", async (req, res) => {
         },
         savedAt: r.savedAt,
       })),
-      total: rows.length,
+      designs: designRows,
+      total: portfolioRows.length + designRows.length,
     });
   } catch (e: unknown) {
     console.error("[marketplace/saves]", e instanceof Error ? e.message : e);
