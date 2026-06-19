@@ -16,6 +16,7 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { randomUUID } from "crypto";
+import { Readable } from "stream";
 import {
   db,
   designsTable,
@@ -23,8 +24,8 @@ import {
   citiesTable,
 } from "@workspace/db";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
-import { objectStorageClient } from "../lib/objectStorage.js";
-import { setObjectAclPolicy } from "../lib/objectAcl.js";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
 import { preprocessUserUpload } from "../lib/falAi.js";
 
 const router = Router();
@@ -180,8 +181,9 @@ router.post("/generate", upload.single("image"), async (req: Request, res: Respo
     // 5. Preprocess user upload
     const processedBuffer = await preprocessUserUpload(req.file.buffer);
 
-    // 6. Upload to R2 (private, anon-scoped). Используем objectStorageClient
+    // 6. Upload to R2 (private). Используем objectStorageClient
     // pattern из master-pwa.ts (DEFAULT_OBJECT_STORAGE_BUCKET_ID + key).
+    // ACL не меняем — read через наш custom proxy endpoint /img/* ниже.
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
     if (!bucketId) {
       res.status(500).json({ ok: false, error: "storage_not_configured" });
@@ -193,23 +195,12 @@ router.post("/generate", upload.single("image"), async (req: Request, res: Respo
       .bucket(bucketId)
       .file(inputKey)
       .save(processedBuffer, { contentType: "image/jpeg" });
-    // Public-readable так чтобы Fal.ai мог скачать.
-    await setObjectAclPolicy(
-      { bucketName: bucketId, objectName: inputKey },
-      { owner: `anon:${anonId}`, visibility: "public" },
-    );
 
-    // URL который Fal.ai будет использовать для скачивания (внешний resolve).
-    // Для R2 нужен PUBLIC_URL — ссылка на cloudflare-public домен.
-    const r2PublicUrl = process.env.R2_PUBLIC_URL?.replace(/\/+$/, "");
-    if (!r2PublicUrl) {
-      res.status(500).json({ ok: false, error: "r2_public_url_not_set" });
-      return;
-    }
-    const inputImageFalUrl = `${r2PublicUrl}/${inputKey}`;
-    // А для собственного storage (показывать пользователю «фото до» в UI) —
-    // через наш storage proxy.
-    const inputImageInternalUrl = `/api/storage/objects/dizajn/uploads/${inputId}.jpg`;
+    // URL который пойдёт worker'у в Fal.ai — генерируется через signed URL
+    // с TTL 10 минут (gen занимает ~30s sync). Worker сам подпишет URL прямо
+    // перед вызовом Fal.ai, тут только сохраняем R2-key.
+    // Internal URL для UI «фото до» — наш custom proxy.
+    const inputImageInternalUrl = `/api/marketplace/dizajn/img/uploads/${inputId}.jpg`;
 
     // 7. INSERT designs row
     const slug = buildSlug(room, style);
@@ -224,11 +215,9 @@ router.post("/generate", upload.single("image"), async (req: Request, res: Respo
         area: areaNum != null ? areaNum.toString() : null,
         budget: budgetNum,
         durationWeeks: durationWeeksNum,
-        // Сохраняем R2 public URL — worker возьмёт его для Fal.ai.
-        // На UI «фото до» рендерится через inputImageInternalUrl (отдельная
-        // колонка не нужна, т.к. /api/storage/objects/dizajn/uploads/X.jpg
-        // вычисляется по slug+id).
-        inputImageUrl: inputImageFalUrl,
+        // Сохраняем R2 key (а не full URL) — worker подписывает signed URL
+        // прямо перед Fal.ai вызовом из этого ключа.
+        inputImageUrl: inputKey,
         status: "generating",
       })
       .returning({ id: designsTable.id, slug: designsTable.slug });
@@ -393,6 +382,50 @@ router.get("/", async (req: Request, res: Response) => {
   } catch (e) {
     console.error("[dizajn/list]", e);
     res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+// ── GET /img/:type/:filename — stream R2 image (public, cached) ────────────
+//
+// Custom proxy для AI-design изображений. Не зависит от PRIVATE_OBJECT_DIR
+// или public ACL — читает напрямую из bucket по type+filename.
+
+router.get("/img/:type/:filename", async (req: Request, res: Response) => {
+  const type = typeof req.params.type === "string" ? req.params.type : "";
+  const filename = typeof req.params.filename === "string" ? req.params.filename : "";
+  if (!["uploads", "results"].includes(type)) {
+    res.status(404).json({ ok: false, error: "invalid_type" });
+    return;
+  }
+  if (!/^[a-zA-Z0-9_\-.]+$/.test(filename)) {
+    res.status(400).json({ ok: false, error: "invalid_filename" });
+    return;
+  }
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) {
+    res.status(500).json({ ok: false, error: "storage_not_configured" });
+    return;
+  }
+  const key = `dizajn/${type}/${filename}`;
+
+  try {
+    const response = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucketId, Key: key }),
+    );
+    res.setHeader("Content-Type", response.ContentType ?? "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    if (response.ContentLength) {
+      res.setHeader("Content-Length", String(response.ContentLength));
+    }
+    if (response.Body) {
+      const nodeStream = Readable.fromWeb(response.Body as ReadableStream<Uint8Array>);
+      nodeStream.pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (e) {
+    console.error("[dizajn/img]", key, e instanceof Error ? e.message : e);
+    res.status(404).json({ ok: false, error: "not_found" });
   }
 });
 

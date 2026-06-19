@@ -22,9 +22,8 @@ import {
   designGenerationsTable,
   citiesTable,
 } from "@workspace/db";
-import { and, eq, lt, sql } from "drizzle-orm";
-import { ObjectStorageService, objectStorageClient } from "./objectStorage.js";
-import { setObjectAclPolicy } from "./objectAcl.js";
+import { and, eq, lt } from "drizzle-orm";
+import { objectStorageClient, signObjectURL } from "./objectStorage.js";
 import { falGenerate, downloadImage } from "./falAi.js";
 import { generateDesignContent } from "./designContent.js";
 import { extractPalette } from "./colorExtraction.js";
@@ -177,6 +176,20 @@ async function processDesign(designId: number): Promise<void> {
     throw new Error("inputImageUrl is missing");
   }
   const areaNum = design.area ? parseFloat(design.area) : null;
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) {
+    throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID is not set");
+  }
+
+  // Подписать URL для Fal.ai — 10 минут TTL, достаточно для sync /run.
+  // design.inputImageUrl содержит R2 key (а не full URL) — см. POST /generate.
+  const inputKey = design.inputImageUrl;
+  const falInputUrl = await signObjectURL({
+    bucketName: bucketId,
+    objectName: inputKey,
+    method: "GET",
+    ttlSec: 600,
+  });
 
   // 2. Параллельно: 4 Fal.ai генерации + 1 GPT call.
   const prompts = buildViewPrompts(design.roomType, design.style, areaNum);
@@ -185,7 +198,7 @@ async function processDesign(designId: number): Promise<void> {
     Promise.all(
       prompts.map((p) =>
         falGenerate({
-          initImageUrl: design.inputImageUrl!,
+          initImageUrl: falInputUrl,
           prompt: p.prompt,
           aspectRatio: p.aspect,
           strength: 0.72,
@@ -203,9 +216,6 @@ async function processDesign(designId: number): Promise<void> {
   ]);
 
   // 3. Скачать каждый результат → загрузить в наш R2 → записать design_images.
-  const objectStorage = new ObjectStorageService();
-  const privateDir = objectStorage.getPrivateObjectDir().replace(/\/+$/, "");
-
   let mainResultPublicUrl: string | null = null;
   let mainImageBuffer: Buffer | null = null;
 
@@ -214,20 +224,14 @@ async function processDesign(designId: number): Promise<void> {
     const buffer = await downloadImage(result.imageUrl);
 
     // Загружаем в R2: dizajn/results/{design_id}_{view}.jpg
-    const objectKey = `${privateDir}/dizajn/results/${design.id}_${result.view}.jpg`;
-    const { bucketName, objectName } = parseR2Path(objectKey);
+    const resultFilename = `${design.id}_${result.view}.jpg`;
     await objectStorageClient
-      .bucket(bucketName)
-      .file(objectName)
+      .bucket(bucketId)
+      .file(`dizajn/results/${resultFilename}`)
       .save(buffer, { contentType: "image/jpeg" });
-    // Публичный ACL — изображения видны без авторизации.
-    await setObjectAclPolicy(
-      { bucketName, objectName },
-      { owner: `design:${design.id}`, visibility: "public" },
-    );
 
-    // Public-resolvable URL через storage proxy (marketplace + api-server).
-    const publicUrl = `/api/storage/objects/dizajn/results/${design.id}_${result.view}.jpg`;
+    // Публичный URL через наш custom proxy.
+    const publicUrl = `/api/marketplace/dizajn/img/results/${resultFilename}`;
 
     // Записываем design_images row.
     await db.insert(designImagesTable).values({
@@ -286,17 +290,4 @@ async function processDesign(designId: number): Promise<void> {
       updatedAt: new Date(),
     })
     .where(eq(designsTable.id, design.id));
-}
-
-/** Парсинг path формата "{bucket}/{object/path}" → bucket + object. */
-function parseR2Path(path: string): { bucketName: string; objectName: string } {
-  const trimmed = path.replace(/^\/+/, "");
-  const parts = trimmed.split("/");
-  if (parts.length < 2) {
-    throw new Error(`Invalid R2 path: ${path}`);
-  }
-  return {
-    bucketName: parts[0]!,
-    objectName: parts.slice(1).join("/"),
-  };
 }

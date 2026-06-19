@@ -98,14 +98,21 @@ export function UploadForm({ cities }: Props) {
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
+        const code: string = data.error ?? "unknown";
         const msg =
-          data.error === "rate_limit"
+          code === "rate_limit"
             ? "Лимит на сегодня — 5 дизайнов. Попробуйте завтра."
-            : data.error === "missing_file"
+            : code === "missing_file"
               ? "Загрузите фото"
-              : data.error === "invalid_room" || data.error === "invalid_style"
+              : code === "invalid_room" || code === "invalid_style"
                 ? "Выберите комнату и стиль"
-                : "Не удалось запустить генерацию. Попробуйте ещё раз.";
+                : code === "missing_anon_id"
+                  ? "Не удалось создать сессию. Очистите cookies и попробуйте снова."
+                  : code === "storage_not_configured"
+                    ? "Хранилище не настроено. Сообщите в поддержку."
+                    : code === "upstream_unreachable"
+                      ? "Сервер недоступен. Попробуйте через минуту."
+                      : `Не удалось запустить генерацию (${code}).`;
         setError(msg);
         setSubmitting(false);
         return;
