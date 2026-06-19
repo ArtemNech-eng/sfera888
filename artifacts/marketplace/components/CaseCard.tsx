@@ -46,9 +46,10 @@ export function CaseCard({
   alt,
 }: CaseCardProps) {
   const meta = metaParts.filter((p): p is string => Boolean(p && p.trim().length > 0)).join(" · ");
-  const hasCounters =
-    (typeof views === "number" && views > 0) ||
-    (typeof saves === "number" && saves > 0);
+  // saves is rendered as a top-right badge on the photo (always-visible);
+  // bottom row only shows views when we have them. Counter visibility
+  // condition for the bottom row therefore depends on `views` alone.
+  const hasCounters = typeof views === "number" && views > 0;
 
   return (
     <Link href={href} className="group block focus:outline-none">
@@ -80,16 +81,20 @@ export function CaseCard({
           </span>
         ) : null}
 
-        {/* Save affordance (top-right) — visual cue that the platform is
-            collectible. Real wiring lands with §22.4 user_saves table. */}
-        <span
-          aria-hidden
-          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-surface)]/95 text-[var(--color-text)] opacity-0 shadow-cozy transition group-hover:opacity-100"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-          </svg>
-        </span>
+        {/* Save count badge (top-right) — passive display, always visible when count > 0.
+            Real toggle interactivity lives on the case detail page (CasePrimaryCTA);
+            on the list, the whole card is a Link, so we don't compete with navigation. */}
+        {typeof saves === "number" && saves > 0 ? (
+          <span
+            aria-label={`${saves} сохранений`}
+            className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-[var(--color-surface)]/95 px-2 py-1 text-[11px] font-semibold text-[var(--color-text)] shadow-cozy"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+            {formatStat(saves)}
+          </span>
+        ) : null}
 
         {/* Hover-only "Хочу такой же" pill — keeps Pinterest CTA pattern.
             Real action happens on the detail page (lead form). */}
@@ -129,14 +134,6 @@ export function CaseCard({
                       <circle cx="12" cy="12" r="3" />
                     </svg>
                     {formatStat(views)}
-                  </span>
-                ) : null}
-                {typeof saves === "number" && saves > 0 ? (
-                  <span className="inline-flex items-center gap-1">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                    </svg>
-                    {formatStat(saves)}
                   </span>
                 ) : null}
               </span>

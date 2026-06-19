@@ -27,6 +27,7 @@ import {
   masterPortfolioTable,
   masterReviewsPublicTable,
   ordersTable,
+  userSavesTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
@@ -1108,6 +1109,7 @@ router.get("/raboty", async (req, res) => {
         clientReviewText: r.portfolio.clientReviewText,
         clientRating: r.portfolio.clientRating,
         isFeatured: r.portfolio.isFeatured,
+        saveCount: r.portfolio.saveCount,
         service: r.service ? { name: r.service.name, slug: r.service.slug } : null,
         city: r.city ? { name: r.city.name, slug: r.city.slug } : null,
         master: {
@@ -1157,6 +1159,13 @@ router.get("/raboty/:slug", async (req, res) => {
     res.status(404).json({ error: "not_found" });
     return;
   }
+  // Optional: client passes its anonymous cookie ID so we can return
+  // `isSavedByCurrentUser`. Validation is loose — anything not matching
+  // the UUID v4 shape is silently treated as missing (no error).
+  const anonIdParam = typeof req.query["anonId"] === "string" ? req.query["anonId"] : "";
+  const anonId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(anonIdParam)
+    ? anonIdParam.toLowerCase()
+    : null;
   try {
     const [row] = await db
       .select({
@@ -1290,7 +1299,8 @@ router.get("/raboty/:slug", async (req, res) => {
     // Aggregate stats for the master byline (Req 5 of the redesign):
     // portfolio count and completed orders. Two cheap aggregate queries
     // run in parallel — keeps the response under one round-trip overhead.
-    const [portfolioCountRow, completedOrdersRow] = await Promise.all([
+    // Iter 4: also resolve `isSavedByCurrentUser` from anonId in same wave.
+    const [portfolioCountRow, completedOrdersRow, savedRow] = await Promise.all([
       db
         .select({ n: sql<number>`count(*)::int` })
         .from(masterPortfolioTable)
@@ -1306,6 +1316,16 @@ router.get("/raboty/:slug", async (req, res) => {
           eq(ordersTable.status, "completed"),
           isNull(ordersTable.deletedAt),
         )),
+      anonId
+        ? db
+          .select({ id: userSavesTable.id })
+          .from(userSavesTable)
+          .where(and(
+            eq(userSavesTable.anonId, anonId),
+            eq(userSavesTable.portfolioId, row.portfolio.id),
+          ))
+          .limit(1)
+        : Promise.resolve([] as Array<{ id: number }>),
     ]);
 
     res.json({
@@ -1326,6 +1346,7 @@ router.get("/raboty/:slug", async (req, res) => {
         clientReviewText: row.portfolio.clientReviewText,
         clientRating: row.portfolio.clientRating,
         isFeatured: row.portfolio.isFeatured,
+        saveCount: row.portfolio.saveCount,
         service: row.service ? { name: row.service.name, slug: row.service.slug } : null,
         city: row.city ? { name: row.city.name, slug: row.city.slug } : null,
       },
@@ -1335,6 +1356,7 @@ router.get("/raboty/:slug", async (req, res) => {
         completedOrders: Number(completedOrdersRow[0]?.n ?? 0),
       },
       similar,
+      isSavedByCurrentUser: savedRow.length > 0,
     });
   } catch (e: unknown) {
     console.error("[marketplace/raboty/:slug]", e instanceof Error ? e.message : e);
@@ -1481,6 +1503,184 @@ router.get("/raboty/market-stats", async (req, res) => {
     res.json(response);
   } catch (e: unknown) {
     console.error("[marketplace/raboty/market-stats]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/marketplace/raboty/:slug/save — toggle save (plan §22 Iteration 4).
+//
+// Body: { anonId: UUID v4 }
+// Cookie management lives on the marketplace Next.js side; here we just
+// receive the validated UUID and toggle.
+//
+// Logic:
+//   1. Validate UUID, resolve slug → portfolio_id (must be published)
+//   2. Try INSERT user_saves(anon_id, portfolio_id) in a transaction
+//      • On success → save_count + 1, return { saved: true }
+//      • On unique-violation → DELETE existing row, save_count - 1, return { saved: false }
+//
+// Race-safe via the partial unique index `(anon_id, portfolio_id) WHERE anon_id IS NOT NULL`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const saveToggleSchema = z.object({
+  anonId: z.string().uuid(),
+});
+
+// node-postgres unique-violation code
+const PG_UNIQUE_VIOLATION = "23505";
+
+router.post("/raboty/:slug/save", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const { slug } = req.params as { slug?: string };
+  if (!slug) {
+    res.status(404).json({ error: "not_found" });
+    return;
+  }
+
+  const parsed = saveToggleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "validation_error", details: parsed.error.flatten() });
+    return;
+  }
+  const { anonId } = parsed.data;
+
+  try {
+    // 1. Resolve slug → portfolio_id (must be published).
+    const [portfolio] = await db
+      .select({ id: masterPortfolioTable.id })
+      .from(masterPortfolioTable)
+      .where(and(
+        eq(masterPortfolioTable.slug, slug),
+        eq(masterPortfolioTable.isPublished, true),
+      ))
+      .limit(1);
+    if (!portfolio) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    // 2. Toggle in a transaction. Try INSERT first; on unique conflict → DELETE.
+    const result = await db.transaction(async (tx): Promise<{ saved: boolean; count: number }> => {
+      try {
+        await tx.insert(userSavesTable).values({ anonId, portfolioId: portfolio.id });
+        const [updated] = await tx
+          .update(masterPortfolioTable)
+          .set({ saveCount: sql`${masterPortfolioTable.saveCount} + 1` })
+          .where(eq(masterPortfolioTable.id, portfolio.id))
+          .returning({ count: masterPortfolioTable.saveCount });
+        return { saved: true, count: Number(updated?.count ?? 0) };
+      } catch (err: unknown) {
+        // PostgreSQL unique violation → row already existed → toggle to unsave.
+        const code = (err as { code?: string } | null)?.code;
+        if (code !== PG_UNIQUE_VIOLATION) throw err;
+        await tx
+          .delete(userSavesTable)
+          .where(and(
+            eq(userSavesTable.anonId, anonId),
+            eq(userSavesTable.portfolioId, portfolio.id),
+          ));
+        const [updated] = await tx
+          .update(masterPortfolioTable)
+          .set({ saveCount: sql`GREATEST(${masterPortfolioTable.saveCount} - 1, 0)` })
+          .where(eq(masterPortfolioTable.id, portfolio.id))
+          .returning({ count: masterPortfolioTable.saveCount });
+        return { saved: false, count: Number(updated?.count ?? 0) };
+      }
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (e: unknown) {
+    console.error("[marketplace/raboty/:slug/save]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/marketplace/saves — list cases saved by current anon_id.
+//
+// Query: ?anonId=<uuid> (required)
+// Returns: same shape as /raboty list items (RabotyListItem-compatible).
+// Powers `/izbrannoe` page on marketplace side.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get("/saves", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+
+  const anonIdParam = typeof req.query["anonId"] === "string" ? req.query["anonId"] : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(anonIdParam)) {
+    res.status(400).json({ error: "invalid_anon_id" });
+    return;
+  }
+  const anonId = anonIdParam.toLowerCase();
+
+  try {
+    const rows = await db
+      .select({
+        portfolio: masterPortfolioTable,
+        service: { name: serviceTypesTable.name, slug: serviceTypesTable.slug },
+        city: { name: citiesTable.name, slug: citiesTable.slug },
+        master: {
+          id: mastersTable.id,
+          slug: mastersTable.slug,
+          alias: mastersTable.alias,
+          publicTitle: mastersTable.publicTitle,
+          avatarUrl: mastersTable.customAvatarUrl,
+          publicRating: mastersTable.publicRating,
+          publicReviewsCount: mastersTable.publicReviewsCount,
+          city: mastersTable.city,
+        },
+        savedAt: userSavesTable.createdAt,
+      })
+      .from(userSavesTable)
+      .innerJoin(masterPortfolioTable, eq(userSavesTable.portfolioId, masterPortfolioTable.id))
+      .innerJoin(mastersTable, eq(masterPortfolioTable.masterId, mastersTable.id))
+      .leftJoin(serviceTypesTable, eq(masterPortfolioTable.serviceTypeId, serviceTypesTable.id))
+      .leftJoin(citiesTable, eq(masterPortfolioTable.cityId, citiesTable.id))
+      .where(and(
+        eq(userSavesTable.anonId, anonId),
+        // Hide unpublished cases — master could have unpublished after the user saved.
+        eq(masterPortfolioTable.isPublished, true),
+        eq(mastersTable.isPublished, true),
+        isNotNull(mastersTable.slug),
+      ))
+      .orderBy(desc(userSavesTable.createdAt))
+      .limit(100);
+
+    res.json({
+      items: rows.map((r) => ({
+        id: r.portfolio.id,
+        slug: r.portfolio.slug,
+        title: r.portfolio.title,
+        description: r.portfolio.description,
+        beforePhotos: r.portfolio.beforePhotos,
+        afterPhotos: r.portfolio.afterPhotos,
+        priceFrom: r.portfolio.priceFrom,
+        priceTo: r.portfolio.priceTo,
+        area: r.portfolio.area,
+        completedAt: r.portfolio.completedAt,
+        clientReviewText: r.portfolio.clientReviewText,
+        clientRating: r.portfolio.clientRating,
+        isFeatured: r.portfolio.isFeatured,
+        saveCount: r.portfolio.saveCount,
+        service: r.service ? { name: r.service.name, slug: r.service.slug } : null,
+        city: r.city ? { name: r.city.name, slug: r.city.slug } : null,
+        master: {
+          id: r.master.id,
+          slug: r.master.slug,
+          alias: r.master.alias,
+          publicTitle: r.master.publicTitle,
+          avatarUrl: r.master.avatarUrl,
+          publicRating: r.master.publicRating,
+          publicReviewsCount: r.master.publicReviewsCount ?? 0,
+          city: r.master.city,
+        },
+        savedAt: r.savedAt,
+      })),
+      total: rows.length,
+    });
+  } catch (e: unknown) {
+    console.error("[marketplace/saves]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
   }
 });

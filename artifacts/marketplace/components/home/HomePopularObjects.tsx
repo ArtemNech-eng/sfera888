@@ -111,7 +111,7 @@ function rabotyToCaseCardProps(item: RabotyListItem) {
     priceLabel: priceFrom != null ? `от ${formatNumber(priceFrom)} ₽` : null,
     badge: item.isFeatured ? ({ tone: "featured" as const, label: "Топ" }) : null,
     views: null,
-    saves: null,
+    saves: item.saveCount,
   };
 }
 

@@ -12,6 +12,7 @@ import type {
   MarketStatsResponse,
   RabotyListResponse,
   RabotyDetailResponse,
+  SavedRabotyItem,
 } from "./types";
 
 /**
@@ -275,9 +276,18 @@ export async function fetchPublishedCaseSlugs(): Promise<string[]> {
  * Used by `/raboty/[slug]` page. Photo URLs are absolutized so <img> works
  * from the marketplace domain.
  */
-export async function fetchRabotyCase(slug: string): Promise<RabotyDetailResponse | null> {
+export async function fetchRabotyCase(
+  slug: string,
+  opts: { anonId?: string | null } = {},
+): Promise<RabotyDetailResponse | null> {
   try {
-    const data = await call<RabotyDetailResponse>(`/raboty/${encodeURIComponent(slug)}`);
+    const qs = opts.anonId ? `?anonId=${encodeURIComponent(opts.anonId)}` : "";
+    const data = await call<RabotyDetailResponse>(
+      `/raboty/${encodeURIComponent(slug)}${qs}`,
+      // anonId-bound responses must not be cached at the Next.js layer:
+      // saves state is per-visitor.
+      opts.anonId ? { noStore: true } : {},
+    );
     data.portfolio.beforePhotos = (data.portfolio.beforePhotos ?? [])
       .map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
     data.portfolio.afterPhotos = (data.portfolio.afterPhotos ?? [])
@@ -343,6 +353,28 @@ export async function fetchMarketStats(input: {
     return await call<MarketStatsResponse>(`/raboty/market-stats?${params.toString()}`);
   } catch (e) {
     if (e instanceof MarketplaceApiError && (e.status === 404 || e.status === 400)) return null;
+    throw e;
+  }
+}
+
+/**
+ * Cases saved by the current anonymous visitor (plan §22 Iter 4).
+ * Used by `/izbrannoe` server component. Per-visitor data — never cache.
+ */
+export async function fetchSaves(anonId: string): Promise<SavedRabotyItem[]> {
+  try {
+    const res = await call<{ items: SavedRabotyItem[]; total: number }>(
+      `/saves?anonId=${encodeURIComponent(anonId)}`,
+      { noStore: true },
+    );
+    for (const item of res.items) {
+      item.beforePhotos = (item.beforePhotos ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+      item.afterPhotos = (item.afterPhotos ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+      item.master.avatarUrl = absolutizeApiUrl(item.master.avatarUrl);
+    }
+    return res.items;
+  } catch (e) {
+    if (e instanceof MarketplaceApiError && e.status === 400) return [];
     throw e;
   }
 }

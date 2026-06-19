@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import { fetchRabotyCase, fetchCities, fetchServices, fetchMarketStats } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
@@ -112,14 +113,22 @@ export default async function RabotyCasePage(
   { params }: { params: Promise<RouteParams> },
 ) {
   const { slug } = await params;
+
+  // Read anonymous-cookie identity (Iter 4) so the api-server can resolve
+  // `isSavedByCurrentUser` in the same round-trip. Cookie is HTTP-only and
+  // managed by the marketplace `/api/raboty/[slug]/save` route handler;
+  // here we just read it.
+  const cookieStore = await cookies();
+  const anonId = cookieStore.get("kiro_anon_id")?.value ?? null;
+
   const [data, cities, services] = await Promise.all([
-    fetchRabotyCase(slug),
+    fetchRabotyCase(slug, { anonId }),
     fetchCities().catch(() => []),
     fetchServices().catch(() => []),
   ]);
   if (!data) notFound();
 
-  const { portfolio, master, similar, masterStats } = data;
+  const { portfolio, master, similar, masterStats, isSavedByCurrentUser } = data;
   const masterName = pickMasterDisplayName(master);
   const sourcePageUrl = `${publicUrl()}/raboty/${slug}`;
 
@@ -236,8 +245,11 @@ export default async function RabotyCasePage(
 
       {/* 3. Primary CTA + Save + Share */}
       <CasePrimaryCTA
+        slug={slug}
         shareUrl={sourcePageUrl}
         shareTitle={portfolio.title}
+        initialSaved={isSavedByCurrentUser}
+        saveCount={portfolio.saveCount}
       />
 
       {/* 4. Before / After — компактный сравнительный блок */}

@@ -193,9 +193,16 @@ export interface RabotyListItem {
   clientReviewText: string | null;
   clientRating: number | null;
   isFeatured: boolean;
+  /** Iter 4 — running save_count from master_portfolio. */
+  saveCount: number;
   service: { name: string; slug: string | null } | null;
   city: { name: string; slug: string | null } | null;
   master: RabotyMasterRef;
+}
+
+/** /izbrannoe item — same as RabotyListItem with `savedAt` timestamp. */
+export interface SavedRabotyItem extends RabotyListItem {
+  savedAt: string;
 }
 
 export interface RabotyListResponse {
@@ -244,6 +251,8 @@ export interface RabotyDetailResponse {
     clientReviewText: string | null;
     clientRating: number | null;
     isFeatured: boolean;
+    /** Iteration 4 — running save_count. */
+    saveCount: number;
     service: { name: string; slug: string | null } | null;
     city: { name: string; slug: string | null } | null;
   };
@@ -257,6 +266,8 @@ export interface RabotyDetailResponse {
     completedOrders: number;
   };
   similar: RabotySimilarItem[];
+  /** Iteration 4 — true when the current anon visitor has this case in saves. */
+  isSavedByCurrentUser: boolean;
 }
 
 

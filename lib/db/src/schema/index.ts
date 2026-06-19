@@ -65,3 +65,6 @@ export * from "./user-design-limits";
 
 // ── Master publication audit log (added in 0007_master_publication_log) ────
 export * from "./master-publication-log";
+
+// ── Anonymous saves of marketplace cases (added in 0009_user_saves) ────────
+export * from "./user-saves";

@@ -80,6 +80,11 @@ export const masterPortfolioTable = pgTable("master_portfolio", {
   isFeatured: boolean("is_featured").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
   viewCount: integer("view_count").notNull().default(0),
+  /**
+   * Iteration 4 (plan §22): счётчик сохранений в избранное. Инкрементится
+   * приложением в одной транзакции с INSERT в `user_saves`.
+   */
+  saveCount: integer("save_count").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => ({
