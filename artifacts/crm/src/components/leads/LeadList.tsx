@@ -28,6 +28,8 @@ interface LeadRow {
   updatedAt: string;
   cancellationReason: string | null;
   orderId: number | null;
+  /** Лид с уже существующим телефоном — оператор это подтвердил при создании. */
+  isPossibleDuplicate?: boolean | null;
 }
 
 const SOURCE_OPTIONS = [
@@ -207,7 +209,17 @@ export default function LeadList({
                     </div>
                     {estimate > 0 && <span className="text-sm font-bold text-emerald-600 flex-shrink-0">{fmtMoney(estimate)}</span>}
                   </div>
-                  <p className="font-semibold text-foreground text-sm truncate">{lead.clientName}</p>
+                  <p className="font-semibold text-foreground text-sm truncate">
+                    {lead.clientName}
+                    {lead.isPossibleDuplicate ? (
+                      <span
+                        title="Телефон уже встречался в системе"
+                        className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 align-middle"
+                      >
+                        Повторный
+                      </span>
+                    ) : null}
+                  </p>
                   <div className="flex items-center gap-3 mt-0.5">
                     <a href={`tel:${lead.clientPhone}`} onClick={e => e.stopPropagation()} className="text-xs text-blue-600">{lead.clientPhone}</a>
                     <span className="text-xs text-muted-foreground flex items-center gap-0.5"><MapPin className="w-3 h-3" />{lead.city}{lead.district ? `, ${lead.district}` : ""}</span>
@@ -280,7 +292,17 @@ export default function LeadList({
                         {!age && <span className="text-[10px] text-muted-foreground">—</span>}
                       </td>
                       <td className="px-3 py-2.5 max-w-[160px]">
-                        <p className="font-medium text-foreground truncate">{lead.clientName}</p>
+                        <p className="font-medium text-foreground truncate">
+                          {lead.clientName}
+                          {lead.isPossibleDuplicate ? (
+                            <span
+                              title="Телефон уже встречался в системе"
+                              className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 align-middle"
+                            >
+                              Повторный
+                            </span>
+                          ) : null}
+                        </p>
                         <a href={`tel:${lead.clientPhone}`} onClick={e => e.stopPropagation()} className="text-xs text-blue-600 hover:underline">{lead.clientPhone}</a>
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">

@@ -134,15 +134,16 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     return res.status(400).json({ error: "Required fields missing" });
   }
 
-  // Check for duplicate phone (active leads only)
+  // Duplicate-phone is a soft signal, not a hard block. The CRM modal
+  // pre-warns the operator via /check-phone; if they hit Save anyway,
+  // we honour the intent and flag the new row as a repeat client.
+  // This mirrors marketplace / landing / partner-pwa behaviour.
   const phoneStr = String(clientPhone).trim();
   const [duplicate] = await db.select({ id: leadsTable.id })
     .from(leadsTable)
     .where(and(eq(leadsTable.clientPhone, phoneStr), isNull(leadsTable.deletedAt)))
     .limit(1);
-  if (duplicate) {
-    return res.status(409).json({ error: "duplicate_phone", message: "Лид с таким телефоном уже существует" });
-  }
+  const isPossibleDuplicate = !!duplicate;
 
   let serviceType: string;
   let area: number;
@@ -176,11 +177,21 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     source: source ?? null,
     status: "new",
     paymentModel: "commission",
+    isPossibleDuplicate,
   }).returning();
   const lead = result[0];
 
   const userAlias = (req.session as any)?.user?.name ?? (req.session as any)?.user?.login ?? "оператор";
-  await logLeadEvent(lead.id, "created", `Заявка создана. Клиент: ${clientName}, источник: ${source ?? "не указан"}`, userAlias);
+  const sourceSuffix = source ? `, источник: ${source}` : "";
+  const duplicateSuffix = isPossibleDuplicate && duplicate
+    ? `. Повторный клиент — ранее уже была заявка #${duplicate.id}.`
+    : "";
+  await logLeadEvent(
+    lead.id,
+    "created",
+    `Заявка создана. Клиент: ${clientName}${sourceSuffix}${duplicateSuffix}`,
+    userAlias,
+  );
 
   // Notify manager bot about new lead (non-blocking)
   notifyManagerNewLead({
@@ -202,6 +213,8 @@ router.post("/", checkRateLimit, allLeadRoles, async (req, res) => {
     cancellationReason: null,
     orderId: null,
     paymentModel: lead.paymentModel ?? "commission",
+    isPossibleDuplicate: lead.isPossibleDuplicate ?? false,
+    duplicateOfLeadId: isPossibleDuplicate && duplicate ? duplicate.id : null,
   });
 });
 
