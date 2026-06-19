@@ -33,6 +33,7 @@ import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { notifyManagerNewLead } from "../managerBot.js";
 import { computeEstimate, isCalcCategory } from "../lib/calculatorEngine.js";
+import { getCachedMarketStats, setCachedMarketStats, type MarketStatsResponse } from "../lib/marketStatsCache.js";
 
 declare const console: { error: (...args: unknown[]) => void };
 
@@ -1337,6 +1338,149 @@ router.get("/raboty/:slug", async (req, res) => {
     });
   } catch (e: unknown) {
     console.error("[marketplace/raboty/:slug]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/marketplace/raboty/market-stats — average price across similar
+// published cases (plan §22 Iteration 3, Requirement 7).
+//
+// "Similar" = same service AND area within ±30% of the target. Aggregation
+// returns 25th and 75th percentiles (P25–P75 reads more honest than
+// avg±stdev). One round-trip with optional FILTER clause for the city
+// bucket.
+//
+// Visibility rules (the UI also enforces these defensively):
+//   • russia.count < 5 → response shape still returned, frontend hides block
+//   • city.count < 3 → response.city = null
+//
+// Caching: per-(service, area-bucket, city) for 1 hour via in-process LRU.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MARKET_STATS_AREA_TOLERANCE = 0.3;
+
+router.get("/raboty/market-stats", async (req, res) => {
+  const serviceSlug = typeof req.query["serviceSlug"] === "string" ? req.query["serviceSlug"].trim() : "";
+  const citySlugParam = typeof req.query["citySlug"] === "string" ? req.query["citySlug"].trim() : "";
+  const citySlug = citySlugParam.length > 0 ? citySlugParam : null;
+  const areaTargetRaw = parseFloat(String(req.query["areaTarget"] ?? ""));
+
+  if (!serviceSlug) {
+    res.status(400).json({ error: "missing_service_slug" });
+    return;
+  }
+  if (!Number.isFinite(areaTargetRaw) || areaTargetRaw <= 0 || areaTargetRaw > 1000) {
+    res.status(400).json({ error: "invalid_area_target" });
+    return;
+  }
+
+  // Cache hit — return as-is. Cache TTL is 1h so a freshly-published case
+  // appears in stats with at most an hour of lag. Acceptable for v1.
+  const cached = getCachedMarketStats(serviceSlug, areaTargetRaw, citySlug);
+  if (cached) {
+    setOkCache(res);
+    res.json(cached);
+    return;
+  }
+
+  try {
+    // 1. Resolve service slug → id + name.
+    const [service] = await db
+      .select({ id: serviceTypesTable.id, name: serviceTypesTable.name })
+      .from(serviceTypesTable)
+      .where(and(eq(serviceTypesTable.slug, serviceSlug), eq(serviceTypesTable.isActive, true)))
+      .limit(1);
+    if (!service) {
+      res.status(404).json({ error: "service_not_found" });
+      return;
+    }
+
+    // 2. Resolve city slug → id + name (optional).
+    let cityId: number | null = null;
+    let cityName: string | null = null;
+    if (citySlug) {
+      const [city] = await db
+        .select({ id: citiesTable.id, name: citiesTable.name })
+        .from(citiesTable)
+        .where(and(eq(citiesTable.slug, citySlug), eq(citiesTable.isActive, true)))
+        .limit(1);
+      if (city) {
+        cityId = city.id;
+        cityName = city.name;
+      }
+    }
+
+    // 3. Aggregate. PERCENTILE_CONT is the canonical SQL way to compute
+    // continuous percentiles; the FILTER clause restricts the city bucket
+    // without a second query.
+    const areaMin = (areaTargetRaw * (1 - MARKET_STATS_AREA_TOLERANCE)).toFixed(2);
+    const areaMax = (areaTargetRaw * (1 + MARKET_STATS_AREA_TOLERANCE)).toFixed(2);
+
+    const aggRows = await db.execute(sql`
+      WITH similar AS (
+        SELECT
+          ${masterPortfolioTable.priceFrom}::numeric AS price,
+          ${masterPortfolioTable.cityId} AS city_id
+        FROM ${masterPortfolioTable}
+        WHERE ${masterPortfolioTable.isPublished} = true
+          AND ${masterPortfolioTable.serviceTypeId} = ${service.id}
+          AND ${masterPortfolioTable.area} IS NOT NULL
+          AND ${masterPortfolioTable.area}::numeric BETWEEN ${areaMin}::numeric AND ${areaMax}::numeric
+          AND ${masterPortfolioTable.priceFrom} IS NOT NULL
+          AND ${masterPortfolioTable.priceFrom}::numeric > 0
+      )
+      SELECT
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price) AS russia_p25,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price) AS russia_p75,
+        COUNT(*)::int AS russia_count,
+        ${cityId != null ? sql`
+          PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY price)
+            FILTER (WHERE city_id = ${cityId}) AS city_p25,
+          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY price)
+            FILTER (WHERE city_id = ${cityId}) AS city_p75,
+          COUNT(*) FILTER (WHERE city_id = ${cityId})::int AS city_count
+        ` : sql`
+          NULL::numeric AS city_p25,
+          NULL::numeric AS city_p75,
+          0::int AS city_count
+        `}
+      FROM similar
+    `);
+
+    // drizzle's `db.execute(sql\`...\`)` returns a node-postgres-like result
+    // with `.rows`. Cast loosely — we have a single row by construction.
+    const row = (aggRows as unknown as { rows: Array<Record<string, unknown>> }).rows[0]
+      ?? (aggRows as unknown as Array<Record<string, unknown>>)[0]
+      ?? {};
+
+    const russiaCount = Number(row["russia_count"] ?? 0);
+    const cityCount = Number(row["city_count"] ?? 0);
+
+    const response: MarketStatsResponse = {
+      russia: {
+        p25: Math.round(Number(row["russia_p25"] ?? 0)),
+        p75: Math.round(Number(row["russia_p75"] ?? 0)),
+        count: russiaCount,
+      },
+      city: cityId != null && cityName != null && cityCount >= 3
+        ? {
+          p25: Math.round(Number(row["city_p25"] ?? 0)),
+          p75: Math.round(Number(row["city_p75"] ?? 0)),
+          count: cityCount,
+          cityName,
+        }
+        : null,
+      areaTarget: areaTargetRaw,
+      serviceName: service.name,
+    };
+
+    setCachedMarketStats(serviceSlug, areaTargetRaw, citySlug, response);
+
+    setOkCache(res);
+    res.json(response);
+  } catch (e: unknown) {
+    console.error("[marketplace/raboty/market-stats]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
   }
 });

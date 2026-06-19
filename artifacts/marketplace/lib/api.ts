@@ -9,6 +9,7 @@ import type {
   MasterDetailResponse,
   MasterListResponse,
   MarketplaceStats,
+  MarketStatsResponse,
   RabotyListResponse,
   RabotyDetailResponse,
 } from "./types";
@@ -322,4 +323,26 @@ export async function fetchCalculatorEstimate(input: {
   params.set("category", input.category);
   params.set("areaSqm", String(input.areaSqm));
   return call<CalculatorEstimate>(`/calculator/estimate?${params.toString()}`, { noStore: true });
+}
+
+/**
+ * Aggregate market stats for "similar" cases (plan §22 Iter 3). Cached at the
+ * api-server side for 1 hour per (service, area-bucket, city) — Next-side
+ * cache adds another 5 min, totalling ~1h freshness.
+ */
+export async function fetchMarketStats(input: {
+  serviceSlug: string;
+  areaTarget: number;
+  citySlug: string | null;
+}): Promise<MarketStatsResponse | null> {
+  const params = new URLSearchParams();
+  params.set("serviceSlug", input.serviceSlug);
+  params.set("areaTarget", String(input.areaTarget));
+  if (input.citySlug) params.set("citySlug", input.citySlug);
+  try {
+    return await call<MarketStatsResponse>(`/raboty/market-stats?${params.toString()}`);
+  } catch (e) {
+    if (e instanceof MarketplaceApiError && (e.status === 404 || e.status === 400)) return null;
+    throw e;
+  }
 }

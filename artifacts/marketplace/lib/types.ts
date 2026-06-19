@@ -281,6 +281,20 @@ export interface MarketplaceStats {
 }
 
 
+// ── Market average stats (plan §22 Iteration 3) ─────────────────────────────
+
+/**
+ * Aggregate price stats for "similar" published cases. Used by the
+ * `<CaseMarketStats>` block on `/raboty/[slug]`. Source:
+ * `GET /api/marketplace/raboty/market-stats?serviceSlug=...&areaTarget=...&citySlug=...`.
+ */
+export interface MarketStatsResponse {
+  russia: { p25: number; p75: number; count: number };
+  city: { p25: number; p75: number; count: number; cityName: string } | null;
+  areaTarget: number;
+  serviceName: string;
+}
+
 // ── Calculator (plan §19.3, §20.2 [6]) ──────────────────────────────────────
 
 export type CalcCategory = "kosmetic" | "evro" | "premium";

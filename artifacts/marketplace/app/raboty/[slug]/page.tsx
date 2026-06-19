@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { fetchRabotyCase, fetchCities, fetchServices } from "../../../lib/api";
+import { fetchRabotyCase, fetchCities, fetchServices, fetchMarketStats } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
 import {
   breadcrumbJsonLd,
@@ -21,6 +21,7 @@ import { CaseChips } from "../../../components/raboty/CaseChips";
 import { CasePrimaryCTA } from "../../../components/raboty/CasePrimaryCTA";
 import { CaseEstimate } from "../../../components/raboty/CaseEstimate";
 import { CaseMasterSummary } from "../../../components/raboty/CaseMasterSummary";
+import { CaseMarketStats } from "../../../components/raboty/CaseMarketStats";
 import { CaseAIDesigns } from "../../../components/raboty/CaseAIDesigns";
 import { CaseLeadBlock } from "../../../components/raboty/CaseLeadBlock";
 import { StickyMobileCTA } from "../../../components/raboty/StickyMobileCTA";
@@ -126,6 +127,17 @@ export default async function RabotyCasePage(
   const areaNum = parseNumeric(portfolio.area);
   const completedAtFormatted = formatDate(portfolio.completedAt);
   const { range: priceRange, total: priceTotalNum } = formatPriceRange(portfolio.priceFrom, portfolio.priceTo);
+
+  // Market-stats fetched after case is resolved (depends on serviceSlug + area).
+  // Cached server-side per (service, area-bucket, city) for 1 hour, so this is
+  // cheap on warm cache. Failure is non-fatal — section just doesn't render.
+  const marketStats = portfolio.service?.slug && areaNum != null
+    ? await fetchMarketStats({
+        serviceSlug: portfolio.service.slug,
+        areaTarget: areaNum,
+        citySlug: portfolio.city?.slug ?? null,
+      }).catch(() => null)
+    : null;
 
   const matchService = portfolio.service?.slug
     ? services.find((s) => s.slug === portfolio.service?.slug)
@@ -254,6 +266,9 @@ export default async function RabotyCasePage(
 
       {/* 8. Similar — Pinterest-style cards */}
       {similar.length >= 3 ? <SimilarCases similar={similar} /> : null}
+
+      {/* 8a. Market average — supporting block, hidden if data is thin */}
+      <CaseMarketStats data={marketStats} />
 
       {/* 9. AI-designs */}
       <CaseAIDesigns roomSlug={portfolio.service?.slug ?? null} />
