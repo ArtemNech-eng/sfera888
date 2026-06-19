@@ -26,7 +26,7 @@ const FEATURED = {
     yearsLabel: "12 лет опыта",
     cityLabel: "Москва",
     portraitUrl:
-      "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=240&q=80&auto=format&fit=crop&crop=faces",
+      "https://images.unsplash.com/photo-1742844019488-12a9356a7ace?w=160&q=80&auto=format&fit=crop&crop=faces",
     portraitAlt: "Портрет мастера-плиточника",
   },
 };
@@ -34,11 +34,11 @@ const FEATURED = {
 export function HomeQuestions() {
   return (
     <section className="bg-[var(--color-cream-deep)]">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
             <p className="font-eyebrow">Спроси мастера</p>
-            <h2 className="font-display mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
+            <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-[2rem]">
               Реальные ответы на типичные вопросы про ремонт.
             </h2>
           </div>
@@ -50,26 +50,26 @@ export function HomeQuestions() {
           </Link>
         </div>
 
-        {/* Stack Overflow-style accepted answer card */}
-        <article className="mt-10 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
+        {/* Stack Overflow-style accepted answer card — magazine read-flow width */}
+        <article className="mx-auto mt-8 max-w-3xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
           {/* Question */}
-          <div className="border-b border-[var(--color-border)] p-7 sm:p-10">
+          <div className="border-b border-[var(--color-border)] p-6 sm:p-8">
             <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-faint)]">
               Вопрос
             </p>
-            <h3 className="font-display mt-3 text-2xl leading-snug text-[var(--color-text)] sm:text-3xl">
+            <h3 className="font-display mt-2 text-xl leading-snug text-[var(--color-text)] sm:text-2xl">
               {FEATURED.question}
             </h3>
           </div>
 
           {/* Answer + master byline */}
-          <div className="p-7 sm:p-10">
-            <p className="text-base leading-relaxed text-[var(--color-text)] sm:text-lg sm:leading-[1.7]">
+          <div className="p-6 sm:p-8">
+            <p className="text-base leading-relaxed text-[var(--color-text)]">
               {FEATURED.answer}
             </p>
 
-            <div className="mt-8 flex items-center gap-4 border-t border-[var(--color-border)] pt-6">
-              <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-[var(--color-cream-deep)] sm:h-14 sm:w-14">
+            <div className="mt-6 flex items-center gap-3 border-t border-[var(--color-border)] pt-5">
+              <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-[var(--color-cream-deep)]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={FEATURED.master.portraitUrl}
@@ -79,17 +79,17 @@ export function HomeQuestions() {
                 />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-[var(--color-text)] sm:text-base">
+                <p className="text-sm font-semibold text-[var(--color-text)]">
                   {FEATURED.master.name}
                 </p>
-                <p className="mt-0.5 text-xs text-[var(--color-muted)] sm:text-sm">
+                <p className="text-xs text-[var(--color-muted)]">
                   {FEATURED.master.role} · {FEATURED.master.yearsLabel} ·{" "}
                   {FEATURED.master.cityLabel}
                 </p>
               </div>
               <Link
                 href="/voprosy"
-                className="hidden flex-shrink-0 text-sm font-medium text-[var(--color-text)] underline decoration-[var(--color-border-strong)] decoration-2 underline-offset-4 transition hover:text-[var(--color-primary)] hover:decoration-[var(--color-primary)] sm:inline"
+                className="hidden flex-shrink-0 text-xs font-medium text-[var(--color-text)] underline decoration-[var(--color-border-strong)] decoration-2 underline-offset-4 transition hover:text-[var(--color-primary)] hover:decoration-[var(--color-primary)] sm:inline"
               >
                 Задать вопрос
               </Link>
@@ -97,7 +97,7 @@ export function HomeQuestions() {
           </div>
         </article>
 
-        <div className="mt-8 sm:hidden">
+        <div className="mt-6 sm:hidden">
           <Link
             href="/voprosy"
             className="text-sm font-semibold text-[var(--color-text)] underline decoration-[var(--color-text)] decoration-2 underline-offset-4"
