@@ -1,8 +1,10 @@
 import Link from "next/link";
 import type { DesignFullDTO } from "../../lib/types";
+import { publicUrl } from "../../lib/env";
 import { FloorPlanSVG } from "./FloorPlanSVG";
 import { SaveButton } from "./SaveButton";
 import { DesignLeadForm } from "./DesignLeadForm";
+import { ShareButton } from "./ShareButton";
 
 /**
  * Magazine-board layout для готового AI-дизайн-проекта (status='completed').
@@ -46,6 +48,8 @@ export function DesignBoard({ design }: Props) {
   const inputImage = design.images.find((img) => img.type === "input");
   const styleLabel = STYLE_LABELS[design.style] ?? design.style;
   const roomGen = ROOM_LABELS_GENITIVE[design.roomType] ?? design.roomType;
+  const designUrl = `${publicUrl().replace(/\/+$/, "")}/dizajn/${design.slug}`;
+  const shareTitle = design.h1 ?? `Дизайн ${roomGen} в стиле ${styleLabel}`;
 
   return (
     <article className="bg-[var(--color-background)]">
@@ -81,6 +85,11 @@ export function DesignBoard({ design }: Props) {
               initialSaved={design.isSavedByCurrentUser}
               initialCount={design.saveCount}
               variant="pill"
+            />
+            <ShareButton
+              shareUrl={designUrl}
+              shareTitle={shareTitle}
+              shareText={`Создал AI-дизайн-проект: ${shareTitle}. Посмотри.`}
             />
           </div>
         </div>
