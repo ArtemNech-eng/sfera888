@@ -1,20 +1,25 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { fetchDesign } from "../../../lib/api";
+import { fetchDesign, fetchRecentDesigns } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
 import { DesignBoard } from "../../../components/dizajn/DesignBoard";
 import { DesignBoardPending } from "../../../components/dizajn/DesignBoardPending";
+import { DesignsAggregate } from "../../../components/dizajn/DesignsAggregate";
 
 /**
- * `/dizajn/[slug]` — страница AI-дизайн-проекта.
+ * `/dizajn/[slug]` — двойного назначения роут (Iter 1 + Iter 2):
  *
- * Server-component с двумя ветками рендера:
- *   • status='completed' — полный design-board (server-rendered, SEO-rich).
- *     JSON-LD ImageObject + meta-tags + og-image для соцсетей.
- *   • status='generating' / 'failed' — client polling component с прогрессом.
+ * 1) **Full design slug** (`{room}-{style}-{nanoid8}`, e.g. `vannaya-modern-x7k9p2ab`)
+ *    — рендер DesignBoard или DesignBoardPending в зависимости от status.
+ *    Это L1 SEO-двигатель — каждый успешный дизайн = одна landing-страница.
  *
- * Это ключевая SEO-поверхность: каждый успешный дизайн = одна landing page
- * с index'ируемым контентом (h1, materials table, estimate, solutions).
+ * 2) **Aggregate combo** (`{room}-{style}`, `{room}` или `{style}`)
+ *    — рендер DesignsAggregate с grid'ом дизайнов в этой категории.
+ *    Pre-defined SEO-страницы для всех 36 комбинаций room×style + 12
+ *    одиночных (6 rooms + 6 styles). Эти URL живут в sitemap.
+ *
+ * Disambiguation: full slug заканчивается на 8-символьный nanoid (lowercase
+ * alphanumeric). Если последний segment не такой — значит это aggregate.
  */
 
 export const dynamic = "force-dynamic";
@@ -23,83 +28,267 @@ interface RouteParams {
   slug: string;
 }
 
+const VALID_ROOMS = new Set([
+  "bathroom",
+  "kitchen",
+  "living-room",
+  "living_room",
+  "bedroom",
+  "hallway",
+  "apartment",
+]);
+const VALID_STYLES = new Set([
+  "modern",
+  "scandinavian",
+  "loft",
+  "minimalism",
+  "neoclassic",
+  "japandi",
+]);
+
+interface ParsedRoute {
+  kind: "design" | "aggregate";
+  /** for design: full slug. */
+  slug?: string;
+  /** for aggregate: matched room/style enums, normalized (`living_room`). */
+  room?: string;
+  style?: string;
+}
+
+function parseRoute(combo: string): ParsedRoute | null {
+  const segments = combo.split("-");
+  const last = segments[segments.length - 1] ?? "";
+  // Full design slug: ends with 8-char alphanumeric nanoid.
+  if (segments.length >= 3 && /^[a-z0-9]{8}$/.test(last)) {
+    return { kind: "design", slug: combo };
+  }
+
+  // Aggregate combo. Try to match room + style (both, or one).
+  // Room may be single segment (`bathroom`) or two segments (`living-room`).
+  // Style is always single segment.
+  let matchedRoom: string | undefined;
+  let matchedStyle: string | undefined;
+
+  // Variant A: 2 segments — `{room}-{style}` or `{style1}-{style2}` (no second style possible, one is always room/style).
+  // Variant B: 3 segments — `{room2-segments}-{style}` (e.g. living-room-modern).
+  // Variant C: 1 segment — only room or only style.
+
+  if (segments.length === 1) {
+    const s = segments[0]!;
+    if (VALID_ROOMS.has(s)) matchedRoom = normalizeRoom(s);
+    else if (VALID_STYLES.has(s)) matchedStyle = s;
+  } else if (segments.length === 2) {
+    const [a, b] = segments;
+    if (VALID_ROOMS.has(a!) && VALID_STYLES.has(b!)) {
+      matchedRoom = normalizeRoom(a!);
+      matchedStyle = b!;
+    } else if (VALID_STYLES.has(a!) && VALID_ROOMS.has(b!)) {
+      matchedRoom = normalizeRoom(b!);
+      matchedStyle = a!;
+    } else if (VALID_ROOMS.has(`${a}-${b}`)) {
+      matchedRoom = normalizeRoom(`${a}-${b}`);
+    }
+  } else if (segments.length === 3) {
+    // living-room-modern
+    const room2 = `${segments[0]}-${segments[1]}`;
+    const stylePart = segments[2]!;
+    if (VALID_ROOMS.has(room2) && VALID_STYLES.has(stylePart)) {
+      matchedRoom = normalizeRoom(room2);
+      matchedStyle = stylePart;
+    }
+  }
+
+  if (matchedRoom || matchedStyle) {
+    return { kind: "aggregate", room: matchedRoom, style: matchedStyle };
+  }
+  return null;
+}
+
+function normalizeRoom(room: string): string {
+  return room.replace(/-/g, "_");
+}
+
+// ── Metadata ────────────────────────────────────────────────────────────────
+
 export async function generateMetadata(
   { params }: { params: Promise<RouteParams> },
 ): Promise<Metadata> {
   const { slug } = await params;
-  const design = await fetchDesign(slug);
-  if (!design) {
+  const parsed = parseRoute(slug);
+  if (!parsed) {
     return { robots: { index: false, follow: false } };
   }
 
-  // Generating / failed — не индексируем (контент ещё неполный).
-  if (design.status !== "completed") {
+  if (parsed.kind === "design" && parsed.slug) {
+    const design = await fetchDesign(parsed.slug);
+    if (!design) return { robots: { index: false, follow: false } };
+    if (design.status !== "completed") {
+      return {
+        title: { absolute: "Создаём дизайн-проект…" },
+        robots: { index: false, follow: false },
+      };
+    }
     return {
-      title: { absolute: "Создаём дизайн-проект…" },
-      robots: { index: false, follow: false },
+      title: { absolute: design.seoTitle ?? `${design.h1} — Честные мастера` },
+      description: design.seoDescription ?? `AI-дизайн-проект: ${design.h1}.`,
+      alternates: { canonical: `${publicUrl()}/dizajn/${slug}` },
+      openGraph: {
+        title: design.h1 ?? "AI-дизайн-проект",
+        description: design.seoDescription ?? undefined,
+        type: "article",
+        url: `${publicUrl()}/dizajn/${slug}`,
+        images: design.resultImageUrl
+          ? [{ url: design.resultImageUrl, width: 1024, height: 768, alt: design.h1 ?? "AI-дизайн" }]
+          : undefined,
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: design.h1 ?? "AI-дизайн-проект",
+        description: design.seoDescription ?? undefined,
+        images: design.resultImageUrl ? [design.resultImageUrl] : undefined,
+      },
     };
   }
 
+  // aggregate
+  const aggregateMeta = buildAggregateMeta(parsed.room ?? null, parsed.style ?? null);
   return {
-    title: { absolute: design.seoTitle ?? `${design.h1} — Честные мастера` },
-    description: design.seoDescription ?? `AI-дизайн-проект: ${design.h1}. С материалами, сметой и мастерами для реализации.`,
+    title: { absolute: aggregateMeta.title },
+    description: aggregateMeta.description,
     alternates: { canonical: `${publicUrl()}/dizajn/${slug}` },
     openGraph: {
-      title: design.h1 ?? "AI-дизайн-проект",
-      description: design.seoDescription ?? undefined,
-      type: "article",
+      title: aggregateMeta.title,
+      description: aggregateMeta.description,
+      type: "website",
       url: `${publicUrl()}/dizajn/${slug}`,
-      images: design.resultImageUrl ? [{ url: design.resultImageUrl, width: 1024, height: 768, alt: design.h1 ?? "AI-дизайн" }] : undefined,
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: design.h1 ?? "AI-дизайн-проект",
-      description: design.seoDescription ?? undefined,
-      images: design.resultImageUrl ? [design.resultImageUrl] : undefined,
     },
   };
 }
 
-export default async function DesignPage(
+function buildAggregateMeta(room: string | null, style: string | null): { title: string; description: string } {
+  const ROOM: Record<string, string> = {
+    bathroom: "ванной",
+    kitchen: "кухни",
+    living_room: "гостиной",
+    bedroom: "спальни",
+    hallway: "прихожей",
+    apartment: "квартиры",
+  };
+  const STYLE: Record<string, string> = {
+    modern: "Современный",
+    scandinavian: "Скандинавский",
+    loft: "Лофт",
+    minimalism: "Минимализм",
+    neoclassic: "Неоклассика",
+    japandi: "Японди",
+  };
+  const STYLE_GEN: Record<string, string> = {
+    modern: "современной",
+    scandinavian: "скандинавской",
+    loft: "в стиле лофт",
+    minimalism: "минималистичной",
+    neoclassic: "неоклассической",
+    japandi: "в стиле японди",
+  };
+  if (room && style) {
+    const t = `Дизайн ${STYLE_GEN[style] ?? style} ${ROOM[room] ?? room} — AI-проекты`;
+    return {
+      title: t.slice(0, 70),
+      description: `AI-дизайн-проекты ${ROOM[room] ?? room} в ${STYLE[style] ?? style} стиле — 4 ракурса, материалы, смета, мастера для реализации.`.slice(0, 200),
+    };
+  }
+  if (room) {
+    return {
+      title: `Идеи дизайна ${ROOM[room] ?? room} — AI-проекты`.slice(0, 70),
+      description: `Все стили ${ROOM[room] ?? room}: современный, скандинавский, лофт, минимализм. AI-дизайн-проекты с материалами и сметой.`.slice(0, 200),
+    };
+  }
+  if (style) {
+    return {
+      title: `${STYLE[style]} стиль — AI-дизайны интерьеров`.slice(0, 70),
+      description: `AI-проекты в ${STYLE[style]?.toLowerCase()} стиле для разных помещений — ванные, кухни, гостиные, спальни. С материалами и сметой.`.slice(0, 200),
+    };
+  }
+  return { title: "AI-дизайны интерьеров", description: "AI-дизайн-проекты с материалами, сметой и мастерами." };
+}
+
+// ── Page ────────────────────────────────────────────────────────────────────
+
+export default async function DesignSlugPage(
   { params }: { params: Promise<RouteParams> },
 ) {
   const { slug } = await params;
-  const design = await fetchDesign(slug);
-  if (!design) notFound();
+  const parsed = parseRoute(slug);
+  if (!parsed) notFound();
 
-  // JSON-LD только для completed проектов.
-  const jsonLd = design.status === "completed" && design.resultImageUrl
-    ? {
-        "@context": "https://schema.org",
-        "@type": "CreativeWork",
-        "@id": `${publicUrl()}/dizajn/${slug}`,
-        name: design.h1,
-        description: design.description ?? design.seoDescription,
-        image: {
-          "@type": "ImageObject",
-          url: design.resultImageUrl,
-          width: 1024,
-          height: 768,
-        },
-        url: `${publicUrl()}/dizajn/${slug}`,
-        author: { "@type": "Organization", name: "Честные мастера" },
-        datePublished: design.createdAt,
-      }
-    : null;
+  if (parsed.kind === "design" && parsed.slug) {
+    const design = await fetchDesign(parsed.slug);
+    if (!design) notFound();
+
+    const jsonLd = design.status === "completed" && design.resultImageUrl
+      ? {
+          "@context": "https://schema.org",
+          "@type": "CreativeWork",
+          "@id": `${publicUrl()}/dizajn/${slug}`,
+          name: design.h1,
+          description: design.description ?? design.seoDescription,
+          image: {
+            "@type": "ImageObject",
+            url: design.resultImageUrl,
+            width: 1024,
+            height: 768,
+          },
+          url: `${publicUrl()}/dizajn/${slug}`,
+          author: { "@type": "Organization", name: "Честные мастера" },
+          datePublished: design.createdAt,
+        }
+      : null;
+
+    return (
+      <>
+        {jsonLd ? (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          />
+        ) : null}
+        {design.status === "completed" ? (
+          <DesignBoard design={design} />
+        ) : (
+          <DesignBoardPending slug={slug} initialDesign={design} />
+        )}
+      </>
+    );
+  }
+
+  // aggregate
+  const designs = await fetchRecentDesigns({
+    limit: 24,
+    room: parsed.room,
+    style: parsed.style,
+  });
+
+  const collectionLd = {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "@id": `${publicUrl()}/dizajn/${slug}`,
+    url: `${publicUrl()}/dizajn/${slug}`,
+    name: buildAggregateMeta(parsed.room ?? null, parsed.style ?? null).title,
+    description: buildAggregateMeta(parsed.room ?? null, parsed.style ?? null).description,
+    isPartOf: { "@type": "WebSite", url: publicUrl() },
+  };
 
   return (
     <>
-      {jsonLd ? (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-      ) : null}
-      {design.status === "completed" ? (
-        <DesignBoard design={design} />
-      ) : (
-        <DesignBoardPending slug={slug} initialDesign={design} />
-      )}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionLd) }}
+      />
+      <DesignsAggregate
+        designs={designs}
+        room={parsed.room ?? null}
+        style={parsed.style ?? null}
+      />
     </>
   );
 }

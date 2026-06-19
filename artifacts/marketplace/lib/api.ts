@@ -436,3 +436,22 @@ export async function fetchRecentDesigns(opts: {
     return [];
   }
 }
+
+
+/**
+ * Slugs of all published AI-designs — для sitemap. Возвращает максимум 1000
+ * (limit на стороне api-server). После роста — paginate как fetchPublishedMasterSlugs.
+ */
+export async function fetchPublishedDesignSlugs(): Promise<string[]> {
+  try {
+    const r = await call<{ items: Array<{ slug: string | null }> }>(
+      `/dizajn?limit=1000`,
+      { revalidate: 3600 },
+    );
+    return r.items
+      .map((d) => d.slug)
+      .filter((s): s is string => typeof s === "string" && s.length > 0);
+  } catch {
+    return [];
+  }
+}

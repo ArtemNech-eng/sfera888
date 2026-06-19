@@ -351,7 +351,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
 
 router.get("/", async (req: Request, res: Response) => {
   const limitRaw = parseInt(String(req.query.limit ?? "12"), 10);
-  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 12;
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 1000) : 12;
   const room = typeof req.query.room === "string" ? req.query.room : undefined;
   const style = typeof req.query.style === "string" ? req.query.style : undefined;
 

@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { fetchCities, fetchPublishedCaseSlugs, fetchPublishedMasterSlugs, fetchServices } from "../lib/api";
+import { fetchCities, fetchPublishedCaseSlugs, fetchPublishedDesignSlugs, fetchPublishedMasterSlugs, fetchServices } from "../lib/api";
 import { publicUrl } from "../lib/env";
 
 // Generated at runtime, not at build time:
@@ -30,12 +30,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let cities: Awaited<ReturnType<typeof fetchCities>> = [];
   let masterSlugs: string[] = [];
   let caseSlugs: string[] = [];
+  let designSlugs: string[] = [];
   try {
-    [services, cities, masterSlugs, caseSlugs] = await Promise.all([
+    [services, cities, masterSlugs, caseSlugs, designSlugs] = await Promise.all([
       fetchServices(),
       fetchCities(),
       fetchPublishedMasterSlugs(),
       fetchPublishedCaseSlugs(),
+      fetchPublishedDesignSlugs(),
     ]);
   } catch {
     return top;
@@ -71,5 +73,61 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.75,
   }));
 
-  return [...top, ...masters, ...raboty, ...pairs];
+  // /dizajn/{slug} — каждый AI-дизайн = SEO-страница. L1 контент-двигатель
+  // из стратегии v3. Меняется редко после генерации (immutable result).
+  const designs: MetadataRoute.Sitemap = designSlugs.map((slug) => ({
+    url: `${base}/dizajn/${slug}`,
+    lastModified: now,
+    changeFrequency: "monthly",
+    priority: 0.75,
+  }));
+
+  // /dizajn/{room-style} — aggregate landing pages. Заполняются по мере
+  // появления реальных дизайнов; пустые отдают «empty state + CTA».
+  const designAggregates = buildDesignAggregateEntries(base, now);
+
+  return [...top, ...masters, ...raboty, ...pairs, ...designs, ...designAggregates];
+}
+
+// ── AI-designer sitemap entries ─────────────────────────────────────────────
+
+const DESIGN_ROOMS = ["bathroom", "kitchen", "living-room", "bedroom", "hallway", "apartment"];
+const DESIGN_STYLES = ["modern", "scandinavian", "loft", "minimalism", "neoclassic", "japandi"];
+
+/**
+ * Билдер aggregate-URL'ов /dizajn/{room}-{style}. 6×6 = 36 комбинаций.
+ * Также добавляем «только room» и «только style» агрегаты для widest reach.
+ */
+function buildDesignAggregateEntries(base: string, now: Date): MetadataRoute.Sitemap {
+  const entries: MetadataRoute.Sitemap = [];
+  // Combo: room-style
+  for (const room of DESIGN_ROOMS) {
+    for (const style of DESIGN_STYLES) {
+      entries.push({
+        url: `${base}/dizajn/${room}-${style}`,
+        lastModified: now,
+        changeFrequency: "weekly",
+        priority: 0.65,
+      });
+    }
+  }
+  // Только room (все стили)
+  for (const room of DESIGN_ROOMS) {
+    entries.push({
+      url: `${base}/dizajn/${room}`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.6,
+    });
+  }
+  // Только style (все комнаты)
+  for (const style of DESIGN_STYLES) {
+    entries.push({
+      url: `${base}/dizajn/${style}`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.6,
+    });
+  }
+  return entries;
 }

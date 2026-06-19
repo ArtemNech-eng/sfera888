@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { City } from "../../lib/types";
 
 /**
@@ -43,6 +43,7 @@ const STYLES: Array<{ value: string; label: string }> = [
 
 export function UploadForm({ cities }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -54,6 +55,19 @@ export function UploadForm({ cities }: Props) {
   const [citySlug, setCitySlug] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Pre-fill room/style/city из URL search params (когда пользователь приходит
+  // с aggregate-страницы /dizajn/{room}-{style}). Запускается только один раз
+  // на mount.
+  useEffect(() => {
+    const r = searchParams.get("room");
+    const s = searchParams.get("style");
+    const c = searchParams.get("city");
+    if (r && ROOMS.some((opt) => opt.value === r)) setRoom(r);
+    if (s && STYLES.some((opt) => opt.value === s)) setStyle(s);
+    if (c) setCitySlug(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleFileChange(file: File | null) {
     setFile(file);
