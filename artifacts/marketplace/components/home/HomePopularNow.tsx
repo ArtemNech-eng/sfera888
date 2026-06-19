@@ -3,29 +3,28 @@ import Link from "next/link";
 /**
  * «Популярное сейчас» — filter-pills блок (home-magazine-redesign).
  *
- * Pinterest-style discovery rail: маленькие pills с горящим эмодзи ведут
- * в `/raboty` с уже применённым фильтром. Это и filter-discovery (юзер не
- * ищет, а «выбирает из готового»), и SEO-якоря для long-tail запросов.
+ * Pinterest-canonical text-only pills. Без эмодзи (cheap-tell), без иконок —
+ * чистая типографика. Каждая pill ведёт в `/raboty` с уже применённым
+ * фильтром: и filter-discovery, и SEO-якоря для long-tail запросов.
  *
  * В этой итерации — 8 хардкодом. Дальше — autoсегменты по тренду из
- * Метрики (отдельный спек, plan §22.4 п.5).
+ * Метрики (отдельный спек).
  */
 
 interface Pill {
   label: string;
   href: string;
-  emoji: string;
 }
 
 const PILLS: Pill[] = [
-  { label: "Ванные до 200К", href: "/raboty?room=vannaya&maxPrice=200000", emoji: "🛁" },
-  { label: "Кухни в новостройках", href: "/raboty?room=kuhnya&housingType=novostroyka", emoji: "🍳" },
-  { label: "Санузлы 4-6 м²", href: "/raboty?room=vannaya&minArea=4&maxArea=6", emoji: "🚿" },
-  { label: "Лофт", href: "/raboty?style=loft", emoji: "🧱" },
-  { label: "Скандинавский", href: "/raboty?style=skandinavskiy", emoji: "🌿" },
-  { label: "Минимализм", href: "/raboty?style=minimalizm", emoji: "⚪" },
-  { label: "Тёмная палитра", href: "/raboty?palette=dark", emoji: "🖤" },
-  { label: "Квартиры до 1 млн", href: "/raboty?room=kvartira&maxPrice=1000000", emoji: "🏠" },
+  { label: "Ванные до 200К", href: "/raboty?room=vannaya&maxPrice=200000" },
+  { label: "Кухни в новостройках", href: "/raboty?room=kuhnya&housingType=novostroyka" },
+  { label: "Санузлы 4-6 м²", href: "/raboty?room=vannaya&minArea=4&maxArea=6" },
+  { label: "Лофт", href: "/raboty?style=loft" },
+  { label: "Скандинавский", href: "/raboty?style=skandinavskiy" },
+  { label: "Минимализм", href: "/raboty?style=minimalizm" },
+  { label: "Тёмная палитра", href: "/raboty?palette=dark" },
+  { label: "Квартиры до 1 млн", href: "/raboty?room=kvartira&maxPrice=1000000" },
 ];
 
 export function HomePopularNow() {
@@ -40,9 +39,8 @@ export function HomePopularNow() {
             <li key={pill.label}>
               <Link
                 href={pill.href}
-                className="inline-flex h-11 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-sm font-medium text-[var(--color-text)] shadow-cozy transition hover:-translate-y-0.5 hover:border-[var(--color-text)] hover:shadow-cozy-md"
+                className="inline-flex h-11 items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-5 text-sm font-medium text-[var(--color-text)] transition hover:-translate-y-0.5 hover:border-[var(--color-text)] hover:shadow-cozy"
               >
-                <span aria-hidden>{pill.emoji}</span>
                 {pill.label}
               </Link>
             </li>

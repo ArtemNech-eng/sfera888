@@ -67,15 +67,9 @@ export function Header() {
       }`}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-6">
-        {/* Wordmark with green tile icon */}
+        {/* Wordmark — clean type, no tile-icon (magazine-feel) */}
         <Link href="/" className="flex items-center gap-2 text-[var(--color-text)]">
-          <span aria-hidden className="inline-flex h-8 w-8 items-center justify-center rounded bg-[var(--color-primary)]">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M4 12 12 4l8 8" />
-              <path d="m9 16 3 3 6-6" />
-            </svg>
-          </span>
-          <span className="text-base font-bold leading-none sm:text-lg">
+          <span className="font-display text-xl leading-none sm:text-[1.375rem]">
             Честные мастера
           </span>
         </Link>

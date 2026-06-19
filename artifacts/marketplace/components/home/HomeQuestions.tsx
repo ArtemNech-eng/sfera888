@@ -1,66 +1,46 @@
 import Link from "next/link";
 
 /**
- * Q&A teaser «Спроси мастера» (home-magazine-redesign).
+ * Q&A featured-вопрос блок (home-magazine-redesign).
  *
- * Стратегия v3: Q&A — отдельный SEO-канал в духе СпросиВрача. Ловит
- * long-tail запросов «можно ли клеить плитку на плитку», «как сделать
- * тёплый пол под ламинат». Ответы дают мастера — это и контент, и
- * сигнал доверия к платформе.
+ * Стратегия v3: Q&A — отдельный SEO-канал в духе СпросиВрача. На главной
+ * показываем ОДИН featured-вопрос с подробным ответом и блоком мастера-
+ * эксперта (фото, имя, опыт). Формат — Stack Overflow «accepted answer
+ * card» + magazine pull-quote.
  *
- * На главной — teaser с 5 mock-вопросами. Реальная Q&A платформа (DB
- * questions/answers/votes, модерация, профили мастеров-respondents) —
- * отдельный спек. До запуска `/voprosy` это stub-страница.
+ * До запуска Q&A backend это редакторский preview. После запуска — будем
+ * брать featured-вопрос из БД с самым высоким engagement.
+ *
+ * Stub `/voprosy` пока ведёт на placeholder-страницу. Реальная Q&A
+ * платформа (DB schema, модерация, профили мастеров-respondents) — отдельный
+ * спек.
  */
 
-interface Question {
-  q: string;
-  a: string;
-  href: string;
-}
-
-const QUESTIONS: Question[] = [
-  {
-    q: "Можно ли клеить плитку на плитку?",
-    a: "Можно, если старая плитка крепко держится. Поверхность шкурят, грунтуют адгезионной грунтовкой и используют клей с маркировкой C2.",
-    href: "/voprosy",
+const FEATURED = {
+  question: "Можно ли клеить новую плитку прямо на старую?",
+  answer:
+    "Можно, если старая плитка крепко держится — простучите молотком и проверьте на отслоения. Поверхность шкурят грубой шкуркой (P40), грунтуют адгезионной грунтовкой типа «Бетоконтакт» и используют клей с маркировкой C2 или C2TE. Если же есть пустоты, трещины или плитка «бухтит» в нескольких местах — старое покрытие лучше демонтировать. Это сэкономит месяцы переделок.",
+  master: {
+    name: "Антон Кириллов",
+    role: "плиточник",
+    yearsLabel: "12 лет опыта",
+    cityLabel: "Москва",
+    portraitUrl:
+      "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=240&q=80&auto=format&fit=crop&crop=faces",
+    portraitAlt: "Портрет мастера-плиточника",
   },
-  {
-    q: "Сколько сохнет стяжка перед укладкой ламината?",
-    a: "Цементно-песчаная — 28 дней при толщине до 4 см. Полусухая — 14-21 день. Полимерная (наливной пол) — 5-7 дней. Проверять влагомером.",
-    href: "/voprosy",
-  },
-  {
-    q: "Какой минимальный бюджет на ванную 4 м²?",
-    a: "Бюджетный косметический — от 80 тыс ₽ (краска, замена сантехники). Под-ключ — от 180 тыс ₽ (плитка, замена труб, новая ванна).",
-    href: "/voprosy",
-  },
-  {
-    q: "Как выровнять стены без штукатурки?",
-    a: "Гипсокартон на профиль (стена «уходит» на 5-7 см) или приклеить ГКЛ на гипсовый клей (потеря 1-2 см). Плюс — чисто, минус — съедает площадь.",
-    href: "/voprosy",
-  },
-  {
-    q: "Можно ли совместить ванну и санузел в хрущёвке?",
-    a: "Да, перегородка между ними не несущая. Согласование не нужно если убираете не несущую стенку, но нужно отметить в техпаспорте.",
-    href: "/voprosy",
-  },
-];
+};
 
 export function HomeQuestions() {
   return (
-    <section className="bg-[var(--color-background)]">
+    <section className="bg-[var(--color-cream-deep)]">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
-            <p className="font-eyebrow">💬 Спроси мастера</p>
+            <p className="font-eyebrow">Спроси мастера</p>
             <h2 className="font-display mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
-              Вопросы и ответы про ремонт.
+              Реальные ответы на типичные вопросы про ремонт.
             </h2>
-            <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--color-muted)]">
-              Реальные ответы мастеров на частые вопросы. Не нашли свой —
-              задайте вопрос, ответит специалист с практикой.
-            </p>
           </div>
           <Link
             href="/voprosy"
@@ -70,28 +50,52 @@ export function HomeQuestions() {
           </Link>
         </div>
 
-        <ul className="mt-10 divide-y divide-[var(--color-border)] rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
-          {QUESTIONS.map((item, idx) => (
-            <li key={idx}>
+        {/* Stack Overflow-style accepted answer card */}
+        <article className="mt-10 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
+          {/* Question */}
+          <div className="border-b border-[var(--color-border)] p-7 sm:p-10">
+            <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-faint)]">
+              Вопрос
+            </p>
+            <h3 className="font-display mt-3 text-2xl leading-snug text-[var(--color-text)] sm:text-3xl">
+              {FEATURED.question}
+            </h3>
+          </div>
+
+          {/* Answer + master byline */}
+          <div className="p-7 sm:p-10">
+            <p className="text-base leading-relaxed text-[var(--color-text)] sm:text-lg sm:leading-[1.7]">
+              {FEATURED.answer}
+            </p>
+
+            <div className="mt-8 flex items-center gap-4 border-t border-[var(--color-border)] pt-6">
+              <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-[var(--color-cream-deep)] sm:h-14 sm:w-14">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={FEATURED.master.portraitUrl}
+                  alt={FEATURED.master.portraitAlt}
+                  loading="lazy"
+                  className="block h-full w-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[var(--color-text)] sm:text-base">
+                  {FEATURED.master.name}
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--color-muted)] sm:text-sm">
+                  {FEATURED.master.role} · {FEATURED.master.yearsLabel} ·{" "}
+                  {FEATURED.master.cityLabel}
+                </p>
+              </div>
               <Link
-                href={item.href}
-                className="group flex items-start gap-4 p-5 transition hover:bg-[var(--color-cream-deep)] sm:p-6"
+                href="/voprosy"
+                className="hidden flex-shrink-0 text-sm font-medium text-[var(--color-text)] underline decoration-[var(--color-border-strong)] decoration-2 underline-offset-4 transition hover:text-[var(--color-primary)] hover:decoration-[var(--color-primary)] sm:inline"
               >
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-base font-semibold leading-snug text-[var(--color-text)] transition group-hover:text-[var(--color-primary)] sm:text-lg">
-                    {item.q}
-                  </h3>
-                  <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[var(--color-muted)]">
-                    {item.a}
-                  </p>
-                </div>
-                <span aria-hidden className="mt-1 flex-shrink-0 text-[var(--color-faint)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-primary)]">
-                  →
-                </span>
+                Задать вопрос
               </Link>
-            </li>
-          ))}
-        </ul>
+            </div>
+          </div>
+        </article>
 
         <div className="mt-8 sm:hidden">
           <Link

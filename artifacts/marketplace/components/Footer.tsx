@@ -17,13 +17,7 @@ export function Footer() {
           {/* Brand column */}
           <div>
             <Link href="/" className="flex items-center gap-2 text-[var(--color-text)]">
-              <span aria-hidden className="inline-flex h-8 w-8 items-center justify-center rounded bg-[var(--color-primary)]">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M4 12 12 4l8 8" />
-                  <path d="m9 16 3 3 6-6" />
-                </svg>
-              </span>
-              <span className="text-lg font-bold">Честные мастера</span>
+              <span className="font-display text-xl">Честные мастера</span>
             </Link>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-[var(--color-muted)]">
               Планировщик ремонта: реальные работы с фото и ценами,
@@ -92,22 +86,10 @@ export function Footer() {
           />
         </div>
 
-        {/* Hairline + Unsplash credit + copyright */}
+        {/* Hairline + copyright */}
         <div className="mt-12 flex flex-col gap-3 border-t border-[var(--color-border)] pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs leading-relaxed text-[var(--color-faint)]">
             © {new Date().getFullYear()} Честные мастера. Все права защищены.
-          </p>
-          <p className="text-xs leading-relaxed text-[var(--color-faint)]">
-            Изображения-референсы —{" "}
-            <a
-              href="https://unsplash.com/license"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--color-muted)] underline underline-offset-2 hover:text-[var(--color-text)]"
-            >
-              Unsplash
-            </a>
-            {" "}(CC0). Замещаются работами мастеров по мере публикации.
           </p>
         </div>
       </div>

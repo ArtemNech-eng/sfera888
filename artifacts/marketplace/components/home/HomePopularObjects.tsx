@@ -57,9 +57,8 @@ export function HomePopularObjects({ cases }: Props) {
                     cover={d.imageUrl}
                     title={d.title}
                     alt={d.alt}
-                    metaParts={[d.category, "стилевой референс"]}
+                    metaParts={[d.category]}
                     priceLabel={null}
-                    badge={{ tone: "demo", label: "Пример" }}
                     aspectVariant={pickAspect(idx)}
                   />
                 </li>

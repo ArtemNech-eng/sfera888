@@ -110,13 +110,17 @@ body {
   line-height: 1.1;
 }
 
-/* Eyebrow label — quiet, neutral, structural. */
+/* Eyebrow label — magazine italic small-serif. Used as section
+   prefix («AI-дизайн», «Описание», «Каталог формируется»). Заменён
+   с caps-tracking-sans на Lora italic — более редакторский тон,
+   меньше «корп-портал». */
 .font-eyebrow {
-  font-family: var(--font-sans);
-  font-weight: 600;
-  font-size: 0.75rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font-family: var(--font-display-stack);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--color-muted);
 }
 

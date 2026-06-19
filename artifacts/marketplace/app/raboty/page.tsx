@@ -180,9 +180,8 @@ export default async function RabotyIndexPage(
                     cover={d.imageUrl}
                     title={d.title}
                     alt={d.alt}
-                    metaParts={[d.category, "стилевой референс"]}
+                    metaParts={[d.category]}
                     priceLabel={null}
-                    badge={{ tone: "demo", label: "Пример" }}
                   />
                 </div>
               ))}

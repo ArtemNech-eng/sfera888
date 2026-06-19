@@ -5,63 +5,44 @@
  * товар), но всё ещё ключевая audience. На главной — заметный отдельный
  * блок с тёмным контрастным фоном чтобы выделиться из inspiration-потока.
  *
- * Внешняя ссылка на sfera-master.ru/masteram — оффициальный лендинг для
- * мастеров (artifacts/master-landing-v5).
+ * Тон редакторский, без SaaS-чекмарков. Главный посыл — короткая метрика
+ * + два болезненных тейка про конкурентов («без выкупа лидов», «без
+ * блокировки счёта»). На рынке мастеров (Профи.ру, Авито Услуги) это
+ * сильнейшие триггеры — там оба механизма работают именно так и съедают
+ * заработок.
+ *
+ * Внешняя ссылка на sfera-master.ru/masteram — оффициальный лендинг
+ * (artifacts/master-landing-v5).
  */
 
 const EXTERNAL_FOR_MASTERS = "https://sfera-master.ru/masteram";
 
-const BENEFITS = [
-  "Создайте бесплатное портфолио с фото и ценами",
-  "Без авансов и блокировок — оплата после выполнения",
-  "Договор на каждом заказе, прозрачные комиссии",
-  "Получайте заявки от клиентов, которые уже выбрали стиль",
-];
-
 export function HomeForMasters() {
   return (
     <section className="bg-[var(--color-text)]">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)] lg:gap-14">
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)] lg:gap-16">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/60">
+            <p className="font-eyebrow text-[var(--color-primary-ring)]">
               Для мастеров
             </p>
-            <h2 className="font-display mt-3 text-3xl text-white sm:text-4xl lg:text-5xl">
-              Вы мастер?
-              <br />
-              Покажите работы — найдём заявки.
+            <h2 className="font-display mt-4 text-3xl text-white sm:text-4xl lg:text-[3rem]">
+              Покажите работы — мы приведём заказы.
             </h2>
-            <p className="mt-4 max-w-md text-base leading-relaxed text-white/70 sm:text-lg">
-              Платформа для мастеров с инструментами портфолио, отзывов и
-              управления заявками. Подключение бесплатное.
-            </p>
           </div>
 
           <div>
-            <ul className="space-y-3">
-              {BENEFITS.map((b) => (
-                <li key={b} className="flex items-start gap-3 text-base text-white/85">
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                    className="mt-0.5 flex-shrink-0 text-[var(--color-primary-ring)]"
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  <span>{b}</span>
-                </li>
-              ))}
-            </ul>
+            <p className="text-lg leading-relaxed text-white/80 sm:text-xl sm:leading-[1.55]">
+              Первая заявка — в среднем на следующий день. Без выкупа лидов
+              и блокировки счёта.
+            </p>
+            <p className="mt-5 text-base leading-relaxed text-white/65 sm:text-lg">
+              Платформа для мастеров с инструментами портфолио, отзывов и
+              управления заявками. Подключение бесплатное, договор на каждом
+              заказе, оплата после выполнения.
+            </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
+            <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
               <a
                 href={EXTERNAL_FOR_MASTERS}
                 rel="noopener noreferrer"

@@ -41,7 +41,7 @@ export function HomeAIDesigns() {
     <section className="bg-[var(--color-background)]">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="max-w-2xl">
-          <p className="font-eyebrow">✨ AI-дизайн</p>
+          <p className="font-eyebrow">AI-дизайн</p>
           <h2 className="font-display mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
             Создайте свой дизайн комнаты.
           </h2>
@@ -81,7 +81,7 @@ export function HomeAIDesigns() {
         <div className="mt-10">
           <Link
             href="/dizajn"
-            className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
+            className="inline-flex h-12 items-center gap-2 rounded-full border border-[var(--color-text)] bg-transparent px-7 text-base font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white"
           >
             Попробовать AI-дизайн
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
