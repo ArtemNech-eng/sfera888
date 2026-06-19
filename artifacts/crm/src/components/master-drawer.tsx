@@ -1544,15 +1544,32 @@ export function MasterDrawer({ master, columns = [], onClose, onMasterUpdate }: 
   };
   const clearPhoto = () => { setPhotoFile(null); setPhotoPreview(null); };
   const sendReply = async () => {
-    if ((!reply.trim() && !photoFile) || sending || !master.telegramId) return;
+    // Match the button's disabled logic — backend supports PWA-only delivery via pwa_<id> chat
+    if ((!reply.trim() && !photoFile) || sending || (!master.pwaLogin && !master.telegramId)) return;
     setSending(true);
-    const form = new FormData();
-    if (reply.trim()) form.append("text", reply.trim());
-    form.append("operatorName", user?.name ?? "Оператор");
-    if (photoFile) form.append("photo", photoFile);
-    const r = await fetch(`/api/master-chat/${master.id}/reply`, { method: "POST", body: form });
-    if (r.ok) { setReply(""); clearPhoto(); await loadChat(); }
-    setSending(false);
+    try {
+      const form = new FormData();
+      if (reply.trim()) form.append("text", reply.trim());
+      form.append("operatorName", user?.name ?? "Оператор");
+      if (photoFile) form.append("photo", photoFile);
+      const r = await fetch(`/api/master-chat/${master.id}/reply`, {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      });
+      if (r.ok) {
+        setReply("");
+        clearPhoto();
+        await loadChat();
+      } else {
+        const errData = await r.json().catch(() => ({}));
+        alert(`Не удалось отправить: ${errData?.error ?? r.statusText}`);
+      }
+    } catch (e: any) {
+      alert(`Ошибка сети: ${e?.message ?? "неизвестная"}`);
+    } finally {
+      setSending(false);
+    }
   };
 
   const TABS: { id: DrawerTab; label: string; icon: any }[] = [
