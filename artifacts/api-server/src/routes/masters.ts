@@ -154,33 +154,30 @@ function formatMaster(m: any) {
 // GET /api/masters
 router.get("/", allMasterRoles, async (_req, res) => {
   const startTime = Date.now();
-  console.log(`[masters] Loading masters...`);
-  
-  const masters = await db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)).orderBy(mastersTable.createdAt);
-  console.log(`[masters] Loaded ${masters.length} masters in ${Date.now() - startTime}ms`);
 
-  // Count paid commissions per master (accurate conversion numerator — excludes cancelled orders)
-  const paidCounts = await db
-    .select({ masterId: transactionsTable.masterId, cnt: count() })
-    .from(transactionsTable)
-    .where(eq(transactionsTable.paymentStatus, "paid"))
-    .groupBy(transactionsTable.masterId);
+  // Run main query + paid-count aggregate in parallel.
+  // Wallet query removed — token model was retired in Phase C, balances are
+  // unused on this list. Saves ~1 query and the wallet table scan.
+  const [masters, paidCounts] = await Promise.all([
+    db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)).orderBy(mastersTable.createdAt),
+    db
+      .select({ masterId: transactionsTable.masterId, cnt: count() })
+      .from(transactionsTable)
+      .where(eq(transactionsTable.paymentStatus, "paid"))
+      .groupBy(transactionsTable.masterId),
+  ]);
   const paidMap = new Map(paidCounts.map(r => [r.masterId, Number(r.cnt)]));
 
-  // Load wallet balances for token-model visibility
-  const wallets = await db.select().from(masterWalletTable);
-  const walletMap = new Map(wallets.map(w => [w.masterId, w]));
+  console.log(`[masters] GET / — ${masters.length} masters in ${Date.now() - startTime}ms`);
 
-  console.log(`[masters] Total request time: ${Date.now() - startTime}ms`);
-  res.json(masters.map(m => {
-    const w = walletMap.get(m.id);
-    return {
-      ...formatMaster(m),
-      paidOrdersCount: paidMap.get(m.id) ?? 0,
-      tokensBalance: w ? Number(w.tokensBalance) : 0,
-      creditLimitTokens: w ? Number(w.creditLimitTokens) : 0,
-    };
-  }));
+  res.json(masters.map(m => ({
+    ...formatMaster(m),
+    paidOrdersCount: paidMap.get(m.id) ?? 0,
+    // Legacy fields kept for backward-compat with older CRM bundles still in
+    // browser cache. They always return 0 now.
+    tokensBalance: 0,
+    creditLimitTokens: 0,
+  })));
 });
 
 // POST /api/masters
