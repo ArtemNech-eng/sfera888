@@ -162,46 +162,46 @@ interface ViewSpec {
 const ROOM_VIEW_SUBJECTS: Record<string, [string, string, string, string]> = {
   // [view_1 общий, view_2 акцент, view_3 хранение, view_4 окно]
   bedroom: [
-    "queen size bed centered with upholstered headboard, two bedside tables with lamps, wardrobe partially visible to the side",
-    "close-up of the bed area: upholstered headboard against the wall, twin bedside tables with table lamps, decorative pillows on the bed, framed art above the headboard",
-    "view of the wardrobe wall: full-height integrated wardrobe with wood door panels, open shelving section with books and decor, no bed in frame",
-    "corner near the window: tall window with sheer curtains, potted plant on sill, lounge chair, floor lamp, soft daylight, no bed in frame",
+    "queen size double bed centered with upholstered headboard, two bedside tables with table lamps, wardrobe partially visible to the side, soft area rug on the floor",
+    "close-up of the bed area: upholstered headboard against the accent wall, twin bedside tables with warm table lamps, decorative pillows on the bed, framed wall art above the headboard",
+    "side view of the wardrobe wall: full-height built-in wardrobe with natural wood door panels, integrated open shelving section with books and decorative objects, no bed in frame",
+    "workspace corner near the tall window: compact desk with chair facing the window, floor lamp beside, sheer curtains, plant on the sill, soft daylight, no bed in frame",
   ],
   kitchen: [
-    "L-shaped kitchen layout fully visible, base and wall cabinets, countertop with sink, range hood above stove, dining nook with table and chairs",
-    "close-up of the kitchen counter: backsplash detail, countertop with cooking utensils, range hood, faucet over the sink",
-    "view of tall kitchen storage: pantry cabinets with integrated appliances, glass-front upper cabinets, no dining table in frame",
-    "dining area near the window: round table with chairs, pendant light above, window with curtains, no kitchen counters in frame",
+    "L-shaped kitchen layout fully visible from doorway, base and wall cabinets, stone countertop with sink, range hood above induction stove, dining nook with wooden table and chairs, warm pendant light",
+    "close-up of the kitchen counter: tiled backsplash detail, countertop with cooking utensils and a vase, range hood, brass faucet over the sink, warm under-cabinet lighting",
+    "view of tall kitchen storage column: pantry cabinets with integrated appliances, glass-front upper cabinets, no dining table in frame",
+    "dining area near the window: round wooden table with chairs, pendant light above, window with linen curtains, soft daylight, no kitchen counters in frame",
   ],
   bathroom: [
-    "wide angle showing entire bathroom: walk-in shower, vanity with mirror and sink, toilet, towel rack on wall",
-    "close-up of the vanity: round mirror, sink with modern faucet, marble countertop, sconce lighting, towel hooks",
-    "tall storage column: built-in cabinet with shelves and towels, basket for laundry, no shower in frame",
-    "shower area: glass-walled walk-in shower with rainfall head, marble tile, niche shelf, no vanity in frame",
+    "wide angle showing entire bathroom from doorway: walk-in shower behind glass partition, vanity with mirror and basin, toilet, towel rack on wall, warm sconce lighting",
+    "close-up of the vanity: round mirror, basin with modern faucet, marble or quartz countertop, sconce lighting on either side, towel hooks below",
+    "tall storage column with built-in cabinet, open shelves with rolled towels and a basket for laundry, no shower in frame",
+    "shower zone: glass-walled walk-in shower with rainfall head, marble or porcelain tile, niche shelf with toiletries, no vanity in frame",
   ],
   living_room: [
-    "wide angle of the living room: large sofa centered, coffee table in front, TV unit on opposite wall, large window, area rug",
-    "close-up of the seating area: sofa with decorative pillows, side table with lamp and books, gallery wall behind sofa, no TV in frame",
-    "media wall: TV mounted on wall, low TV console with drawers, decorative items on shelves, no sofa in frame",
-    "reading nook by the window: lounge chair, floor lamp, side table, sheer curtains, daylight, no TV in frame",
+    "wide angle of living room from doorway: large fabric sofa centered, low coffee table in front, TV unit on opposite wall, large window with curtains, soft area rug, warm floor lamp",
+    "close-up of the seating area: sofa with decorative pillows and a throw, side table with table lamp and a stack of books, gallery wall behind sofa, no TV in frame",
+    "media wall: TV mounted on wall, low TV console with drawers, decorative items on shelves, plant in pot, no sofa in frame",
+    "reading nook by the window: lounge chair with throw, floor lamp, side table with book, sheer curtains, soft daylight, no TV in frame",
   ],
   hallway: [
-    "wide angle of the hallway: full-height built-in wardrobe to one side, console table with mirror above on opposite wall, decorative ceiling lighting",
-    "close-up of the entryway console: console table with vase and tray, large mirror above, sconce lighting on the side",
-    "wardrobe wall: full-height built-in wardrobe with wood door panels, integrated shoe storage at the bottom, no console in frame",
-    "end of the hallway near the natural light: small bench with cushion, hooks on the wall, framed art, light from a window or transom",
+    "wide angle of the hallway from the front door: full-height built-in wardrobe to one side, slim console table with mirror above on opposite wall, decorative ceiling lighting, runner rug",
+    "close-up of the entryway console: console table with vase and tray for keys, large rectangular mirror above, warm sconce lighting on the side",
+    "wardrobe wall: full-height built-in wardrobe with natural wood door panels, integrated shoe storage at the bottom, no console in frame",
+    "end of the hallway opening into the apartment: small upholstered bench with cushion, hooks on the wall for jackets, framed art, ceiling light",
   ],
   nursery: [
-    "wide angle of child room: child bed with safety rail, study desk with chair, toy storage cabinets, soft area rug",
+    "wide angle of child room from doorway: child bed with safety rail, study desk with chair near the window, low toy storage cabinets, soft area rug, warm pendant light",
     "close-up of the bed area: bed with patterned bedding, decorative pillows, framed art on the wall, bedside small table with night light",
-    "storage and play zone: low cabinets for toys, open shelving with books and toys, soft floor mat, no bed in frame",
-    "study and window area: child desk facing the window, ergonomic chair, pin board on the wall, daylight, no bed in frame",
+    "play and storage zone: low cabinets for toys with rounded edges, open shelving with books and toys, soft floor mat, no bed in frame",
+    "study and window area: child desk facing the window, ergonomic chair, pin board on the wall, table lamp, soft daylight, no bed in frame",
   ],
   apartment: [
-    "wide angle of the open-plan main room: living area with sofa, dining area with table, kitchen counter visible at the back",
-    "close-up of the living area: sofa with cushions, coffee table, area rug, decorative shelves",
-    "kitchen and dining zone: kitchen island with stools, dining table with chairs, pendant lights",
-    "bedroom area near the window: queen size bed visible through partition, window with curtains, soft daylight",
+    "wide angle of the open-plan main room from the entrance: living area with sofa and coffee table, dining area with wooden table, kitchen counter visible at the back, warm pendant lights",
+    "close-up of the living area: fabric sofa with cushions, coffee table with magazines, area rug, decorative shelves, gallery wall, no kitchen in frame",
+    "kitchen and dining zone: kitchen island with bar stools, dining table with chairs, pendant lights above the dining table",
+    "bedroom area near the window: queen size bed visible behind partition or sliding door, window with linen curtains, soft daylight, lounge chair",
   ],
 };
 
@@ -213,8 +213,8 @@ const VIEW_SPECS: ViewSpec[] = [
     buildPrompt: (room, style, area) => {
       const subj = ROOM_VIEW_SUBJECTS[room]?.[0] ?? "wide angle of the entire room layout";
       const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-      const areaPart = area ? `, ${area} sqm room` : "";
-      return `${styleDesc} ${room.replace(/_/g, " ")} interior${areaPart}, wide angle from the doorway, ${subj}, photo realistic, magazine quality interior photography, natural daylight, 8k, no people, full room visible`;
+      const areaPart = area ? `, ${area} sqm` : "";
+      return `${styleDesc} ${room.replace(/_/g, " ")}${areaPart}, wide angle from the doorway, ${subj}, ${RENDER_SUFFIX}`;
     },
   },
   {
@@ -224,8 +224,8 @@ const VIEW_SPECS: ViewSpec[] = [
     buildPrompt: (room, style, area) => {
       const subj = ROOM_VIEW_SUBJECTS[room]?.[1] ?? "close-up of the main feature";
       const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-      const areaPart = area ? `, ${area} sqm room` : "";
-      return `${styleDesc} ${room.replace(/_/g, " ")} interior${areaPart}, ${subj}, photo realistic, magazine quality, soft natural light, intimate composition, 8k, no people`;
+      const areaPart = area ? `, ${area} sqm` : "";
+      return `${styleDesc} ${room.replace(/_/g, " ")}${areaPart}, ${subj}, intimate composition, ${RENDER_SUFFIX}`;
     },
   },
   {
@@ -235,8 +235,8 @@ const VIEW_SPECS: ViewSpec[] = [
     buildPrompt: (room, style, area) => {
       const subj = ROOM_VIEW_SUBJECTS[room]?.[2] ?? "side view of the storage area";
       const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-      const areaPart = area ? `, ${area} sqm room` : "";
-      return `${styleDesc} ${room.replace(/_/g, " ")} interior${areaPart}, side angle, ${subj}, photo realistic, magazine quality interior photography, natural light, 8k, no people`;
+      const areaPart = area ? `, ${area} sqm` : "";
+      return `${styleDesc} ${room.replace(/_/g, " ")}${areaPart}, side angle, ${subj}, ${RENDER_SUFFIX}`;
     },
   },
   {
@@ -246,11 +246,22 @@ const VIEW_SPECS: ViewSpec[] = [
     buildPrompt: (room, style, area) => {
       const subj = ROOM_VIEW_SUBJECTS[room]?.[3] ?? "corner near the window";
       const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-      const areaPart = area ? `, ${area} sqm room` : "";
-      return `${styleDesc} ${room.replace(/_/g, " ")} interior${areaPart}, intimate angle, ${subj}, soft daylight, depth of field, photo realistic, magazine quality, 8k, no people`;
+      const areaPart = area ? `, ${area} sqm` : "";
+      return `${styleDesc} ${room.replace(/_/g, " ")}${areaPart}, intimate angle, ${subj}, depth of field, ${RENDER_SUFFIX}`;
     },
   },
 ];
+
+/**
+ * Базовый «хвост» каждого view-промпта. Калибрует FLUX на:
+ *  • Реалистичный фотографический look (не 3D-render, не глянец)
+ *  • Контекст «доступный ремонт российской квартиры» (не luxury)
+ *  • Тёплое мягкое освещение, натуральное дерево, светлые стены
+ *  • 4K архитектурная визуализация
+ *
+ * Источник: ChatGPT-референс пользователя для создания концепта дизайн-проекта.
+ */
+const RENDER_SUFFIX = "ultra realistic photograph, architectural interior visualization, real Russian apartment, achievable affordable budget renovation, not luxury concept, warm soft lighting, natural wood textures, light walls, professional interior photography, magazine quality, 4K, photorealistic, no people, no text, no watermark";
 
 /** 6 detail-crops: какие куски из каких ракурсов вырезать через sharp. */
 interface CropSpec {
