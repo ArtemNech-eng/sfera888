@@ -36,7 +36,7 @@ import {
 import { and, eq, lt } from "drizzle-orm";
 import sharp from "sharp";
 import { objectStorageClient, signObjectURL } from "./objectStorage.js";
-import { falGenerate, falGenerateText, falGeneratePanoramicPro, downloadImage } from "./falAi.js";
+import { falGenerate, falGenerateText, falGenerateGptImage, downloadImage } from "./falAi.js";
 import { generateDesignContent } from "./designContent.js";
 import { extractPalette } from "./colorExtraction.js";
 import { pingIndexNow } from "./indexNow.js";
@@ -150,84 +150,68 @@ const ROOM_BEFORE_PROMPTS: Record<string, string> = {
 const RENDER_SUFFIX = "interior design moodboard, AD Architectural Digest magazine quality, professional interior design rendering, polished design concept presentation, real Russian apartment, achievable affordable budget renovation, not luxury, warm soft lighting, natural wood textures, light walls, ultra realistic, 4K, photorealistic, no people, no text labels, no captions, no watermark, no graphics overlay";
 
 /**
- * 5 камерных позиций per room — каждый view = свой POV в той же комнате.
- * Hero (view 1) = от двери, остальные генерятся с image_prompt=hero чтобы
- * Pro Ultra унаследовал стиль/палитру/материалы и выдал ТУ ЖЕ комнату с
- * другого ракурса. View 5 (3D-isometric) генерится отдельно через
- * `buildIsometricPrompt`.
+ * Описания 4 ракурсов одной комнаты для коллажа 2×2. Один gpt-image-1.5
+ * вызов генерит весь коллаж — модель умеет multi-panel с identity
+ * preservation (это та модель что ChatGPT использует), и все 4 ракурса
+ * показывают ОДНУ И ТУ ЖЕ комнату с одинаковой палитрой/материалами.
+ * Sharp потом разрезает на 4 view'а.
  *
- * Структура: [from-doorway, from-window, from-headboard-or-feature-wall,
- *            from-far-corner-diagonal]. Описание включает где стоит камера
- * («from doorway looking inward»), что в foreground, mid-ground, background.
+ * Структура: [top-left общий, top-right акцент, bottom-left хранение,
+ *            bottom-right окно].
  */
-const ROOM_CAMERA_PROMPTS: Record<string, [string, string, string, string]> = {
+const ROOM_VIEW_SUBJECTS: Record<string, [string, string, string, string]> = {
   bedroom: [
-    // 1. От двери
-    "interior photograph from the doorway looking inward into the bedroom, eye-level wide-angle 35mm view, queen size double bed centered in the middle ground with upholstered headboard against the far wall, two bedside tables with warm lamps, full-height built-in wardrobe running along the right wall, workspace desk visible by the window at the back of the room, soft area rug under the bed, deep room perspective",
-    // 2. От окна (обратный ракурс — видны дверь и кровать сбоку)
-    "interior photograph from the window facing back toward the doorway, eye-level wide-angle, sheer curtains and workspace desk in foreground at left edge of frame, queen size double bed with upholstered headboard at center mid-ground, doorway with hallway visible at the far end of the room, wardrobe wall stretching along right side",
-    // 3. От изголовья кровати (низкий POV — foot of bed на переднем плане)
-    "interior photograph from the headboard wall facing into the room, low POV at headboard height, foot of the queen double bed in foreground centered, full-height built-in wardrobe wall along the right side of frame, doorway visible in the distance at the far end, workspace area on left with window light",
-    // 4. Из дальнего угла, диагональ
-    "interior photograph from the far corner of the bedroom near the window, diagonal high-angle view across the entire room, queen double bed visible diagonally in the middle, wardrobe wall at right, doorway in the opposite corner of the frame, deep depth showing full room volume",
+    "wide angle from the doorway showing the entire bedroom layout: queen size double bed centered with upholstered headboard and twin bedside tables, full-height built-in wardrobe along one wall, workspace near the window, soft area rug",
+    "front-on view of the bed area: queen size double bed with upholstered headboard, twin bedside tables with warm table lamps, decorative pillows, framed wall art above headboard, sconces on either side",
+    "side angle of the wardrobe wall: full-height built-in wardrobe with natural wood door panels and integrated open shelving with books and decor objects",
+    "view of the workspace at the window: compact desk with chair, floor lamp, sheer curtains, plant on the sill, soft daylight",
   ],
   kitchen: [
-    "interior photograph from the kitchen doorway looking inward, eye-level wide-angle, L-shaped lower cabinets with stone countertop running along the left wall, induction stove with hood centered, glass-front upper cabinets on the right, dining nook with round wooden table and chairs near the window at the back of the room, warm pendant light",
-    "interior photograph from the dining nook near the window facing the cabinets, dining table with chairs in foreground at left, kitchen counter and stove with hood at center mid-ground, doorway with hallway visible in the distance at the far end of the kitchen",
-    "interior photograph at counter level from the cooking zone facing the dining nook, tile backsplash and pendant light overhead, dining table with chairs in mid-ground centered, window with linen curtains at the back of the frame",
-    "interior photograph from the far corner of the kitchen, diagonal view across the room, all elements visible — counter and cabinets at right, dining table and window at left, doorway at the far corner, deep room perspective",
+    "wide angle from doorway showing the entire kitchen: L-shaped layout with cabinets, stone countertop, range hood above induction stove, dining nook with table and chairs near window, warm pendant light",
+    "front-on view of the kitchen counter: tiled backsplash, stone countertop with utensils and a vase, range hood, brass faucet over the sink",
+    "side view of tall pantry storage column with integrated appliances and glass-front upper cabinets",
+    "view of the dining area near the window: round wooden table with chairs, pendant light above, linen curtains, soft daylight",
   ],
   bathroom: [
-    "interior photograph from the bathroom doorway looking inward, eye-level wide-angle, vanity with basin and round mirror in foreground at left, walk-in shower behind glass partition at center mid-ground, toilet on the right, marble or porcelain tile floor and walls, warm sconce lighting",
-    "interior photograph from inside the walk-in shower zone facing out toward the doorway, frosted shower glass at left edge of frame, vanity with mirror at center mid-ground, doorway visible in the distance at the back of the room",
-    "interior photograph from behind the vanity facing across the bathroom, basin and faucet in foreground at right, towel hooks on the wall, walk-in shower visible at the far end of the room, soft natural daylight",
-    "interior photograph from the far corner diagonally across the bathroom, all elements visible — vanity, shower, toilet, doorway in the opposite corner, deep depth showing full room volume",
+    "wide angle from doorway showing the entire bathroom: walk-in shower behind glass partition, vanity with basin and round mirror, toilet, marble or porcelain tile, warm sconce lighting",
+    "front-on view of the vanity: round mirror, basin with modern faucet, marble or quartz countertop, sconce lighting on either side, towel hooks",
+    "side view of tall storage column: built-in cabinet with shelves and rolled towels, basket for laundry",
+    "shower zone close-up: glass-walled walk-in shower with rainfall head, marble tile, niche shelf with toiletries",
   ],
   living_room: [
-    "interior photograph from the living room doorway looking inward, eye-level wide-angle, large fabric sofa centered in mid-ground, low coffee table in front, TV unit on the opposite wall at the back of the frame, large window with sheer curtains on the right, soft area rug, warm floor lamp",
-    "interior photograph from the window facing back toward the doorway, sheer curtains at right edge of frame, sofa with back to window in foreground centered, TV unit visible at the far end of the frame, doorway with hallway in the distance, lounge chair on the side",
-    "interior photograph from the TV-wall side facing the seating area, low TV console in foreground at the bottom of frame, sofa and ottoman in mid-ground centered, window light coming from the left side",
-    "interior photograph from the far corner of the living room, diagonal view across the entire room, all furniture visible — sofa at center, TV unit at right, window at left, doorway in the opposite corner, deep room perspective",
+    "wide angle from doorway showing the entire living room: large fabric sofa centered, low coffee table, TV unit on opposite wall, large window with sheer curtains, soft area rug, warm floor lamp",
+    "front-on view of the seating area: sofa with decorative pillows and throw, side table with table lamp and books, gallery wall behind",
+    "media wall side view: TV mounted on wall, low TV console with drawers, decorative items on shelves, plant in pot",
+    "view of the reading nook by the window: lounge chair with throw, floor lamp, side table with book, sheer curtains, soft daylight",
   ],
   hallway: [
-    "interior photograph from the front door of the apartment looking inward down the hallway, eye-level wide-angle, full-height built-in wardrobe along the left wall, slim console table with rectangular mirror above on the right wall, decorative ceiling pendants, runner rug down the center, opening into the apartment at the far end of the frame",
-    "interior photograph from the far end of the hallway facing back toward the front door, console with mirror reflecting the door at center mid-ground, full hallway visible, wardrobe wall stretching along the right side",
-    "interior photograph at wardrobe level facing the opposite wall, mirror and console table centered, runner rug visible at the bottom of frame, ceiling pendants overhead, soft warm lighting",
-    "interior photograph from the corner of the hallway, diagonal high-angle view, all elements visible — wardrobe, console, mirror, runner, ceiling lights, front door at the opposite corner of the frame, deep narrow perspective",
+    "wide angle from front door showing the entire hallway: full-height built-in wardrobe to one side, slim console table with mirror above, decorative ceiling lighting, runner rug",
+    "front-on view of the entryway console: console table with vase and key tray, large rectangular mirror above, warm sconce lighting",
+    "side view of the wardrobe wall: full-height built-in wardrobe with natural wood door panels, integrated shoe storage at bottom",
+    "end of the hallway opening into the apartment: small upholstered bench with cushion, hooks on the wall for jackets, framed art, ceiling light",
   ],
   nursery: [
-    "interior photograph from the nursery doorway looking inward, eye-level wide-angle, child bed with safety rail at left mid-ground, study desk with chair near the window at the back of the room, low toy storage cabinets along the right wall, soft area rug centered on the floor, warm pendant light",
-    "interior photograph from the window facing back toward the doorway, study desk and chair in foreground at right, child bed with safety rail at center mid-ground, doorway visible in the distance, low cabinets along the left wall",
-    "interior photograph from the head of the child bed facing into the room, foot of the bed in foreground, low cabinets at right, doorway visible at the far end, window light coming from the left side",
-    "interior photograph from the far corner of the nursery, diagonal view across the entire room, child bed at left, study desk at right, low cabinets in mid-ground, doorway in the opposite corner, deep room volume",
+    "wide angle of the entire child room from doorway: child bed with safety rail, study desk with chair near window, low toy storage cabinets, soft area rug, warm pendant light",
+    "front-on view of the bed area: bed with patterned bedding, decorative pillows, framed art on the wall, bedside small table with night light",
+    "play and storage zone side view: low cabinets for toys with rounded edges, open shelving with books and toys, soft floor mat",
+    "view of the study and window area: child desk facing the window, ergonomic chair, pin board on the wall, table lamp, soft daylight",
   ],
   apartment: [
-    "interior photograph from the entrance to the open-plan apartment looking inward, eye-level wide-angle, living area with fabric sofa and coffee table in foreground at left, dining area with wooden table at center mid-ground, kitchen counter visible at the far end on the right, warm pendant lights overhead, deep room perspective",
-    "interior photograph from the kitchen end facing back toward the entrance, kitchen counter and bar stools in foreground, dining area in mid-ground centered, living area with sofa visible in the distance, doorway at the far end of the frame",
-    "interior photograph from the bedroom corner facing the open-plan area, partition or low divider in foreground, dining area in mid-ground, kitchen visible at the far right of the frame, soft daylight from window at left",
-    "interior photograph from the far corner of the apartment, diagonal view across all zones, living area at left, dining at center, kitchen at right, entrance doorway in the opposite corner, deep depth showing full apartment volume",
+    "wide angle of the open-plan main room from entrance: living area with sofa and coffee table, dining area with wooden table, kitchen counter visible at the back, warm pendant lights",
+    "front-on view of the living area: fabric sofa with cushions, coffee table with magazines, area rug, decorative shelves, gallery wall",
+    "kitchen and dining zone: kitchen island with bar stools, dining table with chairs, pendant lights above",
+    "bedroom area near the window: queen size bed visible behind partition, window with linen curtains, soft daylight, lounge chair",
   ],
 };
 
-/** RU labels для 5 ракурсов: 4 разных POV + 5-й 3D-isometric. */
+/** RU labels для 5 ракурсов в порядке UI [общий, кровать-акцент, шкаф, окно, 3D-план]. */
 const VIEW_LABELS: [string, string, string, string, string] = [
-  "Общий вид от двери",
-  "Вид от окна",
-  "Вид от изголовья кровати",
-  "Вид из дальнего угла",
-  "3D-планировка сверху",
+  "Общий вид от входа",
+  "Вид на кровать и акцент",
+  "Шкаф и хранение",
+  "Зона у окна",
+  "3D-планировка",
 ];
-
-/** RU labels для 5 ракурсов per-room — labels[roomType][position-1]. */
-const ROOM_VIEW_LABELS: Record<string, [string, string, string, string, string]> = {
-  bedroom:     ["Общий вид от двери",  "Вид от окна",         "Вид от изголовья",     "Вид из дальнего угла", "3D-планировка"],
-  kitchen:     ["Общий вид от двери",  "Вид от обеденной зоны", "Вид с кухонного стола", "Вид из дальнего угла", "3D-планировка"],
-  bathroom:    ["Общий вид от двери",  "Вид из душевой зоны", "Вид от раковины",      "Вид из дальнего угла", "3D-планировка"],
-  living_room: ["Общий вид от двери",  "Вид от окна",         "Вид от ТВ-стенки",     "Вид из дальнего угла", "3D-планировка"],
-  hallway:     ["Общий вид от двери",  "Вид от прохода",      "Вид от шкафа",         "Вид из дальнего угла", "3D-планировка"],
-  nursery:     ["Общий вид от двери",  "Вид от окна",         "Вид от изголовья кровати", "Вид из дальнего угла", "3D-планировка"],
-  apartment:   ["Общий вид от входа",  "Вид с кухни",         "Вид от спальной зоны", "Вид из дальнего угла", "3D-планировка"],
-};
 
 /**
  * Промпт для 3D-isometric плана — отдельный FLUX Pro Ultra вызов после
@@ -260,69 +244,72 @@ function buildIsometricPrompt(room: string, style: string, area: number | null):
 }
 
 /**
- * Промпт для одного ракурса в seed-mode. Использует ROOM_CAMERA_PROMPTS
- * для описания где стоит камера и что в кадре. Hero (idx=0) рендерится
- * первым text2img'ом, views 1/2/3 рендерятся параллельно с image_prompt=hero
- * чтобы Pro Ultra унаследовал стиль/палитру/материалы и комната выглядела
- * как ОДНА И ТА ЖЕ с разных позиций.
+ * Промпт для одного коллажа 2×2 grid через gpt-image-1.5. Один вызов
+ * генерит весь moodboard — модель умеет multi-panel композицию с identity
+ * preservation, поэтому все 4 ракурса показывают ОДНУ И ТУ ЖЕ комнату с
+ * одинаковой палитрой/материалами/освещением. Затем sharp разрезает на
+ * 4 квадранта.
  */
-function buildCameraPrompt(room: string, style: string, area: number | null, idx: 0 | 1 | 2 | 3): string {
+function buildMoodboardPrompt(room: string, style: string, area: number | null): string {
   const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-  const cameras = ROOM_CAMERA_PROMPTS[room] ?? ROOM_CAMERA_PROMPTS.bedroom!;
-  const description = cameras[idx];
+  const subjects = ROOM_VIEW_SUBJECTS[room] ?? ROOM_VIEW_SUBJECTS.bedroom!;
   const areaPart = area ? ` ${area} sqm` : "";
   const roomNoun = room.replace(/_/g, " ");
   return [
-    `${styleDesc} ${roomNoun}${areaPart} apartment in Russia, ${description}.`,
-    "Same room, identical materials, palette, and warm soft lighting throughout.",
+    `Interior design moodboard with 2x2 grid layout showing the SAME ${styleDesc} ${roomNoun}${areaPart} apartment from 4 different camera angles in one image.`,
+    `All four panels show the exact same room — same walls, same materials, same color palette, same lighting — only the camera angle changes.`,
+    `Top-left panel: ${subjects[0]}.`,
+    `Top-right panel: ${subjects[1]}.`,
+    `Bottom-left panel: ${subjects[2]}.`,
+    `Bottom-right panel: ${subjects[3]}.`,
+    `Subtle thin white border separating each panel.`,
     RENDER_SUFFIX,
   ].join(" ");
 }
 
 /**
- * 6 detail-crops: какие куски из конкретных views вырезать. Координаты
- * в относительных долях ширины/высоты source view (0-1), чтобы работало
- * для любого размера. Каждый crop ссылается на view-source через viewPos.
+ * 6 detail-crops: какие куски из коллажа вырезать. Координаты в
+ * относительных долях ширины/высоты коллажа (0-1), чтобы работало для
+ * любого размера. Coords указывают на конкретные panel'ы в 2×2 grid.
  */
 interface CropSpec {
-  /** Из какого view вырезать (1..4 — view 5 isometric не используется). */
-  viewPos: 1 | 2 | 3 | 4;
-  /** Центр crop'а в долях от ширины source (0=left, 1=right). */
+  /** Центр crop'а в долях от ширины (0=left, 1=right). */
   cx: number;
-  /** Центр crop'а в долях от высоты source (0=top, 1=bottom). */
+  /** Центр crop'а в долях от высоты (0=top, 1=bottom). */
   cy: number;
-  /** Размер crop'а в долях от высоты source (квадратный, 0.5 = половина высоты). */
+  /** Размер crop'а в долях от высоты (квадратный, 0.5 = половина высоты). */
   size: number;
 }
 
-// 6 crops из 4 разных views. Раскладка: основной объект из hero,
-// детали мебели из других views, освещение и пол — zoom in hero.
+// 6 crops по разным частям 2×2 коллажа — center каждого panel + 2 zoom'а
+// в самые «детальные» области.
 const CROP_SPECS: CropSpec[] = [
-  { viewPos: 1, cx: 0.50, cy: 0.55, size: 0.55 }, // главный объект из общего вида
-  { viewPos: 3, cx: 0.45, cy: 0.55, size: 0.45 }, // деталь из view-«изголовье»
-  { viewPos: 4, cx: 0.50, cy: 0.55, size: 0.50 }, // деталь из диагонального угла
-  { viewPos: 2, cx: 0.40, cy: 0.60, size: 0.45 }, // foreground из view-«окно»
-  { viewPos: 1, cx: 0.50, cy: 0.22, size: 0.32 }, // верх hero (свет/потолок)
-  { viewPos: 1, cx: 0.50, cy: 0.85, size: 0.30 }, // низ hero (пол/ковер)
+  { cx: 0.25, cy: 0.25, size: 0.40 }, // top-left center (главный объект)
+  { cx: 0.75, cy: 0.25, size: 0.40 }, // top-right center (детали кровати/акцент)
+  { cx: 0.25, cy: 0.75, size: 0.40 }, // bottom-left center (шкаф/хранение)
+  { cx: 0.75, cy: 0.75, size: 0.40 }, // bottom-right center (окно/workspace)
+  { cx: 0.65, cy: 0.20, size: 0.25 }, // zoom: акцент (top-right inset)
+  { cx: 0.30, cy: 0.80, size: 0.25 }, // zoom: текстура (bottom-left inset)
 ];
 
 /**
- * Подписи к 6 кропам по типу комнаты. Соответствуют структуре CROP_SPECS:
- * [главный объект из hero, деталь из view-3, деталь из view-4, foreground
- * из view-2, освещение, пол/текстура].
+ * Подписи к 6 кропам по типу комнаты — конкретные объекты мебели.
+ * Соответствует визуальной структуре 2×2 коллажа: top-left=общий план,
+ * top-right=кровать/диван/ванна, bottom-left=шкаф/гарнитур,
+ * bottom-right=окно/workspace.
  */
 const ROOM_CROP_LABELS: Record<string, [string, string, string, string, string, string]> = {
-  bedroom:     ["Кровать", "Изножье и шкаф", "Угол с хранением", "Зона у окна",  "Освещение",       "Пол и ковёр"],
-  kitchen:     ["Гарнитур", "Фартук и плита", "Хранение",        "Обеденный стол", "Пендель и свет", "Пол"],
-  bathroom:    ["Душевая",  "Раковина",       "Угол с туалетом",  "Зона у входа", "Освещение",      "Плитка пола"],
-  living_room: ["Диван",    "Зона ТВ",        "Угол комнаты",     "У окна",       "Освещение",      "Пол и ковёр"],
-  hallway:     ["Прихожая", "Зеркало и консоль", "Шкаф",          "Конец коридора", "Освещение",    "Пол и дорожка"],
-  nursery:     ["Детская кровать", "Изножье и игрушки", "Угол с хранением", "Стол у окна", "Освещение", "Пол и коврик"],
-  apartment:   ["Гостиная", "Спальная зона", "Угол с обеденной зоной", "Кухонная зона", "Освещение", "Пол"],
+  bedroom:     ["Кровать", "Прикроватная тумба", "Встроенный шкаф", "Рабочий стол", "Бра у кровати", "Полки шкафа"],
+  kitchen:     ["Гарнитур", "Фартук и плита", "Хранение", "Обеденный стол", "Декор стены", "Светильник"],
+  bathroom:    ["Ванна", "Раковина", "Шкаф для полотенец", "Душ", "Зеркало и сантехника", "Текстура плитки"],
+  living_room: ["Диван", "Журнальный столик", "Зона ТВ", "Кресло у окна", "Декор стены", "Освещение"],
+  hallway:     ["Прихожая", "Зеркало", "Шкаф-купе", "Скамья и крючки", "Освещение", "Текстура пола"],
+  nursery:     ["Детская кровать", "Постель и декор", "Шкаф для игрушек", "Стол у окна", "Свет и текстиль", "Полки и игрушки"],
+  apartment:   ["Гостиная", "Спальня", "Кухня", "Ванная", "Освещение", "Декор"],
 };
 
 const FALLBACK_CROP_LABELS: [string, string, string, string, string, string] = [
-  "Общий план", "Деталь интерьера", "Угол комнаты", "Зона у окна", "Освещение", "Пол",
+  "Общая зона", "Акцентная стена", "Зона хранения", "Зона у окна", "Деталь декора", "Текстура",
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -359,22 +346,21 @@ async function signR2(bucketId: string, key: string, ttlSec = 600): Promise<stri
 }
 
 /**
- * Вырезает квадратный crop 768×768 из view-buffer'а по относительным
- * координатам (cx, cy, size). Используется для 6 detail-кропов из
- * конкретных views.
+ * Вырезает квадратный crop 768×768 из source-коллажа по относительным
+ * координатам (cx, cy, size). Используется для 6 detail-кропов.
  */
-async function cropDetailFromView(
-  viewBuffer: Buffer,
+async function cropDetailFromPanorama(
+  panoramaBuffer: Buffer,
   spec: CropSpec,
 ): Promise<Buffer> {
-  const meta = await sharp(viewBuffer).metadata();
-  const W = meta.width ?? 1024;
-  const H = meta.height ?? 768;
+  const meta = await sharp(panoramaBuffer).metadata();
+  const W = meta.width ?? 1536;
+  const H = meta.height ?? 1024;
   const sizePx = Math.floor(spec.size * H);
   const left = clamp(Math.floor(spec.cx * W - sizePx / 2), 0, W - sizePx);
   const top = clamp(Math.floor(spec.cy * H - sizePx / 2), 0, H - sizePx);
 
-  return sharp(viewBuffer)
+  return sharp(panoramaBuffer)
     .extract({ left, top, width: sizePx, height: sizePx })
     .resize(768, 768, { fit: "cover" })
     .jpeg({ quality: 86, progressive: true })
@@ -383,6 +369,49 @@ async function cropDetailFromView(
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/**
+ * Вырезает один из 4 квадрантов 2×2 grid коллажа через sharp. Indexing:
+ *   0 = top-left  (общий вид)
+ *   1 = top-right (акцентная стена)
+ *   2 = bottom-left (зона хранения)
+ *   3 = bottom-right (у окна)
+ *
+ * Source — коллаж от gpt-image-1.5. Output 1024×768 (4:3) с cover-fit.
+ * Внутренний крошечный inset (~3% от размера квадранта) — чтобы не зацепить
+ * белую границу между панелями.
+ */
+async function cropQuadrant(collageBuffer: Buffer, index: 0 | 1 | 2 | 3): Promise<Buffer> {
+  const meta = await sharp(collageBuffer).metadata();
+  const W = meta.width ?? 1536;
+  const H = meta.height ?? 1024;
+  const halfW = Math.floor(W / 2);
+  const halfH = Math.floor(H / 2);
+  const insetW = Math.floor(halfW * 0.03);
+  const insetH = Math.floor(halfH * 0.03);
+
+  const left = (index % 2) === 0 ? insetW : halfW + insetW;
+  const top = index < 2 ? insetH : halfH + insetH;
+  const cellW = halfW - insetW * 2;
+  const cellH = halfH - insetH * 2;
+
+  return sharp(collageBuffer)
+    .extract({ left, top, width: cellW, height: cellH })
+    .resize(1024, 768, { fit: "cover" })
+    .jpeg({ quality: 88, progressive: true })
+    .toBuffer();
+}
+
+/**
+ * Возвращает 3D-isometric, scaled to 4:3 1024×768. Используется как
+ * view 5 в hero gallery + plan section.
+ */
+async function scaleIsometricToView(isoBuffer: Buffer): Promise<Buffer> {
+  return sharp(isoBuffer)
+    .resize(1024, 768, { fit: "cover" })
+    .jpeg({ quality: 88, progressive: true })
+    .toBuffer();
 }
 
 /**
@@ -488,7 +517,7 @@ async function processDesign(designId: number): Promise<void> {
     && Array.isArray(design.solutions) && design.solutions.length > 0;
 
   console.log(
-    `[designWorker] design ${design.id}: ${isSeedMode ? "Pro Ultra hero + 3 image-prompted views + isometric" : "img2img × 4 from user upload"}`
+    `[designWorker] design ${design.id}: ${isSeedMode ? "gpt-image-1.5 collage 2x2 + sharp slicing + 3D-isometric" : "img2img × 4 from user upload"}`
     + (hasSeedContent ? " (seed content — skipping AI text gen)" : " + AI content"),
   );
 
@@ -531,139 +560,97 @@ async function processDesign(designId: number): Promise<void> {
       });
 
   const views: DesignView[] = [];
-  const viewBuffers: Buffer[] = [];
   let mainResultPublicUrl: string | null = null;
   let mainImageBuffer: Buffer | null = null;
+  let collageBuffer: Buffer | null = null;
 
   if (isSeedMode) {
-    const labels = ROOM_VIEW_LABELS[design.roomType] ?? VIEW_LABELS;
-
-    // ── 2.1. Hero (view 1) — wide-angle от двери, text2img Pro Ultra. ──
-    // Это reference для остальных views: они генерятся с image_prompt=hero
-    // (Fal CDN URL, ~24h TTL) — Pro Ultra наследует палитру, материалы,
-    // освещение, и комната выглядит как ОДНА И ТА ЖЕ с разных позиций.
-    console.log(`[designWorker] design ${design.id}: generating hero view 1 (FLUX Pro Ultra)`);
-    const heroPrompt = buildCameraPrompt(design.roomType, design.style, areaNum, 0);
-    const heroResult = await falGeneratePanoramicPro({
-      prompt: heroPrompt,
-      aspectRatio: "4:3",
+    // ── 2.1. Один gpt-image-1.5 вызов для коллажа 2×2 (4 ракурса). ──
+    // Эта модель — DALL-E 3 successor, умеет multi-panel композицию с
+    // identity preservation: все 4 ракурса = ОДНА И ТА ЖЕ комната с
+    // одинаковыми материалами/палитрой/освещением, разные углы.
+    console.log(`[designWorker] design ${design.id}: generating 2x2 collage (gpt-image-1.5, 1536x1024 medium)`);
+    const moodboardPrompt = buildMoodboardPrompt(design.roomType, design.style, areaNum);
+    const collageResult = await falGenerateGptImage({
+      prompt: moodboardPrompt,
+      imageSize: "1536x1024",
+      quality: "medium",
     });
-    const heroBuffer = await downloadImage(heroResult.imageUrl);
-    viewBuffers[0] = heroBuffer;
+    collageBuffer = await downloadImage(collageResult.imageUrl);
 
-    const heroFilename = `${design.id}_view_1.jpg`;
-    const heroR2Key = `dizajn/results/${heroFilename}`;
-    const heroPublicUrl = await uploadJpegToR2(bucketId, heroR2Key, heroBuffer);
-    views.push({ url: heroPublicUrl, label: labels[0]!, position: 1 });
-    mainResultPublicUrl = heroPublicUrl;
-    mainImageBuffer = heroBuffer;
-
-    await db.insert(designImagesTable).values({
-      designId: design.id,
-      type: "view_1",
-      url: heroPublicUrl,
-      width: heroResult.width,
-      height: heroResult.height,
-      sortOrder: 0,
-    });
     await db.insert(designGenerationsTable).values({
       designId: design.id,
       provider: "fal-ai",
-      model: process.env.FAL_MODEL_PANORAMIC ?? "fal-ai/flux-pro/v1.1-ultra",
-      prompt: heroPrompt,
+      model: process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5",
+      prompt: moodboardPrompt,
       roomType: design.roomType,
       style: design.style,
       status: "success",
-      costKopeks: heroResult.costKopeks,
+      costKopeks: collageResult.costKopeks,
       providerResponse: {
-        generationMs: heroResult.generationMs,
-        view: "view_1_hero",
-        mode: "text2img",
-        imageSize: `${heroResult.width}x${heroResult.height}`,
+        generationMs: collageResult.generationMs,
+        view: "collage-2x2",
+        mode: "text2img-collage",
+        imageSize: `${collageResult.width}x${collageResult.height}`,
       },
       completedAt: new Date(),
     });
 
-    // ── 2.2. Views 2/3/4 параллельно через Pro Ultra с image_prompt=hero. ──
-    // image_prompt_strength=0.55 — заметное наследование palette/style, но
-    // композиция кадра определяется text-промптом (камера в другом месте).
-    console.log(`[designWorker] design ${design.id}: generating views 2/3/4 in parallel (image_prompt=hero, strength=0.55)`);
-    const followupResults = await Promise.all(
-      [1, 2, 3].map(async (idx) => {
-        const prompt = buildCameraPrompt(design.roomType, design.style, areaNum, idx as 1 | 2 | 3);
-        const result = await falGeneratePanoramicPro({
-          prompt,
-          aspectRatio: "4:3",
-          imagePromptUrl: heroResult.imageUrl,
-          imagePromptStrength: 0.55,
-        });
-        const buffer = await downloadImage(result.imageUrl);
-        return { idx, prompt, result, buffer };
-      }),
-    );
-
-    for (const { idx, prompt, result, buffer } of followupResults) {
-      viewBuffers[idx] = buffer;
-      const position = idx + 1;
+    // ── 2.2. Sharp нарезает коллаж на 4 view'а: top-left=общий,
+    //         top-right=акцент, bottom-left=шкаф, bottom-right=окно.
+    for (let i = 0; i < 4; i++) {
+      const buf = await cropQuadrant(collageBuffer, i as 0 | 1 | 2 | 3);
+      const position = i + 1;
       const filename = `${design.id}_view_${position}.jpg`;
       const r2Key = `dizajn/results/${filename}`;
-      const publicUrl = await uploadJpegToR2(bucketId, r2Key, buffer);
-      views.push({ url: publicUrl, label: labels[idx]!, position });
+      const publicUrl = await uploadJpegToR2(bucketId, r2Key, buf);
+
+      views.push({ url: publicUrl, label: VIEW_LABELS[i]!, position });
 
       await db.insert(designImagesTable).values({
         designId: design.id,
         type: `view_${position}`,
         url: publicUrl,
-        width: result.width,
-        height: result.height,
-        sortOrder: idx,
+        width: 1024,
+        height: 768,
+        sortOrder: i,
       });
-      await db.insert(designGenerationsTable).values({
-        designId: design.id,
-        provider: "fal-ai",
-        model: process.env.FAL_MODEL_PANORAMIC ?? "fal-ai/flux-pro/v1.1-ultra",
-        prompt,
-        roomType: design.roomType,
-        style: design.style,
-        status: "success",
-        costKopeks: result.costKopeks,
-        providerResponse: {
-          generationMs: result.generationMs,
-          view: `view_${position}`,
-          mode: "text2img-image-prompt",
-          imageSize: `${result.width}x${result.height}`,
-        },
-        completedAt: new Date(),
-      });
+
+      if (i === 0) {
+        mainResultPublicUrl = publicUrl;
+        mainImageBuffer = buf;
+      }
     }
 
-    // ── 2.3. View 5 — 3D-isometric план, отдельный Pro Ultra вызов. ──
-    console.log(`[designWorker] design ${design.id}: generating view 5 — 3D isometric plan`);
+    // ── 2.3. View 5 — 3D-isometric план через gpt-image-1.5. ──────────
+    console.log(`[designWorker] design ${design.id}: generating view 5 — 3D isometric (gpt-image-1.5, 1024x1024 medium)`);
     try {
       const isoPrompt = buildIsometricPrompt(design.roomType, design.style, areaNum);
-      const isometricResult = await falGeneratePanoramicPro({
+      const isometricResult = await falGenerateGptImage({
         prompt: isoPrompt,
-        aspectRatio: "4:3",
+        imageSize: "1024x1024",
+        quality: "medium",
       });
-      const isoBuffer = await downloadImage(isometricResult.imageUrl);
+      const isoSourceBuffer = await downloadImage(isometricResult.imageUrl);
+      const isoBuffer = await scaleIsometricToView(isoSourceBuffer);
       const isoFilename = `${design.id}_isometric.jpg`;
       const isoR2Key = `dizajn/isometric/${isoFilename}`;
       const isoPublicUrl = await uploadJpegToR2(bucketId, isoR2Key, isoBuffer);
 
-      views.push({ url: isoPublicUrl, label: labels[4]!, position: 5 });
+      views.push({ url: isoPublicUrl, label: VIEW_LABELS[4]!, position: 5 });
 
       await db.insert(designImagesTable).values({
         designId: design.id,
         type: "view_5_isometric",
         url: isoPublicUrl,
-        width: isometricResult.width,
-        height: isometricResult.height,
+        width: 1024,
+        height: 768,
         sortOrder: 4,
       });
       await db.insert(designGenerationsTable).values({
         designId: design.id,
         provider: "fal-ai",
-        model: process.env.FAL_MODEL_PANORAMIC ?? "fal-ai/flux-pro/v1.1-ultra",
+        model: process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5",
         prompt: isoPrompt,
         roomType: design.roomType,
         style: design.style,
@@ -688,28 +675,26 @@ async function processDesign(designId: number): Promise<void> {
     const falInputUrl = await signR2(bucketId, beforeKey);
     console.log(`[designWorker] design ${design.id}: generating 4 views (img2img × 4 from user upload)`);
 
-    const labels = ROOM_VIEW_LABELS[design.roomType] ?? VIEW_LABELS;
     const styleDesc = STYLE_DESCRIPTORS[design.style] ?? design.style;
     const roomNoun = design.roomType.replace(/_/g, " ");
     const areaPart = areaNum ? ` ${areaNum} sqm` : "";
-    const cameras = ROOM_CAMERA_PROMPTS[design.roomType] ?? ROOM_CAMERA_PROMPTS.bedroom!;
+    const subjects = ROOM_VIEW_SUBJECTS[design.roomType] ?? ROOM_VIEW_SUBJECTS.bedroom!;
 
     const renderResults = await Promise.all(
       [0, 1, 2, 3].map((i) => {
-        const prompt = `${styleDesc} ${roomNoun}${areaPart} interior. ${cameras[i]}. ${RENDER_SUFFIX}`;
+        const prompt = `${styleDesc} ${roomNoun}${areaPart} interior. ${subjects[i]}. ${RENDER_SUFFIX}`;
         return falGenerate({
           initImageUrl: falInputUrl,
           prompt,
           aspectRatio: "4:3",
           strength: 0.78,
-        }).then((result) => ({ ...result, position: i + 1, label: labels[i]!, prompt }));
+        }).then((result) => ({ ...result, position: i + 1, label: VIEW_LABELS[i]!, prompt }));
       }),
     );
 
     for (let i = 0; i < renderResults.length; i++) {
       const r = renderResults[i]!;
       const buf = await downloadImage(r.imageUrl);
-      viewBuffers[i] = buf;
 
       const filename = `${design.id}_view_${r.position}.jpg`;
       const r2Key = `dizajn/results/${filename}`;
@@ -757,19 +742,17 @@ async function processDesign(designId: number): Promise<void> {
   // ── 3. Ждём AI-text generation. ─────────────────────────────────────────
   const content = await contentPromise;
 
-  // ── 4. 6 detail-crops через sharp из конкретных views ─────────────────
-  // Каждый crop ссылается на конкретный view через viewPos в CROP_SPECS,
-  // labels per-room соответствуют тому что РЕАЛЬНО на crop'е.
-  console.log(`[designWorker] design ${design.id}: generating 6 detail crops (sharp from views)`);
+  // ── 4. 6 detail-crops через sharp из коллажа. ─────────────────────────
+  // Источник: full коллаж 2×2 (для seed) — crops показывают конкретные
+  // panel'ы и их детали. Для user-upload — view 1 (hero crop).
+  console.log(`[designWorker] design ${design.id}: generating 6 detail crops (sharp)`);
   const detailCrops: DesignDetailCrop[] = [];
+  const cropSource = collageBuffer ?? mainImageBuffer;
   const cropLabels = ROOM_CROP_LABELS[design.roomType] ?? FALLBACK_CROP_LABELS;
 
   for (let i = 0; i < CROP_SPECS.length; i++) {
     const spec = CROP_SPECS[i]!;
-    // Если view-buffer недоступен (например isometric не сгенерился) —
-    // fallback на hero (view 1).
-    const sourceBuffer = viewBuffers[spec.viewPos - 1] ?? mainImageBuffer;
-    const cropBuffer = await cropDetailFromView(sourceBuffer, spec);
+    const cropBuffer = await cropDetailFromPanorama(cropSource, spec);
     const filename = `${design.id}_crop_${i + 1}.jpg`;
     const r2Key = `dizajn/crops/${filename}`;
     const publicUrl = await uploadJpegToR2(bucketId, r2Key, cropBuffer);
@@ -777,7 +760,7 @@ async function processDesign(designId: number): Promise<void> {
     detailCrops.push({
       url: publicUrl,
       label: cropLabels[i]!,
-      fromView: spec.viewPos,
+      fromView: 1,
     });
   }
 

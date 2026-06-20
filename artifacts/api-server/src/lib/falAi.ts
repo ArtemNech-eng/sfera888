@@ -201,6 +201,99 @@ export async function falGeneratePanoramicPro(input: {
 }
 
 /**
+ * GPT Image 1.5 (OpenAI's DALL-E 3 successor) через Fal.ai.
+ *
+ * Это **другой класс модели** vs FLUX: gpt-image-1.5 натренирована на
+ * multi-panel композициях с identity preservation — то самое что ChatGPT
+ * генерит в одном изображении. Используется для seed-проектов где надо
+ * показать ОДНУ комнату с 4 ракурсов одновременно (2×2 collage), затем
+ * sharp нарезает на отдельные views.
+ *
+ * Endpoint: `fal-ai/gpt-image-1.5`
+ * Schema (text-to-image):
+ *   • prompt (required)
+ *   • image_size: "auto" | "1024x1024" | "1536x1024" | "1024x1536"
+ *   • quality: "auto" | "low" | "medium" | "high"
+ *   • output_format: "jpeg" | "png" | "webp"
+ *   • num_images
+ *
+ * Pricing (medium quality):
+ *   • 1024x1024 = $0.034
+ *   • 1024x1536 = $0.051
+ *   • 1536x1024 = $0.050
+ *   (high quality ~4× дороже)
+ */
+export async function falGenerateGptImage(input: {
+  prompt: string;
+  imageSize?: "auto" | "1024x1024" | "1536x1024" | "1024x1536";
+  quality?: "auto" | "low" | "medium" | "high";
+}): Promise<FalGenerationResult> {
+  const apiKey = process.env.FAL_API_KEY;
+  if (!apiKey) {
+    throw new Error("FAL_API_KEY is not set");
+  }
+  const model = process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5";
+  const url = `${FAL_BASE_URL}/${model}`;
+  const imageSize = input.imageSize ?? "1024x1024";
+  const quality = input.quality ?? "medium";
+
+  const body: Record<string, unknown> = {
+    prompt: input.prompt,
+    image_size: imageSize,
+    quality,
+    output_format: "jpeg",
+    num_images: 1,
+  };
+
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(`Fal.ai gpt-image network error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Fal.ai gpt-image HTTP ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const data = (await response.json()) as {
+    images?: Array<{ url: string; width?: number; height?: number }>;
+  };
+
+  if (!data.images || data.images.length === 0) {
+    throw new Error("Fal.ai gpt-image returned no images");
+  }
+
+  // Cost approximation per medium quality (most common). High quality ~4×.
+  const costMap: Record<string, number> = {
+    "1024x1024": 340,
+    "1536x1024": 500,
+    "1024x1536": 510,
+    auto: 510,
+  };
+  const baseCostKopeks = costMap[imageSize] ?? 500;
+  const qualityMultiplier = quality === "high" ? 4 : quality === "low" ? 0.3 : 1;
+
+  const first = data.images[0]!;
+  return {
+    imageUrl: first.url,
+    width: first.width ?? 1024,
+    height: first.height ?? 1024,
+    generationMs: Date.now() - startedAt,
+    costKopeks: Math.round(baseCostKopeks * qualityMultiplier),
+  };
+}
+
+/**
  * Text-to-image вызов Fal.ai (без init image). Используется seed-скриптом
  * для генерации starter-designs без user-upload, а также если в будущем
  * добавим «генерация без фото» в публичную форму.
