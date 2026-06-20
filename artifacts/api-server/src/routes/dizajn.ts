@@ -650,8 +650,21 @@ router.get("/img/:type/:filename", async (req: Request, res: Response) => {
       res.setHeader("Content-Length", String(response.ContentLength));
     }
     if (response.Body) {
-      const nodeStream = Readable.fromWeb(response.Body as ReadableStream<Uint8Array>);
-      nodeStream.pipe(res);
+      // AWS SDK v3 returns Body as Node Readable in Node.js runtime
+      // (IncomingMessage), Web ReadableStream in browser, or Blob. We pipe
+      // directly if it's a Node stream; otherwise convert via fromWeb.
+      const body = response.Body as unknown;
+      if (body && typeof (body as { pipe?: unknown }).pipe === "function") {
+        (body as Readable).pipe(res);
+      } else if (typeof (body as { getReader?: unknown }).getReader === "function") {
+        Readable.fromWeb(body as ReadableStream<Uint8Array>).pipe(res);
+      } else if (typeof (body as { transformToByteArray?: unknown }).transformToByteArray === "function") {
+        // Smithy SDK stream wrapper — buffer it (small images, OK).
+        const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+        res.end(Buffer.from(bytes));
+      } else {
+        res.end();
+      }
     } else {
       res.end();
     }
