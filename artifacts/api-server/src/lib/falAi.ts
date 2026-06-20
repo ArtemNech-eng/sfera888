@@ -116,6 +116,82 @@ export async function falGenerate(input: FalGenerationInput): Promise<FalGenerat
 }
 
 /**
+ * Text-to-image через FLUX 1.1 Pro Ultra — премиум модель для качественных
+ * интерьерных рендеров (на уровне DALL-E 3 / ChatGPT). Используется для
+ * панорамных дизайн-моудбордов в seed-проектах.
+ *
+ * Endpoint: `fal-ai/flux-pro/v1.1-ultra`
+ * Params (отличается от FLUX dev):
+ *   • aspect_ratio: "21:9" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "9:21"
+ *   • safety_tolerance: "1".."6" (str)
+ *   • raw: optional bool
+ *
+ * Cost: ~$0.06 per image (vs $0.025 у FLUX dev).
+ */
+export async function falGeneratePanoramicPro(input: {
+  prompt: string;
+  aspectRatio?: "21:9" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "9:21";
+}): Promise<FalGenerationResult> {
+  const apiKey = process.env.FAL_API_KEY;
+  if (!apiKey) {
+    throw new Error("FAL_API_KEY is not set");
+  }
+  const model = process.env.FAL_MODEL_PANORAMIC ?? "fal-ai/flux-pro/v1.1-ultra";
+  const url = `${FAL_BASE_URL}/${model}`;
+
+  const body = {
+    prompt: input.prompt,
+    aspect_ratio: input.aspectRatio ?? "21:9",
+    num_images: 1,
+    enable_safety_checker: true,
+    safety_tolerance: "2",
+    output_format: "jpeg",
+  };
+
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(`Fal.ai network error (panoramic): ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Fal.ai panoramic HTTP ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const data = (await response.json()) as {
+    images?: Array<{ url: string; width?: number; height?: number }>;
+    has_nsfw_concepts?: boolean[];
+  };
+
+  if (!data.images || data.images.length === 0) {
+    throw new Error("Fal.ai panoramic returned no images");
+  }
+  if (data.has_nsfw_concepts?.some((flag) => flag === true)) {
+    throw new Error("Fal.ai panoramic flagged image as NSFW");
+  }
+
+  const first = data.images[0]!;
+  return {
+    imageUrl: first.url,
+    width: first.width ?? 2752,
+    height: first.height ?? 1184,
+    generationMs: Date.now() - startedAt,
+    // FLUX Pro Ultra ~$0.06 per image
+    costKopeks: 600,
+  };
+}
+
+/**
  * Text-to-image вызов Fal.ai (без init image). Используется seed-скриптом
  * для генерации starter-designs без user-upload, а также если в будущем
  * добавим «генерация без фото» в публичную форму.

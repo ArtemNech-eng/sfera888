@@ -36,7 +36,7 @@ import {
 import { and, eq, lt } from "drizzle-orm";
 import sharp from "sharp";
 import { objectStorageClient, signObjectURL } from "./objectStorage.js";
-import { falGenerate, falGenerateText, downloadImage } from "./falAi.js";
+import { falGenerate, falGenerateText, falGeneratePanoramicPro, downloadImage } from "./falAi.js";
 import { generateDesignContent } from "./designContent.js";
 import { extractPalette } from "./colorExtraction.js";
 import { pingIndexNow } from "./indexNow.js";
@@ -139,15 +139,15 @@ const ROOM_BEFORE_PROMPTS: Record<string, string> = {
 };
 
 /**
- * Базовый «хвост» каждого view-промпта. Калибрует FLUX на:
- *  • Стиль ДИЗАЙН-ПРОЕКТА (architectural rendering), не репортажная фотография
- *  • Контекст «доступный ремонт российской квартиры» (не luxury концепт)
+ * Базовый «хвост» panoramic-промпта. Калибрует FLUX Pro Ultra на:
+ *  • Стиль ДИЗАЙН-МОУДБОРДА (interior design board) — как у DALL-E/GPT-Image
+ *  • Архитектурный рендер магазинного качества (Architectural Digest, AD)
  *  • Тёплое мягкое освещение, натуральное дерево, светлые стены
- *  • 4K, photorealistic
+ *  • 4K photoreal — но не репортажная фотография, а полированный концепт
  *
  * Источник: ChatGPT-референс пользователя для создания концепта дизайн-проекта.
  */
-const RENDER_SUFFIX = "professional interior design visualization, architectural rendering, polished design concept, real Russian apartment, achievable affordable budget renovation, not luxury, warm soft lighting, natural wood textures, light walls, ultra realistic, 4K, photorealistic, no people, no text, no watermark";
+const RENDER_SUFFIX = "interior design moodboard, AD Architectural Digest magazine quality, professional interior design rendering, polished design concept presentation, real Russian apartment, achievable affordable budget renovation, not luxury, warm soft lighting, natural wood textures, light walls, ultra realistic, 4K, photorealistic, no people, no text, no watermark, no graphics overlay";
 
 /**
  * Композиция «слева → центр → справа» в одной панораме комнаты. Один кадр
@@ -178,7 +178,15 @@ function buildPanoramicPrompt(room: string, style: string, area: number | null):
     ?? "left side: window zone, center: main functional area, right side: storage";
   const areaPart = area ? ` ${area} sqm` : "";
   const roomNoun = room.replace(/_/g, " ");
-  return `${styleDesc} ${roomNoun} interior design${areaPart}, panoramic ultrawide view of the entire room from left to right showing all functional zones, ${layout}. Single coherent space, consistent materials and palette, same warm lighting throughout, ${RENDER_SUFFIX}`;
+  // FLUX 1.1 Pro Ultra хорошо понимает длинные структурированные промпты.
+  // Composition prompt инспирирован ChatGPT/DALL-E moodboard-style.
+  return [
+    `Professional interior design rendering of a ${styleDesc} ${roomNoun}${areaPart} apartment interior.`,
+    `Panoramic ultrawide single-frame composition (21:9 cinematic aspect) showing the entire room from left to right with all functional zones in one continuous shot:`,
+    layout + ".",
+    `One coherent space with consistent materials, palette, and warm soft lighting throughout. Eye-level camera, balanced composition.`,
+    RENDER_SUFFIX,
+  ].join(" ");
 }
 
 /**
@@ -424,16 +432,16 @@ async function processDesign(designId: number): Promise<void> {
     + (hasSeedContent ? " (seed content — skipping AI text gen)" : " + AI content"),
   );
 
-  // Seed-mode: ОДИН panoramic вызов. Затем sharp нарезает на 4 ракурса +
-  //            6 кропов. Вся комната в одном кадре → одна палитра/материалы.
+  // Seed-mode: ОДИН panoramic вызов через FLUX Pro Ultra (премиум модель,
+  //            качество на уровне DALL-E 3). Затем sharp нарезает на 4
+  //            ракурса + 6 кропов. Вся комната в одном кадре → одна
+  //            палитра/материалы.
   // User-upload: 4 img2img от user-фото — keeps user's room geometry.
   // Оба режима параллельно с AI text generation.
   const renderPromise = isSeedMode
-    ? falGenerateText({
+    ? falGeneratePanoramicPro({
         prompt: buildPanoramicPrompt(design.roomType, design.style, areaNum),
-        // 21:9 ультра-широкая. FLUX dev обычно справляется с этим размером,
-        // но если выйдет плохо — подменим FAL_MODEL_TEXT на flux-pro.
-        imageSize: { width: 2048, height: 768 },
+        aspectRatio: "21:9",
       })
     : signR2(bucketId, beforeKey).then((falInputUrl) =>
         Promise.all(
@@ -487,7 +495,7 @@ async function processDesign(designId: number): Promise<void> {
     await db.insert(designGenerationsTable).values({
       designId: design.id,
       provider: "fal-ai",
-      model: process.env.FAL_MODEL_TEXT ?? "fal-ai/flux/dev",
+      model: process.env.FAL_MODEL_PANORAMIC ?? "fal-ai/flux-pro/v1.1-ultra",
       prompt: buildPanoramicPrompt(design.roomType, design.style, areaNum),
       roomType: design.roomType,
       style: design.style,
@@ -496,7 +504,7 @@ async function processDesign(designId: number): Promise<void> {
       providerResponse: {
         generationMs: r.generationMs,
         view: "panorama",
-        mode: "text2img-panoramic",
+        mode: "text2img-panoramic-pro",
         imageSize: `${r.width}x${r.height}`,
       },
       completedAt: new Date(),
