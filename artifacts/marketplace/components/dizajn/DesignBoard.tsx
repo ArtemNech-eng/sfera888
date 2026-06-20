@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { DesignFullDTO, DesignFeedItemDTO } from "../../lib/types";
 import { publicUrl } from "../../lib/env";
-import { FloorPlanSVG } from "./FloorPlanSVG";
 import { SaveButton } from "./SaveButton";
 import { DesignLeadForm } from "./DesignLeadForm";
 import { ShareButton } from "./ShareButton";
@@ -238,17 +237,14 @@ export function DesignBoard({ design, similar }: Props) {
       <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="grid gap-8 lg:grid-cols-[1fr_1fr_1fr] lg:gap-10">
-            {/* Floor plan + 3D-isometric */}
-            <div>
-              <p className="font-eyebrow">Вид сверху</p>
-              <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
-                Планировка.
-              </h2>
-              <div className="mt-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-cozy">
-                <FloorPlanSVG roomType={design.roomType} area={design.area} />
-              </div>
-              {isometricView ? (
-                <figure className="mt-3 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
+            {/* 3D-isometric план (если есть) */}
+            {isometricView ? (
+              <div>
+                <p className="font-eyebrow">Вид сверху</p>
+                <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
+                  3D-планировка.
+                </h2>
+                <figure className="mt-5 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
                   <div className="relative aspect-[4/3] w-full bg-[var(--color-cream-deep)]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -262,8 +258,10 @@ export function DesignBoard({ design, similar }: Props) {
                     5. {isometricView.label}
                   </figcaption>
                 </figure>
-              ) : null}
-            </div>
+              </div>
+            ) : (
+              <div className="hidden lg:block" aria-hidden />
+            )}
 
             {/* Параметры проекта */}
             <div>
