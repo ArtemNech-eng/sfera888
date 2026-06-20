@@ -358,6 +358,17 @@ async function cropQuadrant(moodboardBuffer: Buffer, index: 0 | 1 | 2 | 3): Prom
 }
 
 /**
+ * Возвращает полный moodboard, scaled to 4:3 1024×768. Используется как
+ * «Общий вид» (view 1) — показывает все 4 panel'а коллажа сразу.
+ */
+async function scaleMoodboardToView(moodboardBuffer: Buffer): Promise<Buffer> {
+  return sharp(moodboardBuffer)
+    .resize(1024, 768, { fit: "cover" })
+    .jpeg({ quality: 88, progressive: true })
+    .toBuffer();
+}
+
+/**
  * Ping IndexNow с URL'ами свеже-опубликованного дизайна. Fire-and-forget.
  */
 async function pingForDesign(slug: string, room: string, style: string): Promise<void> {
@@ -537,9 +548,23 @@ async function processDesign(designId: number): Promise<void> {
       completedAt: new Date(),
     });
 
-    // ── 2.2. Sharp нарезает 4 квадранта. ─────────────────────────────
+    // ── 2.2. Sharp нарезает: view 1 = full moodboard, views 2/3/4 =
+    //         3 квадранта (top-left, top-right, bottom-right). FLUX часто
+    //         оставляет один из квадрантов пустым (обычно top-left уголок
+    //         с потолком/стеной), поэтому view 1 показывает целый коллаж —
+    //         «обзор проекта» — это безопасный fallback.
+    //
+    // Mapping:
+    //   view 1 «Общий вид»       = full moodboard (все 4 panels)
+    //   view 2 «Акцент»          = quadrant top-left
+    //   view 3 «Зона хранения»   = quadrant top-right
+    //   view 4 «У окна»          = quadrant bottom-right
+    //   (bottom-left quadrant)   = в детали-кропы и колор-палитру
+    const quadrantIndices: Array<0 | 1 | 2 | 3> = [0, 1, 3]; // skip bottom-left (2)
     for (let i = 0; i < 4; i++) {
-      const buf = await cropQuadrant(moodboardBuffer, i as 0 | 1 | 2 | 3);
+      const buf = i === 0
+        ? await scaleMoodboardToView(moodboardBuffer)
+        : await cropQuadrant(moodboardBuffer, quadrantIndices[i - 1]!);
       viewBuffers[i] = buf;
 
       const position = i + 1;
