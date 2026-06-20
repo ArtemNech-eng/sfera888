@@ -23,7 +23,11 @@ const PERIODS: { key: Period; label: string }[] = [
 ];
 
 async function fetchDashboard() {
-  const resp = await fetch("/api/analytics/dashboard-v2", { credentials: "include" });
+  // Cache-buster: previous deployment returned 410 Gone for this URL, which
+  // CDNs (Cloudflare) cache aggressively. Adding a unique query param forces
+  // a fresh request to the origin server.
+  const url = `/api/analytics/dashboard-v2?_t=${Date.now()}`;
+  const resp = await fetch(url, { credentials: "include" });
   if (!resp.ok) throw new Error("Failed to fetch dashboard");
   return resp.json();
 }

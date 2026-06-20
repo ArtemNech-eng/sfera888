@@ -91,6 +91,11 @@ router.get("/avito-balance", adminOnly, async (_req, res) => {
 //   • Pre-build Map indexes for O(1) lookups during aggregation
 //   • Single-pass over each entity collection where possible
 router.get("/dashboard-v2", adminOnly, async (_req, res) => {
+  // Defensive: this URL was previously serving 410 Gone, which CDNs aggressively
+  // cache. Force fresh response on every request.
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   try {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
