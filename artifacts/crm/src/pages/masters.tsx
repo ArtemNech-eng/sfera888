@@ -846,7 +846,7 @@ export default function Masters() {
 
   const retryLoad = useCallback(() => { setLoading(true); setLoadError(null); fetchAll(true); }, [fetchAll]);
 
-  useEffect(() => { fetchAll(true); const t = setInterval(() => fetchAll(), 8000); return () => clearInterval(t); }, [fetchAll]);
+  useEffect(() => { fetchAll(true); const t = setInterval(() => fetchAll(), 30000); return () => clearInterval(t); }, [fetchAll]);
 
   // NOTE: previously synced drawerMaster from list.find(masters) on every poll,
   // but list now returns lightweight payload (no passport/contract fields), so

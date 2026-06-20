@@ -75,10 +75,7 @@ router.get("/masters", requireAuth, async (_req, res) => {
     masters,
     pendingTxs,
     paidTxRows,
-    completedRows,
-    cancelledRows,
-    cancelRows30d,
-    cancelRows7d,
+    orderAggregates,
     activeOrders,
   ] = await Promise.all([
     db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)).orderBy(mastersTable.createdAt),
@@ -89,26 +86,44 @@ router.get("/masters", requireAuth, async (_req, res) => {
       .from(transactionsTable)
       .where(eq(transactionsTable.paymentStatus, "paid"))
       .groupBy(transactionsTable.masterId),
-    db.select({ masterId: ordersTable.masterId, cnt: count() })
-      .from(ordersTable)
-      .where(and(isNotNull(ordersTable.masterId), eq(ordersTable.status, "completed")))
-      .groupBy(ordersTable.masterId),
-    db.select({ masterId: ordersTable.masterId, cnt: count() })
-      .from(ordersTable)
-      .where(and(isNotNull(ordersTable.masterId), eq(ordersTable.status, "cancelled"), isNull(ordersTable.deletedAt)))
-      .groupBy(ordersTable.masterId),
-    db.select({ masterId: ordersTable.masterId, cnt: count() })
-      .from(ordersTable)
-      .where(and(isNotNull(ordersTable.masterId), isNotNull(ordersTable.cancelType), ne(ordersTable.cancelType, "client_refused"), gte(ordersTable.updatedAt, thirtyDaysAgo)))
-      .groupBy(ordersTable.masterId),
-    db.select({ masterId: ordersTable.masterId, cnt: count() })
-      .from(ordersTable)
-      .where(and(isNotNull(ordersTable.masterId), isNotNull(ordersTable.cancelType), ne(ordersTable.cancelType, "client_refused"), gte(ordersTable.updatedAt, sevenDaysAgo)))
-      .groupBy(ordersTable.masterId),
+    // Single SQL for 4 aggregates (was 4 separate queries before).
+    // Postgres scans orders once and computes all counts via FILTER WHERE.
+    db.execute(sql`
+      SELECT
+        master_id AS "masterId",
+        COUNT(*) FILTER (WHERE status = 'completed') AS "completed",
+        COUNT(*) FILTER (WHERE status = 'cancelled' AND deleted_at IS NULL) AS "cancelled",
+        COUNT(*) FILTER (
+          WHERE cancel_type IS NOT NULL
+            AND cancel_type <> 'client_refused'
+            AND updated_at >= ${thirtyDaysAgo}
+        ) AS "cancel30d",
+        COUNT(*) FILTER (
+          WHERE cancel_type IS NOT NULL
+            AND cancel_type <> 'client_refused'
+            AND updated_at >= ${sevenDaysAgo}
+        ) AS "cancel7d"
+      FROM orders
+      WHERE master_id IS NOT NULL
+      GROUP BY master_id
+    `),
     db.select().from(ordersTable)
       .where(inArray(ordersTable.status, ["master_assigned", "in_progress"])),
   ]);
   const t1 = Date.now();
+
+  // Build cancel/completed maps from the single aggregate result
+  const completedMap = new Map<number, number>();
+  const cancelledMap = new Map<number, number>();
+  const cancelMap30d = new Map<number, number>();
+  const cancelMap7d = new Map<number, number>();
+  for (const row of (orderAggregates.rows as any[])) {
+    const masterId = Number(row.masterId);
+    completedMap.set(masterId, Number(row.completed));
+    cancelledMap.set(masterId, Number(row.cancelled));
+    cancelMap30d.set(masterId, Number(row.cancel30d));
+    cancelMap7d.set(masterId, Number(row.cancel7d));
+  }
 
   // ── Phase 2: dependent queries (need IDs from phase 1) ────────────────────
   const telegramIds = masters.filter(m => m.telegramId).map(m => m.telegramId!);
@@ -134,10 +149,8 @@ router.get("/masters", requireAuth, async (_req, res) => {
     pendingTxMap.set(tx.masterId, (pendingTxMap.get(tx.masterId) ?? 0) + 1);
   }
   const paidTxMap = new Map(paidTxRows.map(r => [r.masterId, Number(r.cnt)]));
-  const completedMap = new Map(completedRows.map(r => [r.masterId!, Number(r.cnt)]));
-  const cancelledMap = new Map(cancelledRows.map(r => [r.masterId!, Number(r.cnt)]));
-  const cancelMap30d = new Map(cancelRows30d.map(r => [r.masterId!, Number(r.cnt)]));
-  const cancelMap7d = new Map(cancelRows7d.map(r => [r.masterId!, Number(r.cnt)]));
+  // completedMap, cancelledMap, cancelMap30d, cancelMap7d are built above
+  // from the single orderAggregates query.
   const leadMap = new Map(leads.map(l => [l.id, l]));
 
   const masterActiveOrders = new Map<number, any[]>();
