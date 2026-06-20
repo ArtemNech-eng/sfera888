@@ -20,7 +20,7 @@ export const RESULT_THRESHOLD_DAYS       = 7;
 export const COMMISSION_THRESHOLD_DAYS   = 7;
 export const ZOMBIE_THRESHOLD_DAYS       = 14;
 
-const ACTIVE_STATUSES = ["master_assigned", "in_progress", "on_site"] as const;
+const ACTIVE_STATUSES = ["master_assigned", "in_progress"] as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -181,7 +181,7 @@ async function loadCandidateOrders(masterId?: number): Promise<OrderRow[]> {
   const conditions: any[] = [
     isNull(ordersTable.deletedAt),
     sql`(
-      ${ordersTable.status} IN ('master_assigned', 'in_progress', 'on_site')
+      ${ordersTable.status} IN ('master_assigned', 'in_progress')
       OR (${ordersTable.status} = 'completed' AND ${ordersTable.commissionPaid} = false)
     )`,
   ];

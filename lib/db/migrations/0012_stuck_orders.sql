@@ -14,7 +14,7 @@ ALTER TABLE orders
 CREATE INDEX IF NOT EXISTS idx_orders_call_report_pending
   ON orders (assigned_at)
   WHERE client_call_reported_at IS NULL
-    AND status IN ('master_assigned', 'in_progress', 'on_site')
+    AND status IN ('master_assigned', 'in_progress')
     AND deleted_at IS NULL;
 
 -- Partial index: most orders never get snoozed, so index only the rare ones.
