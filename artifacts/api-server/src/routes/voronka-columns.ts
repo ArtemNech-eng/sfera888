@@ -178,40 +178,28 @@ router.get("/masters", requireAuth, async (_req, res) => {
     activeOrders: masterActiveOrders.get(m.id) ?? [],
     pendingTransactionsCount: pendingTxMap.get(m.id) ?? 0,
     paidOrdersCount: paidTxMap.get(m.id) ?? 0,
-    contractLink: m.contractLink ?? null,
-    workingHours: m.workingHours ?? null,
-    preferredDistricts: m.preferredDistricts ?? [],
-    minArea: m.minArea ?? 0,
     createdAt: m.createdAt,
     contractSignedAt: m.contractSignedAt ?? null,
-    contractSignIp: m.contractSignIp ?? null,
-    passportPhotoUrl: m.passportPhotoUrl ?? null,
-    passportRegPhotoUrl: m.passportRegPhotoUrl ?? null,
     passportVerified: m.passportVerified ?? false,
-    passportVerifyNote: m.passportVerifyNote ?? null,
-    contractFullName: m.contractFullName ?? null,
-    contractPassportNumber: m.contractPassportNumber ?? null,
-    contractPassportDate: m.contractPassportDate ?? null,
-    contractPassportIssuer: m.contractPassportIssuer ?? null,
-    contractAddress: m.contractAddress ?? null,
     pwaLogin: m.pwaLogin ?? null,
     lastSeenAt: m.lastSeenAt ?? null,
     cancelCount30d: cancelMap30d.get(m.id) ?? 0,
     cancelCount7d: cancelMap7d.get(m.id) ?? 0,
     completedOrders: completedMap.get(m.id) ?? 0,
     cancelledOrders: cancelledMap.get(m.id) ?? 0,
-    maxChatId: m.maxChatId ?? null,
-    servicePrices: m.servicePrices ?? null,
     fomoDisabled: m.fomoDisabled ?? false,
-    // Token model retired — wallet query removed. Legacy fields return 0.
-    balance: 0,
-    creditLimit: 0,
-    totalServiceFeesSpent: 0,
     consecutiveCancellations: m.consecutiveCancellations ?? 0,
     blockedFromOrders: m.blockedFromOrders ?? false,
     blockedAt: m.blockedAt ?? null,
     blockedReason: m.blockedReason ?? null,
     manualUnblocksCount: m.manualUnblocksCount ?? 0,
+    // ── Heavy fields stripped from list response ────────────────────────────
+    // These are loaded on-demand when MasterDrawer opens via GET /api/masters/:id.
+    // Keeps list response small (~3-5 KB per master vs ~12 KB before).
+    // Removed: passportPhotoUrl, passportRegPhotoUrl, passportVerifyNote,
+    // contractFullName/PassportNumber/PassportDate/PassportIssuer/Address,
+    // contractSignIp, contractLink, workingHours, preferredDistricts,
+    // minArea, servicePrices, maxChatId, balance/creditLimit/totalServiceFeesSpent (legacy).
   }));
   const t4 = Date.now();
 

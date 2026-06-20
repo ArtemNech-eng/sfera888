@@ -10,7 +10,7 @@ import {
   ChevronUp, RefreshCw, AlertCircle, Clock, Check, UserCheck, SlidersHorizontal, CheckCircle2,
   Bot, KeyRound, Lock, Unlock,
 } from "lucide-react";
-import { Avatar, MasterDrawer, OnlineBadge } from "@/components/master-drawer";
+import { Avatar, MasterDrawer, OnlineBadge, type DrawerMaster } from "@/components/master-drawer";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useCreateMaster, useGetCities } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -774,13 +774,41 @@ export default function Masters() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const inFlightRef = useRef(false);
-  const [drawerMaster, setDrawerMaster] = useState<Master | null>(null);
+  const [drawerMaster, setDrawerMaster] = useState<DrawerMaster | null>(null);
+  const [loadingMasterId, setLoadingMasterId] = useState<number | null>(null);
   const [fomoBlockedIds, setFomoBlockedIds] = useState<Set<number>>(new Set());
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const { data: cities } = useGetCities();
+
+  // Fetch full master data on drawer open. List endpoint returns lightweight
+  // payload (no passport/contract/jsonb fields) for performance; the drawer
+  // needs the full DrawerMaster shape, which /api/masters/:id provides.
+  const openMasterCard = useCallback(async (m: { id: number }) => {
+    if (loadingMasterId !== null) return; // dedupe rapid clicks
+    setLoadingMasterId(m.id);
+    try {
+      const r = await fetch(`/api/masters/${m.id}`, { credentials: "include" });
+      if (!r.ok) {
+        toast({ title: "Не удалось загрузить мастера", variant: "destructive" });
+        return;
+      }
+      const full = await r.json();
+      setDrawerMaster({
+        ...full,
+        avatarUrl: full.avatarUrl ?? full.customAvatarUrl ?? null,
+        activeOrders: full.activeOrders ?? [],
+        specializations: full.specializations ?? [],
+        tags: full.tags ?? [],
+      } as DrawerMaster);
+    } catch {
+      toast({ title: "Ошибка сети", variant: "destructive" });
+    } finally {
+      setLoadingMasterId(null);
+    }
+  }, [loadingMasterId, toast]);
 
   const fetchAll = useCallback(async (initial = false) => {
     // Не допускаем параллельных/наслаивающихся запросов: если предыдущий ещё идёт
@@ -799,7 +827,7 @@ export default function Masters() {
       setLoadError(null);
       if (initial) {
         const openId = parseInt(new URLSearchParams(window.location.search).get("openMaster") ?? "");
-        if (openId) { const found = list.find(m => m.id === openId); if (found) setDrawerMaster(found); }
+        if (openId) openMasterCard({ id: openId });
       }
       if (cR.ok) setColumns(await cR.json());
       if (fR.ok) {
@@ -820,13 +848,11 @@ export default function Masters() {
 
   useEffect(() => { fetchAll(true); const t = setInterval(() => fetchAll(), 8000); return () => clearInterval(t); }, [fetchAll]);
 
-  // Sync drawer with latest data
-  useEffect(() => {
-    if (drawerMaster) {
-      const fresh = masters.find(m => m.id === drawerMaster.id);
-      if (fresh) setDrawerMaster(prev => prev ? { ...fresh, tags: prev.tags } : fresh);
-    }
-  }, [masters]);
+  // NOTE: previously synced drawerMaster from list.find(masters) on every poll,
+  // but list now returns lightweight payload (no passport/contract fields), so
+  // overwriting drawerMaster from it would strip data the drawer needs. Drawer
+  // shows the snapshot it loaded via /api/masters/:id; if operator wants fresh
+  // data, they close+reopen.
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const deleteMasterMutation = useMutation({
@@ -1226,7 +1252,7 @@ export default function Masters() {
                     <span className="text-sm text-orange-700">
                       {problemMasters.map((m, i) => (
                         <span key={m.id}>{i > 0 && ", "}
-                          <button onClick={() => setDrawerMaster(m)} className="font-semibold hover:underline">{m.alias}</button> ({m.cancelCount7d})
+                          <button onClick={() => openMasterCard(m)} className="font-semibold hover:underline">{m.alias}</button> ({m.cancelCount7d})
                         </span>
                       ))}
                     </span>
@@ -1393,7 +1419,7 @@ export default function Masters() {
                 </div>
               ) : filtered.map(m => (
                 <MasterRow key={m.id} master={m}
-                  onOpenDrawer={setDrawerMaster}
+                  onOpenDrawer={openMasterCard}
                   isFomoBlocked={fomoBlockedIds.has(m.id)}
                   onDelete={isAdmin ? id => deleteMasterMutation.mutate(id) : undefined}
                   onGoToChat={id => setLocation(`/master-chat?masterId=${id}`)}
@@ -1424,7 +1450,7 @@ export default function Masters() {
                 {sorted.map(col => (
                   <KanbanColumn key={col.id} col={col}
                     masters={kanbanMasters.filter(m => m.voronkaColumnId === col.id)}
-                    columns={columns} onMove={moveMaster} onOpenDrawer={setDrawerMaster}
+                    columns={columns} onMove={moveMaster} onOpenDrawer={openMasterCard}
                     draggingId={draggingId}
                     onDragStartMaster={setDraggingId}
                     onDragEndMaster={() => setDraggingId(null)}
@@ -1432,15 +1458,15 @@ export default function Masters() {
                   />
                 ))}
                 {unassigned.length > 0 && (
-                  <KanbanColumn col={null} masters={unassigned} columns={columns} onMove={moveMaster} onOpenDrawer={setDrawerMaster}
+                  <KanbanColumn col={null} masters={unassigned} columns={columns} onMove={moveMaster} onOpenDrawer={openMasterCard}
                     draggingId={draggingId}
                     onDragStartMaster={setDraggingId}
                     onDragEndMaster={() => setDraggingId(null)}
                     onDropMaster={(mid, colId) => { moveMaster(mid, colId); setDraggingId(null); }}
                   />
                 )}
-                {debtors.length > 0 && <DebtorColumn masters={debtors} onOpenDrawer={setDrawerMaster} />}
-                {suspended.length > 0 && <SuspendedColumn masters={suspended} onOpenDrawer={setDrawerMaster} />}
+                {debtors.length > 0 && <DebtorColumn masters={debtors} onOpenDrawer={openMasterCard} />}
+                {suspended.length > 0 && <SuspendedColumn masters={suspended} onOpenDrawer={openMasterCard} />}
               </div>
             )
           )}
