@@ -1,5 +1,16 @@
 const BASE = "/api/master-pwa";
 
+export interface PendingAction {
+  orderId: number;
+  type: "call_report" | "photos_and_amount" | "commission_payment";
+  title: string;
+  ctaText: string;
+  daysStuck: number;
+  city: string;
+  serviceType: string;
+  snoozedUntil: string | null;
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -124,6 +135,12 @@ export const api = {
     sendPhoto: (photoUrl: string, caption?: string) => req<any>("POST", "/chat", { text: caption ?? "", photoUrl }),
     unread: () => req<any>("GET", "/chat/unread"),
   },
+  // Stuck-orders flow — banner & call-report (.kiro/specs/stuck-orders-and-master-banner)
+  pendingActions: () => req<PendingAction[]>("GET", "/pending-actions"),
+  snoozeBanner: (orderId: number) =>
+    req<{ snoozedUntil: string }>("POST", `/orders/${orderId}/snooze-banner`),
+  callReport: (orderId: number, body: { scheduledAt?: string | null; note?: string | null }) =>
+    req<{ success: boolean; scheduledAt: string | null }>("POST", `/orders/${orderId}/call-report`, body),
   admin: {
     setCredentials: (masterId: number, login: string, password: string) =>
       fetch(`${BASE}/admin/set-credentials/${masterId}`, {

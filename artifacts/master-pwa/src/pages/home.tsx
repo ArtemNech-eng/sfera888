@@ -6,6 +6,7 @@ import { api, resolvePhotoUrl } from "@/lib/api";
 import { toast } from "sonner";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PendingActionsBanner } from "@/components/pending-actions-banner";
 import {
   Bell, CheckCircle2, XCircle, AlertTriangle, Star,
   MapPin, Calendar, MessageSquare, Clock,
@@ -1521,6 +1522,9 @@ export default function HomePage() {
 
   return (
     <div className="px-4 pt-5 pb-4 space-y-5">
+
+      {/* Stuck-orders banner — appears if master has pending actions (R0/R1/R3) */}
+      <PendingActionsBanner />
 
       {showMaxPrompt && !master?.maxChatId && (
         <MaxBindPostRegPrompt
