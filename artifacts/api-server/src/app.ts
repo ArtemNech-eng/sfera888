@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import compression from "compression";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
@@ -62,6 +63,20 @@ const app: Express = express();
 // Trust reverse proxy headers (X-Forwarded-Proto, X-Forwarded-Host) so that
 // secure cookies work correctly behind Railway's proxy.
 app.set("trust proxy", 1);
+
+// ── Response compression ──────────────────────────────────────────────────────
+// JSON responses (esp. /api/masters and /api/orders/stuck) compress to
+// 5-15% of their original size with gzip. Without this, a 600 KB response
+// can take 10+ seconds to download to a client on a slow link, since most
+// of the payload is repetitive JSON keys. Apply BEFORE any other middleware
+// so it covers the entire response surface.
+app.use(compression({
+  // Compress everything > 1 KB (default is 1024 bytes, which we keep)
+  threshold: 1024,
+  // Default level 6 is a good speed/ratio tradeoff; bump to 4 for less CPU
+  // since most responses are JSON which compresses well at any level.
+  level: 4,
+}));
 
 // ── Security headers ──────────────────────────────────────────────────────────
 // CRM, master-pwa and partner-pwa are served from this same Express instance
