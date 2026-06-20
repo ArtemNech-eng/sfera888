@@ -659,6 +659,24 @@ setInterval(async () => {
 }, 60 * 1000);
 console.log("[scenarios] Template scenario schedulers started");
 
+// ─── Stuck-orders daily master reminder ──────────────────────────────────────
+// Spec: .kiro/specs/stuck-orders-and-master-banner (R8)
+// Sends one aggregated push per master at 10:00 MSK if they have any
+// non-snoozed pending stuck-orders actions.
+let stuckOrdersReminderDate: string | null = null;
+setInterval(async () => {
+  try {
+    const { hhmm, today } = getMskTime();
+    if (hhmm === "10:00" && stuckOrdersReminderDate !== today) {
+      stuckOrdersReminderDate = today;
+      console.log("[stuck-orders] firing daily master reminder");
+      const { dailyMasterReminder } = await import("./lib/dailyMasterReminderCron.js");
+      dailyMasterReminder().catch(console.error);
+    }
+  } catch (e) { console.error("[stuck-orders] scheduler error:", e); }
+}, 60 * 1000);
+console.log("[stuck-orders] Daily master reminder scheduler started (10:00 MSK)");
+
 const server = app.listen(port, "0.0.0.0", () => {
   console.log(`Server listening on port ${port}`);
 });

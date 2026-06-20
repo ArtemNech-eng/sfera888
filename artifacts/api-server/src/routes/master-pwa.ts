@@ -34,6 +34,7 @@ import {
   AiContentDisabledError,
   type AssembleInput,
 } from "../lib/aiContent.js";
+import { getPendingActionsForMaster } from "../lib/stuckOrders.js";
 const authRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 5 });
 const registerRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
 const forgotPasswordRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
@@ -2908,6 +2909,123 @@ router.post("/deposit-request", requireMasterPwa, async (req, res) => {
   }
 
   res.json({ success: true, requestedAmount: Number(amount) });
+});
+
+// ─── Stuck-orders flow (PWA banner + call-report) ────────────────────────────
+// Spec: .kiro/specs/stuck-orders-and-master-banner
+
+// GET /api/master-pwa/pending-actions
+// Returns master-facing stuck orders (R0/R1/R3 only, snooze-respecting) for
+// the PendingActionsBanner in PWA.
+router.get("/pending-actions", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const items = await getPendingActionsForMaster(masterId);
+  const now = new Date();
+  const visible = items
+    // Only categories that REQUIRE master action
+    .filter(i => ["needs_call_report", "needs_result", "needs_commission_payment"].includes(i.category))
+    // Drop snoozed
+    .filter(i => !i.bannerSnoozedUntil || i.bannerSnoozedUntil < now);
+
+  const TYPE_BY_CATEGORY: Record<string, "call_report" | "photos_and_amount" | "commission_payment"> = {
+    needs_call_report:        "call_report",
+    needs_result:             "photos_and_amount",
+    needs_commission_payment: "commission_payment",
+  };
+  const TITLE_BY_CATEGORY: Record<string, (i: typeof items[0]) => string> = {
+    needs_call_report:        (i) => `По заказу #${i.id} (${i.serviceType}, ${i.city}) — отчитайтесь о созвоне с клиентом`,
+    needs_result:             (i) => `По заказу #${i.id} (${i.serviceType}, ${i.city}) — пришлите фото и итоговую сумму`,
+    needs_commission_payment: (i) => `По заказу #${i.id} — оплатите комиссию${i.netPayable ? ` (${i.netPayable.toLocaleString("ru-RU")} ₽)` : ""}`,
+  };
+  const CTA_BY_CATEGORY: Record<string, string> = {
+    needs_call_report:        "Отчитаться о созвоне",
+    needs_result:             "Открыть заказ",
+    needs_commission_payment: "Оплатить комиссию",
+  };
+
+  res.json(
+    visible.map(i => ({
+      orderId: i.id,
+      type: TYPE_BY_CATEGORY[i.category],
+      title: TITLE_BY_CATEGORY[i.category](i),
+      ctaText: CTA_BY_CATEGORY[i.category],
+      daysStuck: i.daysStuck,
+      city: i.city,
+      serviceType: i.serviceType,
+      snoozedUntil: i.bannerSnoozedUntil ? i.bannerSnoozedUntil.toISOString() : null,
+    }))
+  );
+});
+
+// POST /api/master-pwa/orders/:id/snooze-banner
+// Master clicked "Напомнить позже" — postpone banner for this order by 24h.
+router.post("/orders/:id/snooze-banner", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(String(req.params.id));
+  if (isNaN(orderId)) return res.status(400).json({ error: "Invalid order ID" });
+
+  const [order] = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId), isNull(ordersTable.deletedAt)));
+  if (!order) return res.status(404).json({ error: "Заказ не найден" });
+
+  const snoozeUntil = new Date(Date.now() + 24 * 3600 * 1000);
+  await db.update(ordersTable)
+    .set({ bannerSnoozedUntil: snoozeUntil, updatedAt: new Date() })
+    .where(eq(ordersTable.id, orderId));
+  res.json({ snoozedUntil: snoozeUntil.toISOString() });
+});
+
+// POST /api/master-pwa/orders/:id/call-report
+// Master reports on the client call: either schedules the measurement or
+// notes that contact failed. Closes the "needs_call_report" stuck state.
+router.post("/orders/:id/call-report", requireMasterPwa, async (req, res) => {
+  const masterId = (req.session as any).masterId;
+  const orderId = parseInt(String(req.params.id));
+  if (isNaN(orderId)) return res.status(400).json({ error: "Invalid order ID" });
+
+  const { scheduledAt, note } = req.body ?? {};
+
+  const [order] = await db.select().from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId), isNull(ordersTable.deletedAt)));
+  if (!order) return res.status(404).json({ error: "Заказ не найден" });
+
+  let scheduledDate: Date | null = null;
+  if (scheduledAt) {
+    const d = new Date(scheduledAt);
+    if (Number.isNaN(d.getTime())) return res.status(400).json({ error: "Некорректная дата замера" });
+    scheduledDate = d;
+  }
+
+  const noteTrimmed = typeof note === "string" ? note.trim().slice(0, 500) : "";
+
+  const updates: Record<string, any> = {
+    clientCallReportedAt: new Date(),
+    updatedAt: new Date(),
+  };
+  if (scheduledDate) updates.scheduledAt = scheduledDate;
+
+  await db.update(ordersTable).set(updates).where(eq(ordersTable.id, orderId));
+
+  // Log a structured chat message so operator sees the report in master-chat.
+  const formatDate = (d: Date) => new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+  }).format(d);
+  const messageText = scheduledDate
+    ? `📅 Замер согласован: ${formatDate(scheduledDate)}${noteTrimmed ? `. ${noteTrimmed}` : ""}`
+    : `📞 Отчёт о созвоне: ${noteTrimmed || "без комментария"}`;
+
+  await db.insert(masterMessagesTable).values({
+    masterId,
+    telegramChatId: `pwa_${masterId}`,
+    text: messageText,
+    fromMaster: true,
+    senderName: "Мастер (отчёт о созвоне)",
+    isRead: false,
+    photoUrl: null,
+    telegramMessageId: null,
+  });
+
+  res.json({ success: true, scheduledAt: scheduledDate ? scheduledDate.toISOString() : null });
 });
 
 export default router;

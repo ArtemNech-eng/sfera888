@@ -16,6 +16,7 @@ import { computePaymentState, computePaymentStateBatch, groupReceiptsByOrder } f
 import { recordAmountAudit, resolveAuditActor, closeOpenEstimateTasksForOrder, getAmountAudit, detectReconcileConflict } from "../lib/orderAudit.js";
 import { validateAgreementBody } from "../lib/agreementValidation.js";
 import { notifyWorkBoardChanged } from "./work-board.js";
+import { getAllStuckOrders, classifySingleOrder, type StuckCategory } from "../lib/stuckOrders.js";
 
 // Telegram-бот удалён.
 
@@ -312,6 +313,71 @@ router.get("/stats/payment-state", allOrderRoles, async (req, res) => {
     res.json({ count: items.length, items });
   } catch (err) {
     console.error("[orders/stats/payment-state] error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── GET /api/orders/stuck ────────────────────────────────────────────────────
+//
+// Returns all currently-stuck orders, grouped by category. Used by the CRM
+// dashboard StuckOrdersBlock and the /orders/stuck page. Single source of
+// truth = lib/stuckOrders.classifyOrder.
+//
+// Query params (all optional):
+//   • category=<key>   — filter to one category (returns only that bucket)
+//   • masterId=<n>     — filter to one master
+//   • city=<str>       — filter by city
+//   • limit=<n>        — cap items per category (default: no cap)
+//
+// Must be defined BEFORE the catch-all /:id route, otherwise Express would
+// interpret "stuck" as an order ID.
+router.get("/stuck", allOrderRoles, async (req, res) => {
+  try {
+    const grouped = await getAllStuckOrders();
+    const categoryParam = typeof req.query.category === "string" ? req.query.category : null;
+    const masterIdParam = typeof req.query.masterId === "string" ? parseInt(req.query.masterId, 10) : null;
+    const cityParam = typeof req.query.city === "string" ? req.query.city : null;
+    const limitParam = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : null;
+
+    const counts = {
+      needs_call_report:         grouped.needs_call_report.length,
+      needs_result:              grouped.needs_result.length,
+      needs_amount_confirmation: grouped.needs_amount_confirmation.length,
+      needs_commission_payment:  grouped.needs_commission_payment.length,
+      zombie:                    grouped.zombie.length,
+    };
+
+    function applyFilters(items: typeof grouped.needs_call_report) {
+      let filtered = items;
+      if (masterIdParam != null && Number.isFinite(masterIdParam)) {
+        filtered = filtered.filter(i => i.masterId === masterIdParam);
+      }
+      if (cityParam) {
+        filtered = filtered.filter(i => i.city === cityParam);
+      }
+      if (limitParam != null && Number.isFinite(limitParam) && limitParam > 0) {
+        filtered = filtered.slice(0, limitParam);
+      }
+      return filtered;
+    }
+
+    if (categoryParam && categoryParam in grouped) {
+      const key = categoryParam as keyof typeof grouped;
+      return res.json({ counts, items: { [key]: applyFilters(grouped[key]) } });
+    }
+
+    res.json({
+      counts,
+      items: {
+        needs_call_report:         applyFilters(grouped.needs_call_report),
+        needs_result:              applyFilters(grouped.needs_result),
+        needs_amount_confirmation: applyFilters(grouped.needs_amount_confirmation),
+        needs_commission_payment:  applyFilters(grouped.needs_commission_payment),
+        zombie:                    applyFilters(grouped.zombie),
+      },
+    });
+  } catch (err) {
+    console.error("[orders GET /stuck] Error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1904,6 +1970,42 @@ router.post("/:id/stages/:stageId/pay", requireRole("admin", "master_operator"),
     .where(eq(orderStagesTable.id, stageId));
 
   res.json({ ok: true, stageId, paymentStatus: "paid" });
+});
+
+// ─── POST /api/orders/:id/remind-master ───────────────────────────────────────
+//
+// Sends a one-shot push notification to the assigned master, off-cron.
+// Used from the CRM /orders/stuck page "Напомнить" button.
+//
+// Refuses if the order isn't currently classified as stuck — this prevents
+// noise from being sent for normally-progressing orders.
+router.post("/:id/remind-master", allOrderRoles, async (req, res) => {
+  const id = parseInt(String(req.params.id as string));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid order ID" });
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  if (!order) return res.status(404).json({ error: "Order not found" });
+  if (!order.masterId) return res.status(400).json({ error: "У заказа нет назначенного мастера" });
+
+  const category = await classifySingleOrder(id);
+  if (!category) return res.status(400).json({ error: "Заказ не находится в категории «Зависшие»" });
+
+  const TEXT_BY_CATEGORY: Record<StuckCategory, string> = {
+    needs_call_report:         `По заказу #${id} — отчитайтесь о созвоне с клиентом (когда замер).`,
+    needs_result:               `По заказу #${id} — пришлите фото после и итоговую сумму.`,
+    needs_commission_payment:   `По заказу #${id} — оплатите комиссию.`,
+    needs_amount_confirmation:  `Заказ #${id} ждёт подтверждения суммы оператором.`,
+    zombie:                     `По заказу #${id} давно нет движения — нужна ваша реакция.`,
+  };
+  const body = TEXT_BY_CATEGORY[category];
+
+  await sendPushToMaster(order.masterId, {
+    title: "🔔 Напоминание оператора",
+    body,
+    url: `/orders/${id}`,
+  }).catch((err) => console.error("[orders/remind-master] push failed:", err));
+
+  res.json({ success: true, category });
 });
 
 export default router;
