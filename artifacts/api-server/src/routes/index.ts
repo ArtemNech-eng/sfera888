@@ -80,8 +80,12 @@ router.use("/dashboard", dashboardActionItemsRouter);
 router.use("/account-balance", accountBalanceRouter);
 router.use("/contract", contractRouter);
 router.use("/system", systemRouter);
-router.use("/marketplace", marketplaceRouter);
+// AI-design router mounted BEFORE /marketplace to bypass marketplace's
+// `requireMarketplaceAuth` Bearer-token middleware. AI-design pages and
+// `/img/*` proxy must be reachable from browser (<img src>) without auth —
+// see routes/dizajn.ts comment "stream R2 image (public, cached)".
 router.use("/marketplace/dizajn", dizajnRouter);
+router.use("/marketplace", marketplaceRouter);
 // Push subscription endpoint for operators (CRM)
 router.post("/push/operator-subscribe", ops, async (req: any, res: any) => {
   const { endpoint, p256dh, auth } = req.body ?? {};
