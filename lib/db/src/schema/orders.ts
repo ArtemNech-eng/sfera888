@@ -74,6 +74,15 @@ export const ordersTable = pgTable("orders", {
   paymentStateChangedAt: timestamp("payment_state_changed_at"),
   // Свободный комментарий при фиксации Agreement_Amount (опционально).
   agreementNote: text("agreement_note"),
+  // ── Stuck-orders flow (см. .kiro/specs/stuck-orders-and-master-banner) ────
+  // Отметка времени, когда мастер отчитался о созвоне с клиентом. NULL до
+  // отчёта; после отчёта заказ выходит из категории «Нет отчёта о созвоне».
+  // Заполняется через POST /api/master-pwa/orders/:id/call-report.
+  clientCallReportedAt: timestamp("client_call_reported_at"),
+  // Snooze баннера в PWA до указанного времени. Мастер нажал «Напомнить позже»
+  // — баннер не показывается ему до этой даты, но в CRM заказ всё ещё в списке
+  // «Зависшие». Заполняется через POST /api/master-pwa/orders/:id/snooze-banner.
+  bannerSnoozedUntil: timestamp("banner_snoozed_until"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
