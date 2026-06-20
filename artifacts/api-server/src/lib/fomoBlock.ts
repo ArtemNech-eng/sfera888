@@ -220,30 +220,112 @@ export async function getAllFomoBlockedMasters(): Promise<Array<{
   orderId: number | null;
   hoursElapsed: number | null;
 }>> {
-  const masters = await db
-    .select({ id: mastersTable.id, alias: mastersTable.alias, city: mastersTable.city, isTestMaster: mastersTable.isTestMaster })
-    .from(mastersTable)
-    .where(
-      and(
-        eq(mastersTable.status as any, "active"),
-        isNull(mastersTable.deletedAt),
-      )
-    );
+  // BATCH IMPLEMENTATION — was N+1 (2-3 queries per master). For 1000 masters
+  // that meant 2000-3000 sequential round-trips. Now: 3 queries total.
+  //
+  // Logic mirrors getFomoBlock(): priority 1 = no_estimate 48h+,
+  // priority 3 = no_payment 72h+ on master_assigned/in_progress orders.
+  // Skips fomoDisabled masters. paymentState engine off (legacy path) for
+  // batch — keeps it fast and simple, accepting tiny inconsistency on the
+  // edge case where engine is on (only matters for derived `agreed` state).
 
-  const results = [];
-  for (const m of masters) {
-    const fomo = await getFomoBlock(m.id, m.isTestMaster);
-    if (fomo.isBlocked) {
-      results.push({
-        masterId: m.id,
-        alias: m.alias,
-        city: m.city,
-        type: fomo.type!,
-        reason: fomo.reason!,
-        orderId: fomo.orderId,
-        hoursElapsed: fomo.hoursElapsed,
-      });
+  const now = new Date();
+
+  const allActiveMasters = await db
+    .select({
+      id: mastersTable.id,
+      alias: mastersTable.alias,
+      city: mastersTable.city,
+      isTestMaster: mastersTable.isTestMaster,
+      fomoDisabled: mastersTable.fomoDisabled,
+    })
+    .from(mastersTable)
+    .where(and(eq(mastersTable.status as any, "active"), isNull(mastersTable.deletedAt)));
+
+  const eligibleMasters = allActiveMasters.filter(m => !m.fomoDisabled);
+  if (eligibleMasters.length === 0) return [];
+  const eligibleIds = eligibleMasters.map(m => m.id);
+  const masterById = new Map(eligibleMasters.map(m => [m.id, m]));
+
+  // All active orders for these masters in one query
+  const activeOrders = await db
+    .select()
+    .from(ordersTable)
+    .where(and(
+      inArray(ordersTable.masterId, eligibleIds),
+      inArray(ordersTable.status as any, ["master_assigned", "in_progress", "cancellation_requested"]),
+      isNull(ordersTable.deletedAt),
+    ));
+
+  // All submitted receipts for these masters in one query
+  const submittedReceipts = await db
+    .select({ orderId: receiptsTable.orderId, masterId: receiptsTable.masterId })
+    .from(receiptsTable)
+    .where(and(
+      inArray(receiptsTable.masterId, eligibleIds),
+      isNotNull(receiptsTable.prepaymentSubmittedAt),
+    ));
+  const paidReceiptOrderIds = new Set(submittedReceipts.map(r => r.orderId));
+
+  // Group orders by master
+  const ordersByMaster = new Map<number, typeof activeOrders>();
+  for (const o of activeOrders) {
+    if (!o.masterId) continue;
+    const arr = ordersByMaster.get(o.masterId) ?? [];
+    arr.push(o);
+    ordersByMaster.set(o.masterId, arr);
+  }
+
+  const results: Array<{
+    masterId: number; alias: string; city: string; type: string; reason: string;
+    orderId: number | null; hoursElapsed: number | null;
+  }> = [];
+
+  for (const m of eligibleMasters) {
+    const masterOrders = ordersByMaster.get(m.id) ?? [];
+
+    // Priority 1: master_assigned 48h+ without estimate
+    let blocked = false;
+    for (const order of masterOrders) {
+      if (order.status !== "master_assigned") continue;
+      const hasEstimate = order.proposedAmount != null && Number(order.proposedAmount) > 0;
+      if (hasEstimate) continue;
+      const assignedAt = order.assignedAt ?? order.createdAt;
+      const ageMs = now.getTime() - new Date(assignedAt).getTime();
+      if (ageMs >= FORTY_EIGHT_HOURS) {
+        results.push({
+          masterId: m.id, alias: m.alias, city: m.city,
+          type: "no_estimate",
+          reason: `По заказу #${order.id} смета не отправлена более 48 часов.`,
+          orderId: order.id,
+          hoursElapsed: Math.floor(ageMs / 3600000),
+        });
+        blocked = true;
+        break;
+      }
+    }
+    if (blocked) continue;
+
+    // Priority 3: estimate sent, no payment 72h+
+    for (const order of masterOrders) {
+      const hasEstimate = order.proposedAmount != null && Number(order.proposedAmount) > 0;
+      const hasPayment = (order.orderAmount != null && Number(order.orderAmount) > 0)
+        || paidReceiptOrderIds.has(order.id);
+      if (!hasEstimate || hasPayment) continue;
+      const estimateSentAt = order.updatedAt ?? order.createdAt;
+      const ageMs = now.getTime() - new Date(estimateSentAt).getTime();
+      if (ageMs >= SEVENTY_TWO_HOURS) {
+        results.push({
+          masterId: m.id, alias: m.alias, city: m.city,
+          type: "no_payment",
+          reason: `По заказу #${order.id} предоплата не оплачена более 72 часов.`,
+          orderId: order.id,
+          hoursElapsed: Math.floor(ageMs / 3600000),
+        });
+        break;
+      }
     }
   }
+
   return results;
 }
