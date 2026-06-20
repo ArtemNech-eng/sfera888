@@ -64,48 +64,31 @@ router.delete("/columns/:id", requireRole("admin"), async (req, res) => {
 
 // GET all masters for voronka with active orders info
 router.get("/masters", requireAuth, async (_req, res) => {
-  const masters = await db.select().from(mastersTable)
-    .where(isNull(mastersTable.deletedAt))
-    .orderBy(mastersTable.createdAt);
+  const t0 = Date.now();
 
-  // Get avatar URLs from telegram_chats for masters with telegramId
-  const telegramIds = masters.filter(m => m.telegramId).map(m => m.telegramId!);
-  const tgChats = telegramIds.length > 0
-    ? await db.select({ telegramChatId: telegramChatsTable.telegramChatId, avatarUrl: telegramChatsTable.avatarUrl })
-        .from(telegramChatsTable)
-        .where(inArray(telegramChatsTable.telegramChatId, telegramIds))
-    : [];
-  const avatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
-
-  // Get pending (unpaid) transactions count per master
-  const pendingTxs = await db
-    .select({ masterId: transactionsTable.masterId, id: transactionsTable.id })
-    .from(transactionsTable)
-    .where(inArray(transactionsTable.paymentStatus, ["pending", "overdue"]));
-  const pendingTxMap = new Map<number, number>();
-  for (const tx of pendingTxs) {
-    if (!tx.masterId) continue;
-    pendingTxMap.set(tx.masterId, (pendingTxMap.get(tx.masterId) ?? 0) + 1);
-  }
-
-  // Get paid transactions count per master (conversion numerator)
-  const paidTxRows = await db
-    .select({ masterId: transactionsTable.masterId, cnt: count() })
-    .from(transactionsTable)
-    .where(eq(transactionsTable.paymentStatus, "paid"))
-    .groupBy(transactionsTable.masterId);
-  const paidTxMap = new Map(paidTxRows.map(r => [r.masterId, Number(r.cnt)]));
-
-  // Кошельки мастеров (комиссионная модель): рублёвый баланс + сумма сервисных сборов
-  const wallets = await db.select().from(masterWalletTable);
-  const walletMap = new Map(wallets.map(w => [w.masterId, w]));
-
-  // Cancel stats per master (last 30 and 7 days, master-fault only)
+  // ── Phase 1: independent queries in parallel ──────────────────────────────
   const now = Date.now();
   const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
 
-  const [completedRows, cancelledRows, cancelRows30d, cancelRows7d] = await Promise.all([
+  const [
+    masters,
+    pendingTxs,
+    paidTxRows,
+    completedRows,
+    cancelledRows,
+    cancelRows30d,
+    cancelRows7d,
+    activeOrders,
+  ] = await Promise.all([
+    db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)).orderBy(mastersTable.createdAt),
+    db.select({ masterId: transactionsTable.masterId, id: transactionsTable.id })
+      .from(transactionsTable)
+      .where(inArray(transactionsTable.paymentStatus, ["pending", "overdue"])),
+    db.select({ masterId: transactionsTable.masterId, cnt: count() })
+      .from(transactionsTable)
+      .where(eq(transactionsTable.paymentStatus, "paid"))
+      .groupBy(transactionsTable.masterId),
     db.select({ masterId: ordersTable.masterId, cnt: count() })
       .from(ordersTable)
       .where(and(isNotNull(ordersTable.masterId), eq(ordersTable.status, "completed")))
@@ -122,21 +105,39 @@ router.get("/masters", requireAuth, async (_req, res) => {
       .from(ordersTable)
       .where(and(isNotNull(ordersTable.masterId), isNotNull(ordersTable.cancelType), ne(ordersTable.cancelType, "client_refused"), gte(ordersTable.updatedAt, sevenDaysAgo)))
       .groupBy(ordersTable.masterId),
+    db.select().from(ordersTable)
+      .where(inArray(ordersTable.status, ["master_assigned", "in_progress"])),
   ]);
+  const t1 = Date.now();
+
+  // ── Phase 2: dependent queries (need IDs from phase 1) ────────────────────
+  const telegramIds = masters.filter(m => m.telegramId).map(m => m.telegramId!);
+  const leadIds = [...new Set(activeOrders.map(o => o.leadId))];
+
+  const [tgChats, leads] = await Promise.all([
+    telegramIds.length > 0
+      ? db.select({ telegramChatId: telegramChatsTable.telegramChatId, avatarUrl: telegramChatsTable.avatarUrl })
+          .from(telegramChatsTable)
+          .where(inArray(telegramChatsTable.telegramChatId, telegramIds))
+      : Promise.resolve([]),
+    leadIds.length > 0
+      ? db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds))
+      : Promise.resolve([]),
+  ]);
+  const t2 = Date.now();
+
+  // ── Build lookup maps ──────────────────────────────────────────────────────
+  const avatarMap = new Map(tgChats.map(c => [c.telegramChatId, c.avatarUrl ?? null]));
+  const pendingTxMap = new Map<number, number>();
+  for (const tx of pendingTxs) {
+    if (!tx.masterId) continue;
+    pendingTxMap.set(tx.masterId, (pendingTxMap.get(tx.masterId) ?? 0) + 1);
+  }
+  const paidTxMap = new Map(paidTxRows.map(r => [r.masterId, Number(r.cnt)]));
   const completedMap = new Map(completedRows.map(r => [r.masterId!, Number(r.cnt)]));
   const cancelledMap = new Map(cancelledRows.map(r => [r.masterId!, Number(r.cnt)]));
   const cancelMap30d = new Map(cancelRows30d.map(r => [r.masterId!, Number(r.cnt)]));
   const cancelMap7d = new Map(cancelRows7d.map(r => [r.masterId!, Number(r.cnt)]));
-
-  // Get active orders per master
-  const activeOrders = await db.select().from(ordersTable)
-    .where(inArray(ordersTable.status, ["master_assigned", "in_progress"]));
-
-  // Get leads for those orders
-  const leadIds = [...new Set(activeOrders.map(o => o.leadId))];
-  const leads = leadIds.length > 0
-    ? await db.select().from(leadsTable).where(inArray(leadsTable.id, leadIds))
-    : [];
   const leadMap = new Map(leads.map(l => [l.id, l]));
 
   const masterActiveOrders = new Map<number, any[]>();
@@ -155,10 +156,9 @@ router.get("/masters", requireAuth, async (_req, res) => {
       scheduledAt: o.scheduledAt ?? null,
     });
   }
+  const t3 = Date.now();
 
-  res.json(masters.map(m => {
-    const w = walletMap.get(m.id);
-    return {
+  const payload = masters.map(m => ({
     id: m.id,
     alias: m.alias,
     city: m.city,
@@ -203,18 +203,22 @@ router.get("/masters", requireAuth, async (_req, res) => {
     maxChatId: m.maxChatId ?? null,
     servicePrices: m.servicePrices ?? null,
     fomoDisabled: m.fomoDisabled ?? false,
-    // Комиссионная модель: рублёвый кошелёк и сервисные сборы
-    balance: w ? Number(w.balance) : 0,
-    creditLimit: w ? Number(w.creditLimit) : 0,
-    totalServiceFeesSpent: w ? Number(w.totalServiceFeesSpent) : 0,
-    // Репутация / автоблок
+    // Token model retired — wallet query removed. Legacy fields return 0.
+    balance: 0,
+    creditLimit: 0,
+    totalServiceFeesSpent: 0,
     consecutiveCancellations: m.consecutiveCancellations ?? 0,
     blockedFromOrders: m.blockedFromOrders ?? false,
     blockedAt: m.blockedAt ?? null,
     blockedReason: m.blockedReason ?? null,
     manualUnblocksCount: m.manualUnblocksCount ?? 0,
-    };
   }));
+  const t4 = Date.now();
+
+  res.set("Server-Timing", `phase1;dur=${t1 - t0}, phase2;dur=${t2 - t1}, build;dur=${t3 - t2}, format;dur=${t4 - t3}, total;dur=${t4 - t0}`);
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  console.log(`[voronka/masters] ${masters.length} masters: phase1=${t1 - t0}ms phase2=${t2 - t1}ms build=${t3 - t2}ms format=${t4 - t3}ms total=${t4 - t0}ms`);
+  res.json(payload);
 });
 
 // PATCH move master to column
