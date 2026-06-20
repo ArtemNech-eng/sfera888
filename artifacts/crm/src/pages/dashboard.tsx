@@ -11,6 +11,7 @@ import { TopMasters } from "../components/dashboard/TopMasters";
 import { RecentOrders } from "../components/dashboard/RecentOrders";
 import { LeadFunnelCard } from "../components/dashboard/LeadFunnelCard";
 import { LeadSourcesCard } from "../components/dashboard/LeadSourcesCard";
+import { StuckOrdersBlock } from "../components/dashboard/StuckOrdersBlock";
 
 type Period = "today" | "week" | "month" | "quarter";
 
@@ -143,6 +144,11 @@ function DashboardPage() {
         {/* KPI CARDS */}
         <div className="mb-6">
           <KPICards data={summary} isLoading={isLoading} />
+        </div>
+
+        {/* STUCK ORDERS — 5 categories of issues that need operator attention */}
+        <div className="mb-6">
+          <StuckOrdersBlock />
         </div>
 
         {/* ROW 1: Lead Funnel + Lead Sources */}

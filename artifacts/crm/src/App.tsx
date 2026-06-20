@@ -62,6 +62,7 @@ const AiOfficePage = lazy(() => import("@/pages/ai-office"));
 const PartnersPage = lazy(() => import("@/pages/partners"));
 const PartnerLeadsReviewPage = lazy(() => import("@/pages/partner-leads-review"));
 const PartnerAnalyticsPage = lazy(() => import("@/pages/partner-analytics"));
+const OrdersStuckPage = lazy(() => import("@/pages/orders-stuck"));
 
 const queryClient = new QueryClient();
 
@@ -94,6 +95,7 @@ function Router() {
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/leads" component={Leads} />
       <Route path="/orders" component={Orders} />
+      <Route path="/orders/stuck" component={OrdersStuckPage} />
       <Route path="/masters" component={Masters} />
       <Route path="/finance" component={Finance} />
       <Route path="/analytics" component={Analytics} />
