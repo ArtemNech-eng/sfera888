@@ -153,7 +153,7 @@ function formatMaster(m: any) {
 
 // GET /api/masters
 router.get("/", allMasterRoles, async (_req, res) => {
-  const startTime = Date.now();
+  const t0 = Date.now();
 
   // Run main query + paid-count aggregate in parallel.
   // Wallet query removed — token model was retired in Phase C, balances are
@@ -166,18 +166,25 @@ router.get("/", allMasterRoles, async (_req, res) => {
       .where(eq(transactionsTable.paymentStatus, "paid"))
       .groupBy(transactionsTable.masterId),
   ]);
+  const t1 = Date.now();
   const paidMap = new Map(paidCounts.map(r => [r.masterId, Number(r.cnt)]));
 
-  console.log(`[masters] GET / — ${masters.length} masters in ${Date.now() - startTime}ms`);
-
-  res.json(masters.map(m => ({
+  const payload = masters.map(m => ({
     ...formatMaster(m),
     paidOrdersCount: paidMap.get(m.id) ?? 0,
     // Legacy fields kept for backward-compat with older CRM bundles still in
     // browser cache. They always return 0 now.
     tokensBalance: 0,
     creditLimitTokens: 0,
-  })));
+  }));
+  const t2 = Date.now();
+
+  // Server-Timing — visible in DevTools → Network → masters → Timing → "Server Timing"
+  res.set("Server-Timing", `db;dur=${t1 - t0}, format;dur=${t2 - t1}, total;dur=${t2 - t0}`);
+  // Force fresh — defensive against any CDN / browser cache misbehavior
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  console.log(`[masters] GET / — ${masters.length} masters, db=${t1 - t0}ms format=${t2 - t1}ms total=${t2 - t0}ms`);
+  res.json(payload);
 });
 
 // POST /api/masters
