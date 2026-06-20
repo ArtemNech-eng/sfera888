@@ -549,18 +549,17 @@ async function processDesign(designId: number): Promise<void> {
     });
 
     // ── 2.2. Sharp нарезает: view 1 = full moodboard, views 2/3/4 =
-    //         3 квадранта (top-left, top-right, bottom-right). FLUX часто
-    //         оставляет один из квадрантов пустым (обычно top-left уголок
-    //         с потолком/стеной), поэтому view 1 показывает целый коллаж —
-    //         «обзор проекта» — это безопасный fallback.
+    //         3 квадранта одной комнаты. FLUX часто дублирует кровать в
+    //         top-row (top-left + top-right оба показывают кровать), а
+    //         wardrobe и workspace в bottom-row. Skip top-right (дубль).
     //
     // Mapping:
     //   view 1 «Общий вид»       = full moodboard (все 4 panels)
-    //   view 2 «Акцент»          = quadrant top-left
-    //   view 3 «Зона хранения»   = quadrant top-right
-    //   view 4 «У окна»          = quadrant bottom-right
-    //   (bottom-left quadrant)   = в детали-кропы и колор-палитру
-    const quadrantIndices: Array<0 | 1 | 2 | 3> = [0, 1, 3]; // skip bottom-left (2)
+    //   view 2 «Акцент»          = quadrant top-left  (главный объект — кровать)
+    //   view 3 «Зона хранения»   = quadrant bottom-left (шкаф)
+    //   view 4 «У окна»          = quadrant bottom-right (рабочее место/окно)
+    //   (top-right skipped)      = обычно дубль главного объекта, не нужен
+    const quadrantIndices: Array<0 | 1 | 2 | 3> = [0, 2, 3]; // skip top-right (1)
     for (let i = 0; i < 4; i++) {
       const buf = i === 0
         ? await scaleMoodboardToView(moodboardBuffer)
