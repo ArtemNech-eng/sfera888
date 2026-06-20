@@ -205,6 +205,14 @@ async function ensureCities(): Promise<Map<string, number>> {
     if (c.slug) slugToId.set(c.slug, c.id);
   }
 
+  // Re-sync cities serial sequence — на проде она могла отстать от MAX(id)
+  // (например после backup/restore без bumpа sequence).
+  if (!dryRun) {
+    await pool.query(
+      "SELECT setval(pg_get_serial_sequence('cities', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM cities), 0), 1))",
+    );
+  }
+
   for (const slug of usedSlugs) {
     if (slugToId.has(slug)) continue;
     const meta = CITY_DATA[slug];
