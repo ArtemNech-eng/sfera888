@@ -124,13 +124,18 @@ export async function falGenerate(input: FalGenerationInput): Promise<FalGenerat
  * Params (отличается от FLUX dev):
  *   • aspect_ratio: "21:9" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "9:21"
  *   • safety_tolerance: "1".."6" (str)
- *   • raw: optional bool
+ *   • image_prompt: optional URL — стиль/палитра наследуется от reference
+ *   • image_prompt_strength: 0..1 (default 0.1)
  *
  * Cost: ~$0.06 per image (vs $0.025 у FLUX dev).
  */
 export async function falGeneratePanoramicPro(input: {
   prompt: string;
   aspectRatio?: "21:9" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "9:21";
+  /** Reference image URL для наследования стиля/материалов/палитры. */
+  imagePromptUrl?: string;
+  /** Сила влияния референса: 0=ignore, 1=close copy. По умолчанию 0.1. */
+  imagePromptStrength?: number;
 }): Promise<FalGenerationResult> {
   const apiKey = process.env.FAL_API_KEY;
   if (!apiKey) {
@@ -139,7 +144,7 @@ export async function falGeneratePanoramicPro(input: {
   const model = process.env.FAL_MODEL_PANORAMIC ?? "fal-ai/flux-pro/v1.1-ultra";
   const url = `${FAL_BASE_URL}/${model}`;
 
-  const body = {
+  const body: Record<string, unknown> = {
     prompt: input.prompt,
     aspect_ratio: input.aspectRatio ?? "21:9",
     num_images: 1,
@@ -147,6 +152,10 @@ export async function falGeneratePanoramicPro(input: {
     safety_tolerance: "2",
     output_format: "jpeg",
   };
+  if (input.imagePromptUrl) {
+    body.image_prompt = input.imagePromptUrl;
+    body.image_prompt_strength = input.imagePromptStrength ?? 0.4;
+  }
 
   const startedAt = Date.now();
   let response: Response;
