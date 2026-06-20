@@ -57,6 +57,20 @@ export interface DesignColorSwatch {
   name?: string | null; // "Бежевый тёплый" — опционально
 }
 
+/** Один из 4 ракурсов проекта (общий вид / акцент / хранение / окно). */
+export interface DesignView {
+  url: string;             // Public R2 URL
+  label: string;           // "Общий вид от входа"
+  position: number;        // 1..4 для устойчивого порядка
+}
+
+/** Один из 6 крупных планов (мебель/детали), вырезанных из ракурсов. */
+export interface DesignDetailCrop {
+  url: string;             // Public R2 URL
+  label: string;           // "Кровать с мягким изголовьем"
+  fromView?: number | null; // position ракурса-источника (для трассировки)
+}
+
 export const designsTable = pgTable(
   "designs",
   {
@@ -93,6 +107,11 @@ export const designsTable = pgTable(
     estimate: jsonb("estimate").$type<DesignEstimateItem[]>(),
     solutions: jsonb("solutions").$type<DesignSolution[]>(),
     colorPalette: jsonb("color_palette").$type<DesignColorSwatch[]>(),
+
+    /** 4 ракурса проекта (общий / акцент / хранение / окно). resultImageUrl — это `views[0]`. */
+    views: jsonb("views").$type<DesignView[]>(),
+    /** 6 деталей мебели — кропы из ракурсов через sharp (server-side). */
+    detailCrops: jsonb("detail_crops").$type<DesignDetailCrop[]>(),
 
     /**
      * Status convention (validated в коде, без PG enum):

@@ -106,6 +106,13 @@
       "when": 1782100000000,
       "tag": "0014_orders_master_status_index",
       "breakpoints": false
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1782150000000,
+      "tag": "0015_designs_views_and_crops",
+      "breakpoints": false
     }
   ]
 }
