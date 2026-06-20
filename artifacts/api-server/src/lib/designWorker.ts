@@ -123,71 +123,134 @@ const STYLE_DESCRIPTORS: Record<string, string> = {
   classic: "classical elegant",
 };
 
-const ROOM_DESCRIPTORS: Record<string, string> = {
-  bathroom: "bathroom interior",
-  kitchen: "kitchen interior",
-  living_room: "living room interior",
-  bedroom: "bedroom interior",
-  hallway: "hallway interior",
-  apartment: "apartment interior overview",
-  nursery: "child room interior",
+/**
+ * «Было» промпт — типовая русская комната до ремонта. Намеренно УГЛОВАТАЯ
+ * и убогая, чтобы контраст с «Стало» был очевиден. Используется
+ * для seed-проектов (text2img). Для user-upload «Было» — фото клиента.
+ */
+const ROOM_BEFORE_PROMPTS: Record<string, string> = {
+  bedroom: "small soviet apartment bedroom 12 sqm before renovation, single old bed with metal frame, peeling wallpaper, dingy white walls, harsh fluorescent ceiling light, dated wooden wardrobe with chipped veneer, no decor, depressing atmosphere, neglected interior, 1980s look, photo realistic, no people, wide angle from doorway",
+  kitchen: "tiny soviet apartment kitchen 7 sqm before renovation, worn 1980s cabinets with chipped veneer, faded yellow tile backsplash, old gas stove, sticky linoleum floor, single bare bulb hanging from ceiling, plain dirty walls, neglected, photo realistic, no people, wide angle",
+  bathroom: "small soviet apartment bathroom 4 sqm before renovation, dingy yellow tile from 1970s, rusty old bathtub, cracked sink, plain hanging mirror, single bare bulb, peeling paint, dated and neglected, photo realistic, no people, wide angle",
+  living_room: "soviet apartment living room before renovation, old worn brown sofa, dated wooden cabinet wall unit with glass doors, faded carpet on floor, single ceiling chandelier, peeling wallpaper, no decor, neglected 1980s atmosphere, photo realistic, no people, wide angle",
+  hallway: "narrow soviet apartment hallway before renovation, peeling wallpaper, worn linoleum floor, plain old wooden coat rack, single bare bulb on ceiling, no decor, dated, photo realistic, no people, wide angle",
+  nursery: "soviet apartment child room 10 sqm before renovation, old metal-frame single bed, plain pastel wallpaper, dated wooden wardrobe, single ceiling light, basic furniture from 1980s, no toys or decor, neglected, photo realistic, no people, wide angle",
+  apartment: "soviet apartment interior before renovation, peeling wallpaper, dated 1980s furniture, worn linoleum floor, harsh ceiling lighting, no decor, neglected atmosphere, photo realistic, no people, wide angle",
 };
 
 /**
- * «Было» промпт — типовая русская комната до ремонта. Используется как init
- * image для img2img в seed-проектах: одна геометрия → 4 разных ракурса.
+ * 4 ракурса проекта. Каждый = отдельная text2img-генерация (для seed) или
+ * img2img от user-upload (когда есть фото клиента). Поскольку мы НЕ
+ * используем общий init image для seed'а, добавляем в промпт жёсткие
+ * указатели на КОМПОЗИЦИЮ — что должно быть в кадре, что не должно — иначе
+ * FLUX уходит в типовое "interior shot" без целевых предметов.
  */
-const ROOM_BEFORE_PROMPTS: Record<string, string> = {
-  bedroom: "typical russian panel apartment bedroom before renovation, plain white walls, basic 1990s furniture, tired interior, diffused window light, photo realistic, no people, wide angle from doorway",
-  kitchen: "typical small soviet-era apartment kitchen 8 sqm before renovation, worn wooden cabinets, white tile backsplash, basic appliances, plain walls, daylight, photo realistic, no people, wide angle",
-  bathroom: "typical small soviet apartment bathroom before renovation, white wall tile, basic fittings, plain ceiling, photo realistic, no people, wide angle",
-  living_room: "typical russian apartment living room before renovation, plain walls, basic 1990s sofa and shelves, worn wooden floor, daylight, photo realistic, no people, wide angle",
-  hallway: "typical narrow soviet apartment hallway before renovation, plain walls, basic shoe rack, worn floor, photo realistic, no people, wide angle",
-  nursery: "typical russian apartment child room 10 sqm before renovation, plain pastel walls, basic furniture, daylight, photo realistic, no people, wide angle",
-  apartment: "typical russian panel apartment interior before renovation, plain walls, basic furniture, daylight, photo realistic, no people, wide angle",
-};
-
-/** 4 ракурса — RU labels для UI и EN prompts для FLUX. */
 interface ViewSpec {
   position: number;
-  label: string;          // RU — для UI
-  promptHint: string;     // EN — добавляется к base prompt
+  /** RU label для UI. */
+  label: string;
+  /**
+   * EN-функция, возвращающая тело промпта для конкретной комнаты.
+   * Должна явно указывать предметы в кадре (visible: ..., featuring: ...)
+   * чтобы FLUX не подменял мебель.
+   */
+  buildPrompt(room: string, style: string, area: number | null): string;
   aspect: "16:9" | "4:3" | "1:1";
 }
+
+/** Какие предметы должны быть видны на каждом ракурсе по типу комнаты. */
+const ROOM_VIEW_SUBJECTS: Record<string, [string, string, string, string]> = {
+  // [view_1 общий, view_2 акцент, view_3 хранение, view_4 окно]
+  bedroom: [
+    "queen size bed centered with upholstered headboard, two bedside tables with lamps, wardrobe partially visible to the side",
+    "close-up of the bed area: upholstered headboard against the wall, twin bedside tables with table lamps, decorative pillows on the bed, framed art above the headboard",
+    "view of the wardrobe wall: full-height integrated wardrobe with wood door panels, open shelving section with books and decor, no bed in frame",
+    "corner near the window: tall window with sheer curtains, potted plant on sill, lounge chair, floor lamp, soft daylight, no bed in frame",
+  ],
+  kitchen: [
+    "L-shaped kitchen layout fully visible, base and wall cabinets, countertop with sink, range hood above stove, dining nook with table and chairs",
+    "close-up of the kitchen counter: backsplash detail, countertop with cooking utensils, range hood, faucet over the sink",
+    "view of tall kitchen storage: pantry cabinets with integrated appliances, glass-front upper cabinets, no dining table in frame",
+    "dining area near the window: round table with chairs, pendant light above, window with curtains, no kitchen counters in frame",
+  ],
+  bathroom: [
+    "wide angle showing entire bathroom: walk-in shower, vanity with mirror and sink, toilet, towel rack on wall",
+    "close-up of the vanity: round mirror, sink with modern faucet, marble countertop, sconce lighting, towel hooks",
+    "tall storage column: built-in cabinet with shelves and towels, basket for laundry, no shower in frame",
+    "shower area: glass-walled walk-in shower with rainfall head, marble tile, niche shelf, no vanity in frame",
+  ],
+  living_room: [
+    "wide angle of the living room: large sofa centered, coffee table in front, TV unit on opposite wall, large window, area rug",
+    "close-up of the seating area: sofa with decorative pillows, side table with lamp and books, gallery wall behind sofa, no TV in frame",
+    "media wall: TV mounted on wall, low TV console with drawers, decorative items on shelves, no sofa in frame",
+    "reading nook by the window: lounge chair, floor lamp, side table, sheer curtains, daylight, no TV in frame",
+  ],
+  hallway: [
+    "wide angle of the hallway: full-height built-in wardrobe to one side, console table with mirror above on opposite wall, decorative ceiling lighting",
+    "close-up of the entryway console: console table with vase and tray, large mirror above, sconce lighting on the side",
+    "wardrobe wall: full-height built-in wardrobe with wood door panels, integrated shoe storage at the bottom, no console in frame",
+    "end of the hallway near the natural light: small bench with cushion, hooks on the wall, framed art, light from a window or transom",
+  ],
+  nursery: [
+    "wide angle of child room: child bed with safety rail, study desk with chair, toy storage cabinets, soft area rug",
+    "close-up of the bed area: bed with patterned bedding, decorative pillows, framed art on the wall, bedside small table with night light",
+    "storage and play zone: low cabinets for toys, open shelving with books and toys, soft floor mat, no bed in frame",
+    "study and window area: child desk facing the window, ergonomic chair, pin board on the wall, daylight, no bed in frame",
+  ],
+  apartment: [
+    "wide angle of the open-plan main room: living area with sofa, dining area with table, kitchen counter visible at the back",
+    "close-up of the living area: sofa with cushions, coffee table, area rug, decorative shelves",
+    "kitchen and dining zone: kitchen island with stools, dining table with chairs, pendant lights",
+    "bedroom area near the window: queen size bed visible through partition, window with curtains, soft daylight",
+  ],
+};
 
 const VIEW_SPECS: ViewSpec[] = [
   {
     position: 1,
     label: "Общий вид",
-    promptHint: "wide angle from the doorway, full room visible, architectural digest composition",
     aspect: "4:3",
+    buildPrompt: (room, style, area) => {
+      const subj = ROOM_VIEW_SUBJECTS[room]?.[0] ?? "wide angle of the entire room layout";
+      const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
+      const areaPart = area ? `, ${area} sqm room` : "";
+      return `${styleDesc} ${room.replace(/_/g, " ")} interior${areaPart}, wide angle from the doorway, ${subj}, photo realistic, magazine quality interior photography, natural daylight, 8k, no people, full room visible`;
+    },
   },
   {
     position: 2,
     label: "Акцентная стена",
-    promptHint: "mid-shot of the main feature wall, focal point composition, balanced framing",
     aspect: "4:3",
+    buildPrompt: (room, style, area) => {
+      const subj = ROOM_VIEW_SUBJECTS[room]?.[1] ?? "close-up of the main feature";
+      const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
+      const areaPart = area ? `, ${area} sqm room` : "";
+      return `${styleDesc} ${room.replace(/_/g, " ")} interior${areaPart}, ${subj}, photo realistic, magazine quality, soft natural light, intimate composition, 8k, no people`;
+    },
   },
   {
     position: 3,
     label: "Зона хранения",
-    promptHint: "view of the storage area and built-in furniture, well-organized composition, side angle",
     aspect: "4:3",
+    buildPrompt: (room, style, area) => {
+      const subj = ROOM_VIEW_SUBJECTS[room]?.[2] ?? "side view of the storage area";
+      const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
+      const areaPart = area ? `, ${area} sqm room` : "";
+      return `${styleDesc} ${room.replace(/_/g, " ")} interior${areaPart}, side angle, ${subj}, photo realistic, magazine quality interior photography, natural light, 8k, no people`;
+    },
   },
   {
     position: 4,
     label: "У окна",
-    promptHint: "natural light corner near the window, soft daylight, depth of field, intimate angle",
     aspect: "4:3",
+    buildPrompt: (room, style, area) => {
+      const subj = ROOM_VIEW_SUBJECTS[room]?.[3] ?? "corner near the window";
+      const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
+      const areaPart = area ? `, ${area} sqm room` : "";
+      return `${styleDesc} ${room.replace(/_/g, " ")} interior${areaPart}, intimate angle, ${subj}, soft daylight, depth of field, photo realistic, magazine quality, 8k, no people`;
+    },
   },
 ];
-
-function buildViewPrompt(room: string, style: string, area: number | null, hint: string): string {
-  const styleAdjective = STYLE_DESCRIPTORS[style] ?? style;
-  const roomNoun = ROOM_DESCRIPTORS[room] ?? room;
-  const areaPart = area ? `, ${area} sqm` : "";
-  return `${styleAdjective} ${roomNoun}${areaPart}, ${hint}, photo realistic, magazine quality, professional interior photography, natural lighting, 8k, no people`;
-}
 
 /** 6 detail-crops: какие куски из каких ракурсов вырезать через sharp. */
 interface CropSpec {
@@ -310,22 +373,28 @@ async function processDesign(designId: number): Promise<void> {
 
   const areaNum = design.area ? parseFloat(design.area) : null;
 
-  // ── 1. Resolve "Before" image: либо user upload, либо генерим text2img. ──
-  let beforeKey: string;        // ключ объекта в R2 (для signObjectURL)
-  let beforePublicUrl: string;  // /api/marketplace/dizajn/img/...
+  // ── Mode detection: seed (text2img × 4) vs user-upload (img2img × 4). ──
+  // Seed-проекты: inputImageUrl=null. Для разнообразия и чтобы избежать
+  // «4 одинаковых ракурса от одной before» — каждый ракурс генерится как
+  // самостоятельный text2img с детализированным prompt'ом (что в кадре).
+  // User-upload: inputImageUrl содержит R2 key пользовательского фото —
+  // делаем img2img × 4 от этого фото, сохраняем геометрию комнаты.
+  const isSeedMode = !design.inputImageUrl;
 
-  if (design.inputImageUrl) {
+  // ── 1. Resolve "Before" image. ──────────────────────────────────────────
+  let beforeKey: string;
+  let beforePublicUrl: string;
+
+  if (!isSeedMode) {
     // User uploaded — inputImageUrl содержит R2 key.
-    beforeKey = design.inputImageUrl;
-    // Public URL у user-upload'a уже есть в БД? Если нет — построим тот же
-    // путь через proxy (inputImageUrl у нас хранится как R2-key, не URL).
+    beforeKey = design.inputImageUrl!;
     beforePublicUrl = beforeKey.startsWith("/")
       ? beforeKey
       : "/api/marketplace/dizajn/img/" + beforeKey.replace(/^dizajn\//, "");
   } else {
-    // Seed-проект — генерируем «Было» text2img.
+    // Seed — генерируем «Было» text2img (намеренно убогая комната).
     const beforePrompt = ROOM_BEFORE_PROMPTS[design.roomType]
-      ?? `typical russian apartment ${design.roomType} before renovation, plain walls, basic furniture, daylight, photo realistic, no people, wide angle`;
+      ?? `typical neglected ${design.roomType} interior before renovation, plain walls, basic furniture, photo realistic, no people, wide angle`;
 
     console.log(`[designWorker] design ${design.id}: generating BEFORE (text2img)`);
     const beforeResult = await falGenerateText({
@@ -349,38 +418,45 @@ async function processDesign(designId: number): Promise<void> {
       completedAt: new Date(),
     });
 
-    // Сохраним ключ "Было" в `inputImageUrl` чтобы страница могла показать.
     await db
       .update(designsTable)
       .set({ inputImageUrl: beforeKey, updatedAt: new Date() })
       .where(eq(designsTable.id, design.id));
   }
 
-  // ── 2. Параллельно: 4 img2img ракурса + текстовый пакет от AI. ──────────
-  // Все ракурсы делаем img2img от «Было» — одна геометрия, разные углы.
-  const falInputUrl = await signR2(bucketId, beforeKey);
-
+  // ── 2. Параллельно: 4 ракурса + текстовый пакет. ────────────────────────
   // Если seed-проект уже принёс h1/description/etc — не вызываем AI, экономим.
-  // Это режим «hand-written content» (тексты от Claude Opus в чате).
   const hasSeedContent = !!design.h1 && !!design.description
     && Array.isArray(design.materials) && design.materials.length > 0
     && Array.isArray(design.estimate) && design.estimate.length > 0
     && Array.isArray(design.solutions) && design.solutions.length > 0;
 
   console.log(
-    `[designWorker] design ${design.id}: generating 4 views (img2img)`
+    `[designWorker] design ${design.id}: generating 4 views (${isSeedMode ? "text2img" : "img2img"})`
     + (hasSeedContent ? " (seed content — skipping AI text gen)" : " + AI content"),
   );
-  const renderViews = Promise.all(
-    VIEW_SPECS.map((spec) =>
-      falGenerate({
-        initImageUrl: falInputUrl,
-        prompt: buildViewPrompt(design.roomType, design.style, areaNum, spec.promptHint),
-        aspectRatio: spec.aspect,
-        strength: 0.78, // чуть выше — даём больше свободы для смены ракурса
-      }).then((result) => ({ ...result, spec })),
-    ),
-  );
+
+  const renderViews = isSeedMode
+    ? Promise.all(
+        VIEW_SPECS.map((spec) =>
+          falGenerateText({
+            prompt: spec.buildPrompt(design.roomType, design.style, areaNum),
+            aspectRatio: spec.aspect,
+          }).then((result) => ({ ...result, spec })),
+        ),
+      )
+    : signR2(bucketId, beforeKey).then((falInputUrl) =>
+        Promise.all(
+          VIEW_SPECS.map((spec) =>
+            falGenerate({
+              initImageUrl: falInputUrl,
+              prompt: spec.buildPrompt(design.roomType, design.style, areaNum),
+              aspectRatio: spec.aspect,
+              strength: 0.78,
+            }).then((result) => ({ ...result, spec })),
+          ),
+        ),
+      );
 
   const [renderResults, content] = await Promise.all([
     renderViews,
@@ -441,13 +517,19 @@ async function processDesign(designId: number): Promise<void> {
     await db.insert(designGenerationsTable).values({
       designId: design.id,
       provider: "fal-ai",
-      model: process.env.FAL_MODEL ?? "fal-ai/flux/dev/image-to-image",
-      prompt: buildViewPrompt(design.roomType, design.style, areaNum, result.spec.promptHint),
+      model: isSeedMode
+        ? (process.env.FAL_MODEL_TEXT ?? "fal-ai/flux/dev")
+        : (process.env.FAL_MODEL ?? "fal-ai/flux/dev/image-to-image"),
+      prompt: result.spec.buildPrompt(design.roomType, design.style, areaNum),
       roomType: design.roomType,
       style: design.style,
       status: "success",
       costKopeks: result.costKopeks,
-      providerResponse: { generationMs: result.generationMs, view: `view_${result.spec.position}` },
+      providerResponse: {
+        generationMs: result.generationMs,
+        view: `view_${result.spec.position}`,
+        mode: isSeedMode ? "text2img" : "img2img",
+      },
       completedAt: new Date(),
     });
 
