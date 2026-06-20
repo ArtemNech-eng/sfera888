@@ -271,7 +271,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
     const [row] = await db
       .select({
         design: designsTable,
-        city: { name: citiesTable.name, slug: citiesTable.slug },
+        city: { name: citiesTable.name, slug: citiesTable.slug, nameIn: citiesTable.nameIn },
       })
       .from(designsTable)
       .leftJoin(citiesTable, eq(designsTable.cityId, citiesTable.id))
@@ -345,6 +345,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
         durationWeeks: row.design.durationWeeks,
         cityName: row.city?.name ?? null,
         citySlug: row.city?.slug ?? null,
+        cityNameIn: row.city?.nameIn ?? null,
         district: row.design.district,
         h1: row.design.h1,
         seoTitle: row.design.seoTitle,

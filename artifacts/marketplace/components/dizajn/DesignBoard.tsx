@@ -38,6 +38,16 @@ const ROOM_LABELS_GENITIVE: Record<string, string> = {
   nursery: "детской",
 };
 
+const ROOM_LABELS_NOMINATIVE: Record<string, string> = {
+  bathroom: "ванная",
+  kitchen: "кухня",
+  living_room: "гостиная",
+  bedroom: "спальня",
+  hallway: "прихожая",
+  apartment: "квартира",
+  nursery: "детская",
+};
+
 const STYLE_LABELS: Record<string, string> = {
   modern: "Современный",
   scandinavian: "Скандинавский",
@@ -82,6 +92,8 @@ export function DesignBoard({ design, similar }: Props) {
 
   const styleLabel = STYLE_LABELS[design.style] ?? design.style;
   const roomGen = ROOM_LABELS_GENITIVE[design.roomType] ?? design.roomType;
+  const roomNom = ROOM_LABELS_NOMINATIVE[design.roomType] ?? design.roomType;
+  const cityIn = design.cityNameIn ?? (design.cityName ? `в ${design.cityName}` : null);
   const designUrl = `${publicUrl().replace(/\/+$/, "")}/dizajn/${design.slug}`;
   const shareTitle = design.h1 ?? `Дизайн ${roomGen} в стиле ${styleLabel}`;
 
@@ -206,13 +218,13 @@ export function DesignBoard({ design, similar }: Props) {
                 Как менялась комната.
               </h2>
               <p className="mt-3 text-sm text-[var(--color-muted)]">
-                Слева — типовая {roomGen} в панельном доме. Справа — концепт после ремонта в стиле {styleLabel.toLowerCase()}.
+                Слева — типовая {roomNom} в панельном доме. Справа — концепт после ремонта в стиле {styleLabel.toLowerCase()}.
                 Все изображения сгенерированы AI и нужны для вдохновения.
               </p>
             </div>
             <div className="mt-7 grid gap-4 sm:grid-cols-2">
-              <BeforeAfterPair label="Было" labelTone="muted" url={beforeUrl} alt={`Типовая ${roomGen} до ремонта`} />
-              <BeforeAfterPair label="Стало" labelTone="brand" url={heroView.url} alt={`${roomGen} после преображения, ${styleLabel.toLowerCase()}`} />
+              <BeforeAfterPair label="Было" labelTone="muted" url={beforeUrl} alt={`Типовая ${roomNom} до ремонта`} />
+              <BeforeAfterPair label="Стало" labelTone="brand" url={heroView.url} alt={`${capitalize(roomNom)} после преображения, ${styleLabel.toLowerCase()}`} />
             </div>
           </div>
         </section>
@@ -240,7 +252,7 @@ export function DesignBoard({ design, similar }: Props) {
                 Что входит.
               </h2>
               <dl className="mt-5 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy text-sm">
-                <ParamRow label="Помещение" value={capitalize(roomGen)} />
+                <ParamRow label="Помещение" value={capitalize(roomNom)} />
                 <ParamRow label="Площадь" value={design.area ? `${design.area} м²` : "—"} />
                 <ParamRow label="Стиль" value={styleLabel} />
                 {design.budget ? (
@@ -480,10 +492,10 @@ export function DesignBoard({ design, similar }: Props) {
           <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
             <p className="font-eyebrow">О городе</p>
             <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-              Реализация в городе {design.cityName}.
+              Реализация {cityIn ?? `в городе ${design.cityName}`}.
             </h2>
             <div className="mt-5 text-base leading-relaxed text-[var(--color-muted)] sm:text-lg sm:leading-[1.7]">
-              В каталоге проверенных мастеров {design.cityName} есть специалисты, которые работают
+              В каталоге проверенных мастеров {cityIn ?? design.cityName} есть специалисты, которые работают
               со стилем {styleLabel.toLowerCase()} и могут повторить этот концепт{design.district ? ` в районе ${design.district}` : ""}.
               Бюджет и состав работ согласовываются после замера и уточнения списка материалов.
             </div>
@@ -501,7 +513,7 @@ export function DesignBoard({ design, similar }: Props) {
                 Узнайте стоимость точно под вашу комнату.
               </h3>
               <p className="mt-2 text-sm text-[var(--color-muted)]">
-                Смета на странице — ориентир по средним ценам {design.cityName ? `в ${design.cityName}` : ""}.
+                Смета на странице — ориентир по средним ценам {cityIn ?? ""}.
                 Под конкретный объект мастер пересчитает после замера.
               </p>
             </div>
@@ -532,7 +544,7 @@ export function DesignBoard({ design, similar }: Props) {
                 Подберём мастера, который сделает похоже.
               </h2>
               <p className="mt-5 max-w-xl text-base leading-relaxed text-white/70 sm:text-lg">
-                Оставьте контакт — мы найдём проверенного мастера{design.cityName ? ` в ${design.cityName}` : ""},
+                Оставьте контакт — мы найдём проверенного мастера{cityIn ? ` ${cityIn}` : ""},
                 который работает в стиле {styleLabel.toLowerCase()} и сможет повторить
                 этот проект.
               </p>

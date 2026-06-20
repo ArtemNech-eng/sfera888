@@ -392,6 +392,8 @@ export interface DesignFullDTO {
   durationWeeks: number | null;
   cityName: string | null;
   citySlug: string | null;
+  /** Предложный падеж: «в Краснодаре» — для фраз с предлогом «в». */
+  cityNameIn: string | null;
   district: string | null;
   h1: string | null;
   seoTitle: string | null;
