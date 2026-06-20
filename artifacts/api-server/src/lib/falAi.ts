@@ -125,6 +125,8 @@ export async function falGenerate(input: FalGenerationInput): Promise<FalGenerat
 export async function falGenerateText(input: {
   prompt: string;
   aspectRatio?: "16:9" | "4:3" | "1:1";
+  /** Override aspectRatio with explicit pixel dimensions (e.g. 2048×768 for ultrawide). */
+  imageSize?: { width: number; height: number };
 }): Promise<FalGenerationResult> {
   const apiKey = process.env.FAL_API_KEY;
   if (!apiKey) {
@@ -137,7 +139,7 @@ export async function falGenerateText(input: {
     prompt: input.prompt,
     num_inference_steps: 28,
     guidance_scale: 3.5,
-    image_size: aspectToImageSize(input.aspectRatio ?? "4:3"),
+    image_size: input.imageSize ?? aspectToImageSize(input.aspectRatio ?? "4:3"),
     num_images: 1,
     enable_safety_checker: true,
   };

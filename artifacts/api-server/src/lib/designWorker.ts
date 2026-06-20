@@ -139,146 +139,94 @@ const ROOM_BEFORE_PROMPTS: Record<string, string> = {
 };
 
 /**
- * 4 ракурса проекта. Каждый = отдельная text2img-генерация (для seed) или
- * img2img от user-upload (когда есть фото клиента). Поскольку мы НЕ
- * используем общий init image для seed'а, добавляем в промпт жёсткие
- * указатели на КОМПОЗИЦИЮ — что должно быть в кадре, что не должно — иначе
- * FLUX уходит в типовое "interior shot" без целевых предметов.
- */
-interface ViewSpec {
-  position: number;
-  /** RU label для UI. */
-  label: string;
-  /**
-   * EN-функция, возвращающая тело промпта для конкретной комнаты.
-   * Должна явно указывать предметы в кадре (visible: ..., featuring: ...)
-   * чтобы FLUX не подменял мебель.
-   */
-  buildPrompt(room: string, style: string, area: number | null): string;
-  aspect: "16:9" | "4:3" | "1:1";
-}
-
-/** Какие предметы должны быть видны на каждом ракурсе по типу комнаты. */
-const ROOM_VIEW_SUBJECTS: Record<string, [string, string, string, string]> = {
-  // [view_1 общий, view_2 акцент, view_3 хранение, view_4 окно]
-  bedroom: [
-    "queen size double bed centered with upholstered headboard, two bedside tables with table lamps, wardrobe partially visible to the side, soft area rug on the floor",
-    "close-up of the bed area: upholstered headboard against the accent wall, twin bedside tables with warm table lamps, decorative pillows on the bed, framed wall art above the headboard",
-    "side view of the wardrobe wall: full-height built-in wardrobe with natural wood door panels, integrated open shelving section with books and decorative objects, no bed in frame",
-    "workspace corner near the tall window: compact desk with chair facing the window, floor lamp beside, sheer curtains, plant on the sill, soft daylight, no bed in frame",
-  ],
-  kitchen: [
-    "L-shaped kitchen layout fully visible from doorway, base and wall cabinets, stone countertop with sink, range hood above induction stove, dining nook with wooden table and chairs, warm pendant light",
-    "close-up of the kitchen counter: tiled backsplash detail, countertop with cooking utensils and a vase, range hood, brass faucet over the sink, warm under-cabinet lighting",
-    "view of tall kitchen storage column: pantry cabinets with integrated appliances, glass-front upper cabinets, no dining table in frame",
-    "dining area near the window: round wooden table with chairs, pendant light above, window with linen curtains, soft daylight, no kitchen counters in frame",
-  ],
-  bathroom: [
-    "wide angle showing entire bathroom from doorway: walk-in shower behind glass partition, vanity with mirror and basin, toilet, towel rack on wall, warm sconce lighting",
-    "close-up of the vanity: round mirror, basin with modern faucet, marble or quartz countertop, sconce lighting on either side, towel hooks below",
-    "tall storage column with built-in cabinet, open shelves with rolled towels and a basket for laundry, no shower in frame",
-    "shower zone: glass-walled walk-in shower with rainfall head, marble or porcelain tile, niche shelf with toiletries, no vanity in frame",
-  ],
-  living_room: [
-    "wide angle of living room from doorway: large fabric sofa centered, low coffee table in front, TV unit on opposite wall, large window with curtains, soft area rug, warm floor lamp",
-    "close-up of the seating area: sofa with decorative pillows and a throw, side table with table lamp and a stack of books, gallery wall behind sofa, no TV in frame",
-    "media wall: TV mounted on wall, low TV console with drawers, decorative items on shelves, plant in pot, no sofa in frame",
-    "reading nook by the window: lounge chair with throw, floor lamp, side table with book, sheer curtains, soft daylight, no TV in frame",
-  ],
-  hallway: [
-    "wide angle of the hallway from the front door: full-height built-in wardrobe to one side, slim console table with mirror above on opposite wall, decorative ceiling lighting, runner rug",
-    "close-up of the entryway console: console table with vase and tray for keys, large rectangular mirror above, warm sconce lighting on the side",
-    "wardrobe wall: full-height built-in wardrobe with natural wood door panels, integrated shoe storage at the bottom, no console in frame",
-    "end of the hallway opening into the apartment: small upholstered bench with cushion, hooks on the wall for jackets, framed art, ceiling light",
-  ],
-  nursery: [
-    "wide angle of child room from doorway: child bed with safety rail, study desk with chair near the window, low toy storage cabinets, soft area rug, warm pendant light",
-    "close-up of the bed area: bed with patterned bedding, decorative pillows, framed art on the wall, bedside small table with night light",
-    "play and storage zone: low cabinets for toys with rounded edges, open shelving with books and toys, soft floor mat, no bed in frame",
-    "study and window area: child desk facing the window, ergonomic chair, pin board on the wall, table lamp, soft daylight, no bed in frame",
-  ],
-  apartment: [
-    "wide angle of the open-plan main room from the entrance: living area with sofa and coffee table, dining area with wooden table, kitchen counter visible at the back, warm pendant lights",
-    "close-up of the living area: fabric sofa with cushions, coffee table with magazines, area rug, decorative shelves, gallery wall, no kitchen in frame",
-    "kitchen and dining zone: kitchen island with bar stools, dining table with chairs, pendant lights above the dining table",
-    "bedroom area near the window: queen size bed visible behind partition or sliding door, window with linen curtains, soft daylight, lounge chair",
-  ],
-};
-
-const VIEW_SPECS: ViewSpec[] = [
-  {
-    position: 1,
-    label: "Общий вид",
-    aspect: "4:3",
-    buildPrompt: (room, style, area) => {
-      const subj = ROOM_VIEW_SUBJECTS[room]?.[0] ?? "wide angle of the entire room layout";
-      const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-      const areaPart = area ? `, ${area} sqm` : "";
-      return `${styleDesc} ${room.replace(/_/g, " ")}${areaPart}, wide angle from the doorway, ${subj}, ${RENDER_SUFFIX}`;
-    },
-  },
-  {
-    position: 2,
-    label: "Акцентная стена",
-    aspect: "4:3",
-    buildPrompt: (room, style, area) => {
-      const subj = ROOM_VIEW_SUBJECTS[room]?.[1] ?? "close-up of the main feature";
-      const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-      const areaPart = area ? `, ${area} sqm` : "";
-      return `${styleDesc} ${room.replace(/_/g, " ")}${areaPart}, ${subj}, intimate composition, ${RENDER_SUFFIX}`;
-    },
-  },
-  {
-    position: 3,
-    label: "Зона хранения",
-    aspect: "4:3",
-    buildPrompt: (room, style, area) => {
-      const subj = ROOM_VIEW_SUBJECTS[room]?.[2] ?? "side view of the storage area";
-      const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-      const areaPart = area ? `, ${area} sqm` : "";
-      return `${styleDesc} ${room.replace(/_/g, " ")}${areaPart}, side angle, ${subj}, ${RENDER_SUFFIX}`;
-    },
-  },
-  {
-    position: 4,
-    label: "У окна",
-    aspect: "4:3",
-    buildPrompt: (room, style, area) => {
-      const subj = ROOM_VIEW_SUBJECTS[room]?.[3] ?? "corner near the window";
-      const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-      const areaPart = area ? `, ${area} sqm` : "";
-      return `${styleDesc} ${room.replace(/_/g, " ")}${areaPart}, intimate angle, ${subj}, depth of field, ${RENDER_SUFFIX}`;
-    },
-  },
-];
-
-/**
  * Базовый «хвост» каждого view-промпта. Калибрует FLUX на:
- *  • Реалистичный фотографический look (не 3D-render, не глянец)
- *  • Контекст «доступный ремонт российской квартиры» (не luxury)
+ *  • Стиль ДИЗАЙН-ПРОЕКТА (architectural rendering), не репортажная фотография
+ *  • Контекст «доступный ремонт российской квартиры» (не luxury концепт)
  *  • Тёплое мягкое освещение, натуральное дерево, светлые стены
- *  • 4K архитектурная визуализация
+ *  • 4K, photorealistic
  *
  * Источник: ChatGPT-референс пользователя для создания концепта дизайн-проекта.
  */
-const RENDER_SUFFIX = "ultra realistic photograph, architectural interior visualization, real Russian apartment, achievable affordable budget renovation, not luxury concept, warm soft lighting, natural wood textures, light walls, professional interior photography, magazine quality, 4K, photorealistic, no people, no text, no watermark";
+const RENDER_SUFFIX = "professional interior design visualization, architectural rendering, polished design concept, real Russian apartment, achievable affordable budget renovation, not luxury, warm soft lighting, natural wood textures, light walls, ultra realistic, 4K, photorealistic, no people, no text, no watermark";
 
-/** 6 detail-crops: какие куски из каких ракурсов вырезать через sharp. */
+/**
+ * Композиция «слева → центр → справа» в одной панораме комнаты. Один кадр
+ * показывает все основные функциональные зоны, благодаря этому 4 ракурса
+ * (вырезаемые через sharp) гарантированно принадлежат одной комнате с
+ * одной палитрой и одним светом.
+ */
+const ROOM_PANORAMIC_LAYOUT: Record<string, string> = {
+  bedroom:
+    "left side: workspace at the window with compact desk, chair, plant on the sill, floor lamp; center: queen size double bed with upholstered headboard, two bedside tables with warm table lamps, decorative pillows, framed art above; right side: full-height built-in wardrobe with natural wood door panels, integrated open shelving with books and decor",
+  kitchen:
+    "left side: dining nook with wooden table and chairs near a window, pendant light above; center: L-shaped kitchen counter with stone countertop, sink with brass faucet, range hood above induction stove, tiled backsplash; right side: tall pantry storage column with integrated appliances and glass-front upper cabinets",
+  bathroom:
+    "left side: toilet with shelf above; center: vanity with round mirror, basin, marble countertop, sconce lighting on either side, towel hooks below; right side: walk-in shower behind glass partition with rainfall head, marble tile, niche shelf with toiletries",
+  living_room:
+    "left side: reading nook with lounge chair, floor lamp, side table with book, sheer curtains by the window; center: large fabric sofa with decorative pillows and throw, low coffee table, soft area rug; right side: media wall with TV, low TV console with drawers, decorative shelves with plants",
+  hallway:
+    "left side: full-height built-in wardrobe with natural wood door panels, integrated shoe storage at the bottom; center: slim console table with vase and tray for keys, large rectangular mirror above, warm sconce lighting; right side: small upholstered bench with cushion, hooks on the wall, framed art",
+  nursery:
+    "left side: study desk with chair facing the window, ergonomic chair, table lamp, pin board on the wall; center: child bed with safety rail, patterned bedding, decorative pillows, framed art on the wall, bedside small table; right side: low toy storage cabinets with rounded edges, open shelving with books and toys, soft floor mat",
+  apartment:
+    "left side: bedroom area with queen size bed near the window, sheer curtains, lounge chair; center: living area with fabric sofa, coffee table, soft area rug, gallery wall behind sofa; right side: kitchen counter with bar stools, dining table with chairs, pendant light above",
+};
+
+function buildPanoramicPrompt(room: string, style: string, area: number | null): string {
+  const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
+  const layout = ROOM_PANORAMIC_LAYOUT[room]
+    ?? "left side: window zone, center: main functional area, right side: storage";
+  const areaPart = area ? ` ${area} sqm` : "";
+  const roomNoun = room.replace(/_/g, " ");
+  return `${styleDesc} ${roomNoun} interior design${areaPart}, panoramic ultrawide view of the entire room from left to right showing all functional zones, ${layout}. Single coherent space, consistent materials and palette, same warm lighting throughout, ${RENDER_SUFFIX}`;
+}
+
+/**
+ * 6 detail-crops: какие куски из panoramic-источника вырезать. Координаты
+ * в относительных долях панорамы (0-1) от ширины/высоты, чтобы работало для
+ * любого размера панорамы.
+ */
 interface CropSpec {
-  fromView: number;     // 1..4 — позиция view-источника
-  /** "left" | "center" | "right" — горизонтальная позиция квадратного кропа в кадре 1024×768. */
-  position: "left" | "center" | "right";
   /** RU-метка для UI. */
   label: string;
+  /** Центр crop'а в долях от ширины (0=left, 1=right). */
+  cx: number;
+  /** Центр crop'а в долях от высоты (0=top, 1=bottom). */
+  cy: number;
+  /** Размер crop'а в долях от высоты (квадратный, 0.5 = половина высоты). */
+  size: number;
 }
 
 const CROP_SPECS: CropSpec[] = [
-  { fromView: 1, position: "center", label: "Общая зона" },
-  { fromView: 2, position: "center", label: "Акцентная стена" },
-  { fromView: 2, position: "right",  label: "Деталь стены" },
-  { fromView: 3, position: "center", label: "Система хранения" },
-  { fromView: 3, position: "left",   label: "Полки и аксессуары" },
-  { fromView: 4, position: "center", label: "Зона у окна" },
+  { label: "Общая зона",         cx: 0.50, cy: 0.55, size: 0.95 },
+  { label: "Акцентная стена",    cx: 0.45, cy: 0.55, size: 0.65 },
+  { label: "Деталь стены",       cx: 0.55, cy: 0.40, size: 0.45 },
+  { label: "Система хранения",   cx: 0.80, cy: 0.55, size: 0.65 },
+  { label: "Полки и аксессуары", cx: 0.85, cy: 0.45, size: 0.40 },
+  { label: "Зона у окна",        cx: 0.15, cy: 0.55, size: 0.65 },
+];
+
+/**
+ * 4 ракурса — какую часть панорамы каждый вырезает.
+ *  view 1 (общий) = вся панорама scaled к 4:3
+ *  view 2 (акцент) = центр-левая часть (где главный фокус: кровать/диван/раковина)
+ *  view 3 (хранение) = правая часть (где шкаф/пантри)
+ *  view 4 (окно) = левая часть (где окно/workspace/dining)
+ */
+interface ViewCropSpec {
+  position: number;
+  label: string;
+  /** Левый край в долях от ширины. null = full width. */
+  xStart: number | null;
+  /** Ширина в долях от ширины. null = full width. */
+  xWidth: number | null;
+}
+
+const VIEW_CROP_SPECS: ViewCropSpec[] = [
+  { position: 1, label: "Общий вид",       xStart: null, xWidth: null }, // вся панорама
+  { position: 2, label: "Акцентная стена", xStart: 0.30, xWidth: 0.40 }, // центр
+  { position: 3, label: "Зона хранения",   xStart: 0.60, xWidth: 0.40 }, // правая
+  { position: 4, label: "У окна",          xStart: 0.00, xWidth: 0.40 }, // левая
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -315,29 +263,58 @@ async function signR2(bucketId: string, key: string, ttlSec = 600): Promise<stri
 }
 
 /**
- * Вырезает квадратный кроп 768×768 из 4:3 ракурса 1024×768 через sharp.
- * `position` управляет горизонтальным сдвигом окна.
+ * Вырезает квадратный crop 768×768 из source-панорамы по относительным
+ * координатам (cx, cy, size). Используется для 6 detail-кропов.
  */
-async function cropDetailFromView(viewBuffer: Buffer, position: "left" | "center" | "right"): Promise<Buffer> {
-  // Проверяем размеры (на случай если Fal.ai вернул другой aspect).
-  const meta = await sharp(viewBuffer).metadata();
-  const w = meta.width ?? 1024;
-  const h = meta.height ?? 768;
-  const cropSize = Math.min(w, h);
+async function cropDetailFromPanorama(
+  panoramaBuffer: Buffer,
+  spec: CropSpec,
+): Promise<Buffer> {
+  const meta = await sharp(panoramaBuffer).metadata();
+  const W = meta.width ?? 2048;
+  const H = meta.height ?? 768;
+  const sizePx = Math.floor(spec.size * H);
+  const left = clamp(Math.floor(spec.cx * W - sizePx / 2), 0, W - sizePx);
+  const top = clamp(Math.floor(spec.cy * H - sizePx / 2), 0, H - sizePx);
 
-  let left = 0;
-  if (w > cropSize) {
-    if (position === "left") left = 0;
-    else if (position === "right") left = w - cropSize;
-    else left = Math.round((w - cropSize) / 2);
-  }
-  const top = h > cropSize ? Math.round((h - cropSize) / 2) : 0;
-
-  return sharp(viewBuffer)
-    .extract({ left, top, width: cropSize, height: cropSize })
+  return sharp(panoramaBuffer)
+    .extract({ left, top, width: sizePx, height: sizePx })
     .resize(768, 768, { fit: "cover" })
     .jpeg({ quality: 86, progressive: true })
     .toBuffer();
+}
+
+/**
+ * Вырезает 4:3 ракурс из panoramic source. Если xStart/xWidth=null — вся
+ * панорама scaled to 4:3 (с обрезкой при необходимости).
+ */
+async function cropViewFromPanorama(
+  panoramaBuffer: Buffer,
+  spec: ViewCropSpec,
+): Promise<Buffer> {
+  const meta = await sharp(panoramaBuffer).metadata();
+  const W = meta.width ?? 2048;
+  const H = meta.height ?? 768;
+
+  let extractLeft: number;
+  let extractWidth: number;
+  if (spec.xStart == null || spec.xWidth == null) {
+    extractLeft = 0;
+    extractWidth = W;
+  } else {
+    extractLeft = clamp(Math.floor(spec.xStart * W), 0, W - 1);
+    extractWidth = clamp(Math.floor(spec.xWidth * W), 1, W - extractLeft);
+  }
+
+  return sharp(panoramaBuffer)
+    .extract({ left: extractLeft, top: 0, width: extractWidth, height: H })
+    .resize(1024, 768, { fit: "cover" })
+    .jpeg({ quality: 88, progressive: true })
+    .toBuffer();
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
 }
 
 /**
@@ -435,7 +412,7 @@ async function processDesign(designId: number): Promise<void> {
       .where(eq(designsTable.id, design.id));
   }
 
-  // ── 2. Параллельно: 4 ракурса + текстовый пакет. ────────────────────────
+  // ── 2. Параллельно: panoramic + текстовый пакет от AI. ─────────────────
   // Если seed-проект уже принёс h1/description/etc — не вызываем AI, экономим.
   const hasSeedContent = !!design.h1 && !!design.description
     && Array.isArray(design.materials) && design.materials.length > 0
@@ -443,34 +420,36 @@ async function processDesign(designId: number): Promise<void> {
     && Array.isArray(design.solutions) && design.solutions.length > 0;
 
   console.log(
-    `[designWorker] design ${design.id}: generating 4 views (${isSeedMode ? "text2img" : "img2img"})`
+    `[designWorker] design ${design.id}: ${isSeedMode ? "panoramic single-shot text2img" : "img2img × 4"}`
     + (hasSeedContent ? " (seed content — skipping AI text gen)" : " + AI content"),
   );
 
-  const renderViews = isSeedMode
-    ? Promise.all(
-        VIEW_SPECS.map((spec) =>
-          falGenerateText({
-            prompt: spec.buildPrompt(design.roomType, design.style, areaNum),
-            aspectRatio: spec.aspect,
-          }).then((result) => ({ ...result, spec })),
-        ),
-      )
+  // Seed-mode: ОДИН panoramic вызов. Затем sharp нарезает на 4 ракурса +
+  //            6 кропов. Вся комната в одном кадре → одна палитра/материалы.
+  // User-upload: 4 img2img от user-фото — keeps user's room geometry.
+  // Оба режима параллельно с AI text generation.
+  const renderPromise = isSeedMode
+    ? falGenerateText({
+        prompt: buildPanoramicPrompt(design.roomType, design.style, areaNum),
+        // 21:9 ультра-широкая. FLUX dev обычно справляется с этим размером,
+        // но если выйдет плохо — подменим FAL_MODEL_TEXT на flux-pro.
+        imageSize: { width: 2048, height: 768 },
+      })
     : signR2(bucketId, beforeKey).then((falInputUrl) =>
         Promise.all(
-          VIEW_SPECS.map((spec) =>
+          VIEW_CROP_SPECS.map((spec) =>
             falGenerate({
               initImageUrl: falInputUrl,
-              prompt: spec.buildPrompt(design.roomType, design.style, areaNum),
-              aspectRatio: spec.aspect,
+              prompt: buildPanoramicPrompt(design.roomType, design.style, areaNum),
+              aspectRatio: "4:3",
               strength: 0.78,
             }).then((result) => ({ ...result, spec })),
           ),
         ),
       );
 
-  const [renderResults, content] = await Promise.all([
-    renderViews,
+  const [renderResult, content] = await Promise.all([
+    renderPromise,
     hasSeedContent
       ? Promise.resolve({
           h1: design.h1!,
@@ -493,60 +472,105 @@ async function processDesign(designId: number): Promise<void> {
         }),
   ]);
 
-  // ── 3. Скачиваем 4 ракурса, сохраняем в R2, ведём журналы. ──────────────
-  const viewBuffers: Buffer[] = [];
+  // ── 3. Готовим 4 view-buffers через sharp (для seed) или из 4 img2img calls (user). ─
   const views: DesignView[] = [];
+  const viewBuffers: Buffer[] = [];
   let mainResultPublicUrl: string | null = null;
   let mainImageBuffer: Buffer | null = null;
+  let panoramaBuffer: Buffer | null = null;
 
-  for (let i = 0; i < renderResults.length; i++) {
-    const result = renderResults[i]!;
-    const buffer = await downloadImage(result.imageUrl);
-    viewBuffers[i] = buffer;
-
-    const filename = `${design.id}_view_${result.spec.position}.jpg`;
-    const r2Key = `dizajn/results/${filename}`;
-    const publicUrl = await uploadJpegToR2(bucketId, r2Key, buffer);
-
-    views.push({
-      url: publicUrl,
-      label: result.spec.label,
-      position: result.spec.position,
-    });
-
-    // Legacy `design_images` row — оставляем для backward-compat с старой
-    // страницей. Type = "view_1" .. "view_4".
-    await db.insert(designImagesTable).values({
-      designId: design.id,
-      type: `view_${result.spec.position}`,
-      url: publicUrl,
-      width: result.width,
-      height: result.height,
-      sortOrder: i,
-    });
+  if (isSeedMode) {
+    // Скачиваем panoramic один раз и режем sharp'ом.
+    const r = renderResult as Awaited<ReturnType<typeof falGenerateText>>;
+    panoramaBuffer = await downloadImage(r.imageUrl);
 
     await db.insert(designGenerationsTable).values({
       designId: design.id,
       provider: "fal-ai",
-      model: isSeedMode
-        ? (process.env.FAL_MODEL_TEXT ?? "fal-ai/flux/dev")
-        : (process.env.FAL_MODEL ?? "fal-ai/flux/dev/image-to-image"),
-      prompt: result.spec.buildPrompt(design.roomType, design.style, areaNum),
+      model: process.env.FAL_MODEL_TEXT ?? "fal-ai/flux/dev",
+      prompt: buildPanoramicPrompt(design.roomType, design.style, areaNum),
       roomType: design.roomType,
       style: design.style,
       status: "success",
-      costKopeks: result.costKopeks,
+      costKopeks: r.costKopeks,
       providerResponse: {
-        generationMs: result.generationMs,
-        view: `view_${result.spec.position}`,
-        mode: isSeedMode ? "text2img" : "img2img",
+        generationMs: r.generationMs,
+        view: "panorama",
+        mode: "text2img-panoramic",
+        imageSize: `${r.width}x${r.height}`,
       },
       completedAt: new Date(),
     });
 
-    if (i === 0) {
-      mainResultPublicUrl = publicUrl;
-      mainImageBuffer = buffer;
+    for (let i = 0; i < VIEW_CROP_SPECS.length; i++) {
+      const spec = VIEW_CROP_SPECS[i]!;
+      const buf = await cropViewFromPanorama(panoramaBuffer, spec);
+      viewBuffers[i] = buf;
+
+      const filename = `${design.id}_view_${spec.position}.jpg`;
+      const r2Key = `dizajn/results/${filename}`;
+      const publicUrl = await uploadJpegToR2(bucketId, r2Key, buf);
+
+      views.push({ url: publicUrl, label: spec.label, position: spec.position });
+
+      await db.insert(designImagesTable).values({
+        designId: design.id,
+        type: `view_${spec.position}`,
+        url: publicUrl,
+        width: 1024,
+        height: 768,
+        sortOrder: i,
+      });
+
+      if (i === 0) {
+        mainResultPublicUrl = publicUrl;
+        mainImageBuffer = buf;
+      }
+    }
+  } else {
+    // User-upload img2img × 4 path.
+    const renderResults = renderResult as Array<Awaited<ReturnType<typeof falGenerate>> & { spec: ViewCropSpec }>;
+    for (let i = 0; i < renderResults.length; i++) {
+      const r = renderResults[i]!;
+      const buf = await downloadImage(r.imageUrl);
+      viewBuffers[i] = buf;
+
+      const filename = `${design.id}_view_${r.spec.position}.jpg`;
+      const r2Key = `dizajn/results/${filename}`;
+      const publicUrl = await uploadJpegToR2(bucketId, r2Key, buf);
+
+      views.push({ url: publicUrl, label: r.spec.label, position: r.spec.position });
+
+      await db.insert(designImagesTable).values({
+        designId: design.id,
+        type: `view_${r.spec.position}`,
+        url: publicUrl,
+        width: r.width,
+        height: r.height,
+        sortOrder: i,
+      });
+
+      await db.insert(designGenerationsTable).values({
+        designId: design.id,
+        provider: "fal-ai",
+        model: process.env.FAL_MODEL ?? "fal-ai/flux/dev/image-to-image",
+        prompt: buildPanoramicPrompt(design.roomType, design.style, areaNum),
+        roomType: design.roomType,
+        style: design.style,
+        status: "success",
+        costKopeks: r.costKopeks,
+        providerResponse: {
+          generationMs: r.generationMs,
+          view: `view_${r.spec.position}`,
+          mode: "img2img",
+        },
+        completedAt: new Date(),
+      });
+
+      if (i === 0) {
+        mainResultPublicUrl = publicUrl;
+        mainImageBuffer = buf;
+      }
     }
   }
 
@@ -554,15 +578,15 @@ async function processDesign(designId: number): Promise<void> {
     throw new Error("Main render not produced");
   }
 
-  // ── 4. 6 detail-crops через sharp (без AI-вызовов — режем из views). ────
+  // ── 4. 6 detail-crops через sharp ──────────────────────────────────────
+  // Источник: panoramic (для seed) или view_2 «акцент» (для user-upload).
   console.log(`[designWorker] design ${design.id}: generating 6 detail crops (sharp)`);
   const detailCrops: DesignDetailCrop[] = [];
+  const cropSource = panoramaBuffer ?? viewBuffers[1] ?? mainImageBuffer;
+
   for (let i = 0; i < CROP_SPECS.length; i++) {
     const spec = CROP_SPECS[i]!;
-    const sourceBuffer = viewBuffers[spec.fromView - 1];
-    if (!sourceBuffer) continue;
-
-    const cropBuffer = await cropDetailFromView(sourceBuffer, spec.position);
+    const cropBuffer = await cropDetailFromPanorama(cropSource, spec);
     const filename = `${design.id}_crop_${i + 1}.jpg`;
     const r2Key = `dizajn/crops/${filename}`;
     const publicUrl = await uploadJpegToR2(bucketId, r2Key, cropBuffer);
@@ -570,7 +594,7 @@ async function processDesign(designId: number): Promise<void> {
     detailCrops.push({
       url: publicUrl,
       label: spec.label,
-      fromView: spec.fromView,
+      fromView: 1,
     });
   }
 
