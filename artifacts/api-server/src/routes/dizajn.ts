@@ -625,8 +625,9 @@ router.get("/img/:type/:filename", async (req: Request, res: Response) => {
   const type = typeof req.params.type === "string" ? req.params.type : "";
   const filename = typeof req.params.filename === "string" ? req.params.filename : "";
   // Allowlist: uploads (user-photo), results (4 view renders),
-  // before (text2img «было» для seed-проектов), crops (6 deталей через sharp).
-  if (!["uploads", "results", "before", "crops"].includes(type)) {
+  // before (text2img «было» для seed-проектов), crops (6 deталей через sharp),
+  // isometric (5-й ракурс — 3D-план через FLUX Pro Ultra).
+  if (!["uploads", "results", "before", "crops", "isometric"].includes(type)) {
     res.status(404).json({ ok: false, error: "invalid_type" });
     return;
   }

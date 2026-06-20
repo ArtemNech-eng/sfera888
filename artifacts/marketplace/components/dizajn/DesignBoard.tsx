@@ -86,7 +86,11 @@ export function DesignBoard({ design, similar }: Props) {
         }));
 
   const heroView = views[0];
-  const otherViews = views.slice(1);
+  // 5-й view (если есть) — 3D-isometric план. Показываем отдельно
+  // в plan-секции рядом с SVG-планом, чтобы не дублировать в hero-сетке.
+  const isometricView = views.find((v) => v.position === 5) ?? null;
+  // Thumbs в hero — 3 ракурса (кровать-акцент, шкаф, окно), без isometric.
+  const otherViews = views.slice(1).filter((v) => v.position !== 5);
   const beforeUrl = design.inputImageUrl ?? design.images.find((img) => img.type === "input")?.url ?? null;
   const detailCrops = design.detailCrops ?? [];
 
@@ -165,7 +169,7 @@ export function DesignBoard({ design, similar }: Props) {
         </div>
       </header>
 
-      {/* ── 2. Hero (1 large + 3 thumbnails) ─────────────── */}
+      {/* ── 2. Hero (1 large + 3 thumbnails; isometric idёт в план-секцию) ── */}
       {heroView ? (
         <section className="bg-[var(--color-background)]">
           <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6 sm:pb-16">
@@ -181,12 +185,12 @@ export function DesignBoard({ design, similar }: Props) {
                   />
                 </div>
                 <figcaption className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
-                  {heroView.label}
+                  1. {heroView.label}
                 </figcaption>
               </figure>
 
               <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-1 lg:grid-rows-3">
-                {otherViews.map((v) => (
+                {otherViews.map((v, idx) => (
                   <figure key={v.url} className="group relative overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy">
                     <div className="relative aspect-[4/3] w-full">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -198,7 +202,7 @@ export function DesignBoard({ design, similar }: Props) {
                       />
                     </div>
                     <figcaption className="absolute bottom-2 left-2 rounded-full bg-black/55 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                      {v.label}
+                      {idx + 2}. {v.label}
                     </figcaption>
                   </figure>
                 ))}
@@ -234,7 +238,7 @@ export function DesignBoard({ design, similar }: Props) {
       <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="grid gap-8 lg:grid-cols-[1fr_1fr_1fr] lg:gap-10">
-            {/* Floor plan */}
+            {/* Floor plan + 3D-isometric */}
             <div>
               <p className="font-eyebrow">Вид сверху</p>
               <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
@@ -243,6 +247,22 @@ export function DesignBoard({ design, similar }: Props) {
               <div className="mt-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-cozy">
                 <FloorPlanSVG roomType={design.roomType} area={design.area} />
               </div>
+              {isometricView ? (
+                <figure className="mt-3 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
+                  <div className="relative aspect-[4/3] w-full bg-[var(--color-cream-deep)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={isometricView.url}
+                      alt={`${isometricView.label} — ${shareTitle}`}
+                      loading="lazy"
+                      className="block h-full w-full object-cover"
+                    />
+                  </div>
+                  <figcaption className="px-4 py-3 text-sm text-[var(--color-text)]">
+                    5. {isometricView.label}
+                  </figcaption>
+                </figure>
+              ) : null}
             </div>
 
             {/* Параметры проекта */}

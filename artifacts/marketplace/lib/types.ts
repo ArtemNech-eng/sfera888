@@ -361,11 +361,11 @@ export interface DesignImageDTO {
   sortOrder: number;
 }
 
-/** Один из 4 ракурсов проекта (общий вид / акцент / хранение / окно). */
+/** Один из ракурсов проекта (общий / акцент / хранение / окно / 3D-план). */
 export interface DesignViewDTO {
   url: string;
   label: string;
-  position: number; // 1..4
+  position: number; // 1..5
 }
 
 /** Один из 6 крупных планов (мебель/детали), нарезаны из ракурсов через sharp. */

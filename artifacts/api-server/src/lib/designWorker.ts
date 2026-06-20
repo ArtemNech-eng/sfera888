@@ -200,13 +200,44 @@ const ROOM_VIEW_SUBJECTS: Record<string, [string, string, string, string]> = {
   ],
 };
 
-/** RU labels для 4 ракурсов в порядке [top-left, top-right, bottom-left, bottom-right]. */
-const VIEW_LABELS: [string, string, string, string] = [
-  "Общий вид",
-  "Акцентная стена",
-  "Зона хранения",
-  "У окна",
+/** RU labels для 5 ракурсов в порядке UI [общий, кровать-акцент, шкаф, окно, 3D-план]. */
+const VIEW_LABELS: [string, string, string, string, string] = [
+  "Общий вид от входа",
+  "Вид на кровать и акцент",
+  "Шкаф и хранение",
+  "Зона у окна",
+  "3D-планировка",
 ];
+
+/**
+ * Промпт для 3D-isometric плана — отдельный FLUX Pro Ultra вызов после
+ * основного moodboard'а. Воспроизводит стиль архитектурного аксонометри-
+ * ческого рендера из ChatGPT-референса (вид сверху-сбоку с 3D-volume
+ * мебелью, белый фон вокруг комнаты).
+ */
+function buildIsometricPrompt(room: string, style: string, area: number | null): string {
+  const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
+  const areaPart = area ? ` ${area} sqm` : "";
+  const roomNoun = room.replace(/_/g, " ");
+  const roomLayout: Record<string, string> = {
+    bedroom: "queen size double bed centered with two bedside tables, full-height built-in wardrobe along one wall, workspace desk near the window, soft area rug on the floor",
+    kitchen: "L-shaped kitchen counter with cabinets and stove, dining table with chairs near the window, tall pantry storage column",
+    bathroom: "walk-in shower behind glass partition, vanity with basin and mirror, toilet, tile flooring",
+    living_room: "large fabric sofa centered, low coffee table, TV unit on opposite wall, soft area rug",
+    hallway: "full-height built-in wardrobe along one wall, slim console table with mirror above, runner rug",
+    nursery: "child bed with safety rail, study desk near window, low toy storage cabinets, soft area rug",
+    apartment: "open-plan living-dining-kitchen area, bedroom corner separated by partition",
+  };
+  const layout = roomLayout[room] ?? "main functional furniture arranged according to the room type";
+  return [
+    `Axonometric isometric 3D top-down architectural rendering of a ${styleDesc} ${roomNoun}${areaPart} layout.`,
+    `View from 45-degree elevated angle showing the entire room from above and slightly to the side, axonometric perspective with no vanishing point.`,
+    `Visible furniture: ${layout}.`,
+    `Walls cut away on the front-facing sides so the entire room interior is visible from above.`,
+    `Furniture rendered in 3D volume with tops, sides, and shadows. Clean white background outside the room walls.`,
+    `Architectural visualization style, professional design presentation, soft warm lighting inside the room, no people, no text, no labels, no watermark.`,
+  ].join(" ");
+}
 
 /**
  * Промпт для одного moodboard-кадра 2×2 grid. Один FLUX Pro Ultra вызов
@@ -247,8 +278,6 @@ function buildMoodboardPrompt(room: string, style: string, area: number | null):
  * любого размера панорамы.
  */
 interface CropSpec {
-  /** RU-метка для UI. */
-  label: string;
   /** Центр crop'а в долях от ширины (0=left, 1=right). */
   cx: number;
   /** Центр crop'а в долях от высоты (0=top, 1=bottom). */
@@ -257,13 +286,35 @@ interface CropSpec {
   size: number;
 }
 
+// 6 crops по разным частям 2×2 moodboard'а — center каждого panel + 2 zoom'а
+// в самые «детальные» области (изголовье + полки шкафа).
 const CROP_SPECS: CropSpec[] = [
-  { label: "Общая зона",         cx: 0.50, cy: 0.55, size: 0.95 },
-  { label: "Акцентная стена",    cx: 0.45, cy: 0.55, size: 0.65 },
-  { label: "Деталь стены",       cx: 0.55, cy: 0.40, size: 0.45 },
-  { label: "Система хранения",   cx: 0.80, cy: 0.55, size: 0.65 },
-  { label: "Полки и аксессуары", cx: 0.85, cy: 0.45, size: 0.40 },
-  { label: "Зона у окна",        cx: 0.15, cy: 0.55, size: 0.65 },
+  { cx: 0.25, cy: 0.25, size: 0.40 }, // top-left center (общий план)
+  { cx: 0.75, cy: 0.25, size: 0.40 }, // top-right center (детали кровати)
+  { cx: 0.25, cy: 0.75, size: 0.40 }, // bottom-left center (шкаф)
+  { cx: 0.75, cy: 0.75, size: 0.40 }, // bottom-right center (рабочее место)
+  { cx: 0.65, cy: 0.20, size: 0.25 }, // zoom: акцентная деталь
+  { cx: 0.30, cy: 0.80, size: 0.25 }, // zoom: текстура хранения
+];
+
+/**
+ * Подписи к 6 кропам по типу комнаты — конкретные объекты мебели вместо
+ * generic «Деталь». Соответствует визуальной структуре 2×2 moodboard:
+ * top-left=общий, top-right=кровать/диван/раковина, bottom-left=шкаф/гарнитур,
+ * bottom-right=окно/workspace.
+ */
+const ROOM_CROP_LABELS: Record<string, [string, string, string, string, string, string]> = {
+  bedroom:     ["Кровать", "Прикроватная тумба", "Встроенный шкаф", "Рабочий стол", "Бра у кровати", "Полки шкафа"],
+  kitchen:     ["Гарнитур", "Фартук и плита", "Хранение", "Обеденный стол", "Декор стены", "Светильник"],
+  bathroom:    ["Ванна", "Раковина", "Шкаф для полотенец", "Душ", "Зеркало и сантехника", "Текстура плитки"],
+  living_room: ["Диван", "Журнальный столик", "Зона ТВ", "Кресло у окна", "Декор стены", "Освещение"],
+  hallway:     ["Прихожая", "Зеркало", "Шкаф-купе", "Скамья и крючки", "Освещение", "Текстура пола"],
+  nursery:     ["Детская кровать", "Постель и декор", "Шкаф для игрушек", "Стол у окна", "Свет и текстиль", "Полки и игрушки"],
+  apartment:   ["Гостиная", "Спальня", "Кухня", "Ванная", "Освещение", "Декор"],
+};
+
+const FALLBACK_CROP_LABELS: [string, string, string, string, string, string] = [
+  "Общая зона", "Акцентная стена", "Зона хранения", "Зона у окна", "Деталь декора", "Текстура",
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -554,11 +605,12 @@ async function processDesign(designId: number): Promise<void> {
     //         wardrobe и workspace в bottom-row. Skip top-right (дубль).
     //
     // Mapping:
-    //   view 1 «Общий вид»       = full moodboard (все 4 panels)
-    //   view 2 «Акцент»          = quadrant top-left  (главный объект — кровать)
-    //   view 3 «Зона хранения»   = quadrant bottom-left (шкаф)
-    //   view 4 «У окна»          = quadrant bottom-right (рабочее место/окно)
-    //   (top-right skipped)      = обычно дубль главного объекта, не нужен
+    //   view 1 «Общий вид от входа» = full moodboard (все 4 panels)
+    //   view 2 «Кровать/акцент»     = quadrant top-left  (главный объект — кровать)
+    //   view 3 «Шкаф и хранение»    = quadrant bottom-left (шкаф)
+    //   view 4 «Зона у окна»        = quadrant bottom-right (рабочее место/окно)
+    //   view 5 «3D-планировка»      = отдельный isometric render (см. ниже)
+    //   (top-right skipped)         = обычно дубль главного объекта, не нужен
     const quadrantIndices: Array<0 | 1 | 2 | 3> = [0, 2, 3]; // skip top-right (1)
     for (let i = 0; i < 4; i++) {
       const buf = i === 0
@@ -586,6 +638,52 @@ async function processDesign(designId: number): Promise<void> {
         mainResultPublicUrl = publicUrl;
         mainImageBuffer = buf;
       }
+    }
+
+    // ── 2.3. 3D-isometric план — отдельный FLUX Pro Ultra вызов. ─────────
+    // Это «вау-фишка» из ChatGPT-референса: аксонометрический рендер
+    // комнаты с 3D-мебелью видно сверху-сбоку.
+    console.log(`[designWorker] design ${design.id}: generating 3D isometric plan (FLUX Pro Ultra, 4:3)`);
+    try {
+      const isometricResult = await falGeneratePanoramicPro({
+        prompt: buildIsometricPrompt(design.roomType, design.style, areaNum),
+        aspectRatio: "4:3",
+      });
+      const isoBuffer = await downloadImage(isometricResult.imageUrl);
+      const isoFilename = `${design.id}_isometric.jpg`;
+      const isoR2Key = `dizajn/isometric/${isoFilename}`;
+      const isoPublicUrl = await uploadJpegToR2(bucketId, isoR2Key, isoBuffer);
+
+      views.push({ url: isoPublicUrl, label: VIEW_LABELS[4]!, position: 5 });
+
+      await db.insert(designImagesTable).values({
+        designId: design.id,
+        type: "view_5_isometric",
+        url: isoPublicUrl,
+        width: isometricResult.width,
+        height: isometricResult.height,
+        sortOrder: 4,
+      });
+      await db.insert(designGenerationsTable).values({
+        designId: design.id,
+        provider: "fal-ai",
+        model: process.env.FAL_MODEL_PANORAMIC ?? "fal-ai/flux-pro/v1.1-ultra",
+        prompt: buildIsometricPrompt(design.roomType, design.style, areaNum),
+        roomType: design.roomType,
+        style: design.style,
+        status: "success",
+        costKopeks: isometricResult.costKopeks,
+        providerResponse: {
+          generationMs: isometricResult.generationMs,
+          view: "view_5_isometric",
+          mode: "text2img-isometric",
+          imageSize: `${isometricResult.width}x${isometricResult.height}`,
+        },
+        completedAt: new Date(),
+      });
+    } catch (e) {
+      // Non-fatal: если isometric не удался — оставляем 4 view'а.
+      console.error("[designWorker] isometric render failed (non-fatal):", e instanceof Error ? e.message : e);
     }
   } else {
     // ── User-upload: img2img × 4 от user-фото. Используем moodboard prompt
@@ -669,6 +767,7 @@ async function processDesign(designId: number): Promise<void> {
   console.log(`[designWorker] design ${design.id}: generating 6 detail crops (sharp)`);
   const detailCrops: DesignDetailCrop[] = [];
   const cropSource = moodboardBuffer ?? mainImageBuffer;
+  const cropLabels = ROOM_CROP_LABELS[design.roomType] ?? FALLBACK_CROP_LABELS;
 
   for (let i = 0; i < CROP_SPECS.length; i++) {
     const spec = CROP_SPECS[i]!;
@@ -679,7 +778,7 @@ async function processDesign(designId: number): Promise<void> {
 
     detailCrops.push({
       url: publicUrl,
-      label: spec.label,
+      label: cropLabels[i]!,
       fromView: 1,
     });
   }
