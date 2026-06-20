@@ -84,6 +84,12 @@ router.get("/avito-balance", adminOnly, async (_req, res) => {
 // page needs in a single request: KPI summary, lead funnel/sources, live feed,
 // cities, top masters, recent orders. Shapes match the dashboard components in
 // artifacts/crm/src/components/dashboard/* exactly.
+//
+// Performance notes:
+//   • Project only required columns (avoids loading huge `leads.photos`,
+//     `marketplaceContext`, etc.)
+//   • Pre-build Map indexes for O(1) lookups during aggregation
+//   • Single-pass over each entity collection where possible
 router.get("/dashboard-v2", adminOnly, async (_req, res) => {
   try {
     const now = new Date();
@@ -91,39 +97,128 @@ router.get("/dashboard-v2", adminOnly, async (_req, res) => {
     const yesterdayStart = new Date(todayStart.getTime() - 86400000);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const cutoff24h = new Date(now.getTime() - 24 * 3600000);
 
-    // ── Load all data in parallel ──────────────────────────────────────────
-    const [leads, orders, masters, txRows, receiptRows, avitoBalance] = await Promise.all([
-      db.select().from(leadsTable).where(isNull(leadsTable.deletedAt)),
-      db.select().from(ordersTable).where(isNull(ordersTable.deletedAt)),
-      db.select().from(mastersTable).where(isNull(mastersTable.deletedAt)),
-      db.select().from(transactionsTable),
-      db.select().from(receiptsTable),
+    // ── Load only the columns we actually use, in parallel ─────────────────
+    const [leads, orders, masters, txRows, avitoBalance] = await Promise.all([
+      db.select({
+        id: leadsTable.id,
+        clientName: leadsTable.clientName,
+        clientPhone: leadsTable.clientPhone,
+        city: leadsTable.city,
+        serviceType: leadsTable.serviceType,
+        status: leadsTable.status,
+        source: leadsTable.source,
+        createdAt: leadsTable.createdAt,
+      }).from(leadsTable).where(isNull(leadsTable.deletedAt)),
+      db.select({
+        id: ordersTable.id,
+        leadId: ordersTable.leadId,
+        masterId: ordersTable.masterId,
+        city: ordersTable.city,
+        serviceType: ordersTable.serviceType,
+        status: ordersTable.status,
+        orderAmount: ordersTable.orderAmount,
+        assignedAt: ordersTable.assignedAt,
+        createdAt: ordersTable.createdAt,
+        updatedAt: ordersTable.updatedAt,
+      }).from(ordersTable).where(isNull(ordersTable.deletedAt)),
+      db.select({
+        id: mastersTable.id,
+        alias: mastersTable.alias,
+        city: mastersTable.city,
+        status: mastersTable.status,
+        rating: mastersTable.rating,
+        createdAt: mastersTable.createdAt,
+      }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
+      db.select({
+        orderId: transactionsTable.orderId,
+        commission: transactionsTable.commission,
+        paymentStatus: transactionsTable.paymentStatus,
+      }).from(transactionsTable),
       fetchAvitoBalance().catch(() => 0),
     ]);
 
-    // ── Summary (KPIData — matches KPICards.tsx) ───────────────────────────
-    const leadsToday = leads.filter(l => l.createdAt >= todayStart).length;
-    const leadsYesterday = leads.filter(l => l.createdAt >= yesterdayStart && l.createdAt < todayStart).length;
-    const leadsMonth = leads.filter(l => l.createdAt >= monthStart).length;
-    const leadsPrevMonth = leads.filter(l => l.createdAt >= prevMonthStart && l.createdAt < monthStart).length;
+    // ── Pre-build Map indexes (O(n) one-time pass) ─────────────────────────
+    // paidCommissionByOrder: orderId → sum of commission from PAID transactions
+    const paidCommissionByOrder = new Map<number, number>();
+    for (const t of txRows) {
+      if (t.paymentStatus === "paid") {
+        paidCommissionByOrder.set(t.orderId, (paidCommissionByOrder.get(t.orderId) ?? 0) + Number(t.commission));
+      }
+    }
+    // ordersByCity / completedOrdersByCity / leadsByCity (used in cities block)
+    const completedOrdersByCity = new Map<string, typeof orders>();
+    const ordersByCity = new Map<string, typeof orders>();
+    for (const o of orders) {
+      const cityKey = o.city ?? "";
+      if (!cityKey) continue;
+      const a = ordersByCity.get(cityKey);
+      if (a) a.push(o); else ordersByCity.set(cityKey, [o]);
+      if (o.status === "completed") {
+        const c = completedOrdersByCity.get(cityKey);
+        if (c) c.push(o); else completedOrdersByCity.set(cityKey, [o]);
+      }
+    }
+    const leadsByCity = new Map<string, number>();
+    for (const l of leads) {
+      const cityKey = l.city ?? "";
+      if (!cityKey) continue;
+      leadsByCity.set(cityKey, (leadsByCity.get(cityKey) ?? 0) + 1);
+    }
+    // mastersByCity: city → masters[] (for free/total/active counts)
+    const mastersByCity = new Map<string, typeof masters>();
+    for (const m of masters) {
+      const cityKey = m.city ?? "";
+      if (!cityKey) continue;
+      const a = mastersByCity.get(cityKey);
+      if (a) a.push(m); else mastersByCity.set(cityKey, [m]);
+    }
+    // busyMasterIds: masters currently on an active order (for free_masters count)
+    const busyMasterIds = new Set<number>();
+    for (const o of orders) {
+      if (o.masterId && (o.status === "master_assigned" || o.status === "in_progress")) {
+        busyMasterIds.add(o.masterId);
+      }
+    }
+    // ordersByMasterId / completedByMasterId (for top masters)
+    const ordersByMasterId = new Map<number, typeof orders>();
+    const completedByMasterId = new Map<number, typeof orders>();
+    for (const o of orders) {
+      if (!o.masterId) continue;
+      const a = ordersByMasterId.get(o.masterId);
+      if (a) a.push(o); else ordersByMasterId.set(o.masterId, [o]);
+      if (o.status === "completed") {
+        const c = completedByMasterId.get(o.masterId);
+        if (c) c.push(o); else completedByMasterId.set(o.masterId, [o]);
+      }
+    }
 
-    const sentToWorkMonth = leads.filter(l => l.status === "sent_to_work" && l.createdAt >= monthStart).length;
+    // ── Summary (KPIData — matches KPICards.tsx) ───────────────────────────
+    let leadsToday = 0, leadsYesterday = 0, leadsMonth = 0, leadsPrevMonth = 0, sentToWorkMonth = 0;
+    for (const l of leads) {
+      if (l.createdAt >= todayStart) leadsToday++;
+      else if (l.createdAt >= yesterdayStart) leadsYesterday++;
+      if (l.createdAt >= monthStart) {
+        leadsMonth++;
+        if (l.status === "sent_to_work") sentToWorkMonth++;
+      } else if (l.createdAt >= prevMonthStart) leadsPrevMonth++;
+    }
     const leadConversionRate = leadsMonth > 0
       ? Math.round((sentToWorkMonth / leadsMonth) * 1000) / 10
       : 0;
-
-    const activeMasters = masters.filter(m => m.status === "active").length;
-    const totalMasters = masters.length;
-    const newMastersToday = masters.filter(m => m.createdAt >= todayStart).length;
-    const newMastersYesterday = masters.filter(m =>
-      m.createdAt >= yesterdayStart && m.createdAt < todayStart
-    ).length;
-
-    const ordersPending = orders.filter(o =>
-      ["waiting_master", "master_assigned", "in_progress"].includes(o.status)
-    ).length;
-
+    let activeMasters = 0, newMastersToday = 0, newMastersYesterday = 0;
+    for (const m of masters) {
+      if (m.status === "active") activeMasters++;
+      if (m.createdAt >= todayStart) newMastersToday++;
+      else if (m.createdAt >= yesterdayStart) newMastersYesterday++;
+    }
+    let ordersPending = 0;
+    for (const o of orders) {
+      if (o.status === "waiting_master" || o.status === "master_assigned" || o.status === "in_progress") {
+        ordersPending++;
+      }
+    }
     const summary = {
       leads_today: leadsToday,
       leads_today_prev: leadsYesterday,
@@ -131,169 +226,151 @@ router.get("/dashboard-v2", adminOnly, async (_req, res) => {
       leads_month_prev: leadsPrevMonth,
       lead_conversion_rate: leadConversionRate,
       masters_active: activeMasters,
-      masters_total: totalMasters,
+      masters_total: masters.length,
       masters_new_today: newMastersToday,
       masters_new_today_prev: newMastersYesterday,
       orders_pending: ordersPending,
       avito_balance: avitoBalance,
     };
 
-    // ── Lead funnel (LeadFunnelCard) ────────────────────────────────────────
-    const totalLeads = leads.length;
-    const processingLeads = leads.filter(l => ["new", "processing"].includes(l.status)).length;
-    const sentToWorkLeads = leads.filter(l => l.status === "sent_to_work").length;
-    const rejectedLeads = leads.filter(l => ["non_target", "client_refusal"].includes(l.status)).length;
-    const overallConversion = totalLeads > 0
-      ? Math.round((sentToWorkLeads / totalLeads) * 1000) / 10
-      : 0;
-
+    // ── Lead funnel ─────────────────────────────────────────────────────────
+    let processingLeads = 0, sentToWorkLeads = 0, rejectedLeads = 0;
+    for (const l of leads) {
+      if (l.status === "new" || l.status === "processing") processingLeads++;
+      else if (l.status === "sent_to_work") sentToWorkLeads++;
+      else if (l.status === "non_target" || l.status === "client_refusal") rejectedLeads++;
+    }
     const leadFunnel = {
-      total: totalLeads,
+      total: leads.length,
       processing: processingLeads,
       sent_to_work: sentToWorkLeads,
       rejected: rejectedLeads,
-      conversion_rate: overallConversion,
+      conversion_rate: leads.length > 0
+        ? Math.round((sentToWorkLeads / leads.length) * 1000) / 10
+        : 0,
     };
 
-    // ── Lead sources (LeadSourcesCard) ──────────────────────────────────────
+    // ── Lead sources ────────────────────────────────────────────────────────
     const SOURCE_LABELS: Record<string, string> = {
-      avito: "Авито",
-      website: "Сайт",
-      ads: "Директ",
-      call: "Звонки",
-      referral: "Сарафан",
-      repeat: "Повторный",
-      other: "Другое",
+      avito: "Авито", website: "Сайт", ads: "Директ", call: "Звонки",
+      referral: "Сарафан", repeat: "Повторный", other: "Другое",
     };
+    const sourceCounts = new Map<string, { count: number; sentToWork: number }>();
+    for (const l of leads) {
+      const key = l.source ?? "other";
+      const stats = sourceCounts.get(key) ?? { count: 0, sentToWork: 0 };
+      stats.count++;
+      if (l.status === "sent_to_work") stats.sentToWork++;
+      sourceCounts.set(key, stats);
+    }
     const leadSources = Object.entries(SOURCE_LABELS)
       .map(([key, label]) => {
-        const srcLeads = leads.filter(l => (l.source ?? "other") === key);
-        const sentToWork = srcLeads.filter(l => l.status === "sent_to_work").length;
+        const stats = sourceCounts.get(key) ?? { count: 0, sentToWork: 0 };
         return {
           channel: label,
-          count: srcLeads.length,
-          sent_to_work: sentToWork,
-          conversion: srcLeads.length > 0
-            ? Math.round((sentToWork / srcLeads.length) * 1000) / 10
+          count: stats.count,
+          sent_to_work: stats.sentToWork,
+          conversion: stats.count > 0
+            ? Math.round((stats.sentToWork / stats.count) * 1000) / 10
             : 0,
         };
       })
       .filter(s => s.count > 0)
       .sort((a, b) => b.count - a.count);
 
-    // ── Live feed (LiveFeed: last 20 events from last 24h) ──────────────────
+    // ── Live feed (last ~20 events from last 24h) ──────────────────────────
     type FeedType = "new_lead" | "assigned" | "completed" | "new_master";
-    const cutoff24h = new Date(now.getTime() - 24 * 3600000);
     const feedEvents: { id: number; type: FeedType; timestamp: Date; text: string; city: string; amount: number | null }[] = [];
+    const masterMapById = new Map(masters.map(m => [m.id, m]));
 
-    leads
-      .filter(l => l.createdAt >= cutoff24h)
-      .slice(0, 8)
-      .forEach((l, i) => {
+    let leadsAdded = 0;
+    for (const l of leads) {
+      if (leadsAdded >= 8) break;
+      if (l.createdAt >= cutoff24h) {
         feedEvents.push({
-          id: 1000 + i,
+          id: 1000 + leadsAdded,
           type: "new_lead",
           timestamp: l.createdAt,
           text: `Новая заявка: ${l.serviceType ?? "ремонт"}, ${l.city}`,
           city: l.city,
           amount: null,
         });
-      });
-
-    orders
-      .filter(o => o.status === "completed" && o.updatedAt >= cutoff24h)
-      .slice(0, 8)
-      .forEach((o, i) => {
+        leadsAdded++;
+      }
+    }
+    let completedAdded = 0, assignedAdded = 0;
+    for (const o of orders) {
+      if (completedAdded < 8 && o.status === "completed" && o.updatedAt >= cutoff24h) {
         const amt = o.orderAmount ? Number(o.orderAmount) : null;
         feedEvents.push({
-          id: 2000 + i,
+          id: 2000 + completedAdded,
           type: "completed",
           timestamp: o.updatedAt,
           text: `Заказ #${o.id} завершён${amt ? ` (${amt.toLocaleString("ru-RU")}₽)` : ""}`,
           city: o.city,
           amount: amt,
         });
-      });
-
-    orders
-      .filter(o => (o as any).assignedAt && (o as any).assignedAt >= cutoff24h)
-      .slice(0, 5)
-      .forEach((o, i) => {
-        const master = o.masterId ? masters.find(m => m.id === o.masterId) : null;
+        completedAdded++;
+      }
+      if (assignedAdded < 5 && o.assignedAt && o.assignedAt >= cutoff24h) {
+        const master = o.masterId ? masterMapById.get(o.masterId) : null;
         feedEvents.push({
-          id: 3000 + i,
+          id: 3000 + assignedAdded,
           type: "assigned",
-          timestamp: (o as any).assignedAt,
+          timestamp: o.assignedAt,
           text: `Мастер ${master?.alias ?? "?"} взял заказ #${o.id}`,
           city: o.city,
           amount: null,
         });
-      });
-
-    masters
-      .filter(m => m.createdAt >= cutoff24h)
-      .slice(0, 3)
-      .forEach((m, i) => {
+        assignedAdded++;
+      }
+    }
+    let newMasterAdded = 0;
+    for (const m of masters) {
+      if (newMasterAdded >= 3) break;
+      if (m.createdAt >= cutoff24h) {
         feedEvents.push({
-          id: 4000 + i,
+          id: 4000 + newMasterAdded,
           type: "new_master",
           timestamp: m.createdAt,
           text: `Зарегистрирован мастер ${m.alias}, ${m.city}`,
           city: m.city,
           amount: null,
         });
-      });
-
+        newMasterAdded++;
+      }
+    }
     feedEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     const liveFeed = feedEvents.slice(0, 20);
 
-    // ── Cities (CitiesCard) ─────────────────────────────────────────────────
-    const allCities = [...new Set([...leads.map(l => l.city), ...orders.map(o => o.city)])].filter(Boolean);
-    const cities = allCities
+    // ── Cities — uses pre-built indexes, O(cities) ─────────────────────────
+    const allCities = new Set<string>([...ordersByCity.keys(), ...leadsByCity.keys()]);
+    const cities = [...allCities]
       .map(city => {
-        const cityLeads = leads.filter(l => l.city === city);
-        const cityCompletedOrders = orders.filter(o => o.city === city && o.status === "completed");
-        const cityRevenue = cityCompletedOrders.reduce((s, o) => {
-          const txSum = txRows
-            .filter(t => t.orderId === o.id && t.paymentStatus === "paid")
-            .reduce((ss, t) => ss + Number(t.commission), 0);
-          return s + txSum;
-        }, 0);
-        const cityMastersTotal = masters.filter(m => m.city === city).length;
-        const cityMastersActive = masters.filter(m => m.city === city && m.status === "active").length;
-
-        // Free masters = active masters with no current active order
-        const cityActiveMasterIds = masters
-          .filter(m => m.city === city && m.status === "active")
-          .map(m => m.id);
-        const busyMasterIds = new Set(
-          orders
-            .filter(o =>
-              o.masterId &&
-              cityActiveMasterIds.includes(o.masterId) &&
-              ["master_assigned", "in_progress", "on_site"].includes(o.status)
-            )
-            .map(o => o.masterId!)
-        );
-        const freeMasters = cityActiveMasterIds.filter(id => !busyMasterIds.has(id)).length;
-
-        // Waiting orders = orders without a master, not cancelled/completed
-        const waitingOrders = orders.filter(o =>
-          o.city === city && !o.masterId && !["completed", "cancelled"].includes(o.status)
+        const cityCompletedOrders = completedOrdersByCity.get(city) ?? [];
+        let cityRevenue = 0;
+        for (const o of cityCompletedOrders) {
+          cityRevenue += paidCommissionByOrder.get(o.id) ?? 0;
+        }
+        const cityMasters = mastersByCity.get(city) ?? [];
+        const cityMastersTotal = cityMasters.length;
+        const cityMastersActive = cityMasters.filter(m => m.status === "active").length;
+        const freeMasters = cityMasters.filter(m => m.status === "active" && !busyMasterIds.has(m.id)).length;
+        const cityOrders = ordersByCity.get(city) ?? [];
+        const waitingOrders = cityOrders.filter(o =>
+          !o.masterId && o.status !== "completed" && o.status !== "cancelled"
         ).length;
-
-        // Ratio = waiting orders / free masters (high → master shortage; low → no orders)
         const ratio = freeMasters > 0
           ? Math.round((waitingOrders / freeMasters) * 100) / 100
           : (waitingOrders > 0 ? 99 : 0);
-
+        const cityLeadsCount = leadsByCity.get(city) ?? 0;
         return {
           city,
-          leads: cityLeads.length,
+          leads: cityLeadsCount,
           masters_total: cityMastersTotal,
           masters_active: cityMastersActive,
-          conversion: cityLeads.length > 0
-            ? Math.round((cityCompletedOrders.length / cityLeads.length) * 1000) / 10
+          conversion: cityLeadsCount > 0
+            ? Math.round((cityCompletedOrders.length / cityLeadsCount) * 1000) / 10
             : 0,
           revenue: Math.round(cityRevenue),
           free_masters: freeMasters,
@@ -305,18 +382,16 @@ router.get("/dashboard-v2", adminOnly, async (_req, res) => {
       .sort((a, b) => b.revenue - a.revenue || b.leads - a.leads)
       .slice(0, 8);
 
-    // ── Top Masters (TopMasters) ────────────────────────────────────────────
+    // ── Top Masters ─────────────────────────────────────────────────────────
     const topMasters = masters
       .filter(m => m.status === "active")
       .map(m => {
-        const mCompleted = orders.filter(o => o.masterId === m.id && o.status === "completed");
-        const mTotal = orders.filter(o => o.masterId === m.id);
-        const revenue = mCompleted.reduce((s, o) => {
-          const txSum = txRows
-            .filter(t => t.orderId === o.id && t.paymentStatus === "paid")
-            .reduce((ss, t) => ss + Number(t.commission), 0);
-          return s + txSum;
-        }, 0);
+        const mCompleted = completedByMasterId.get(m.id) ?? [];
+        const mTotal = ordersByMasterId.get(m.id) ?? [];
+        let revenue = 0;
+        for (const o of mCompleted) {
+          revenue += paidCommissionByOrder.get(o.id) ?? 0;
+        }
         return {
           id: m.id,
           name: m.alias,
@@ -333,27 +408,22 @@ router.get("/dashboard-v2", adminOnly, async (_req, res) => {
       .sort((a, b) => b.revenue_brought - a.revenue_brought || b.orders_completed - a.orders_completed)
       .slice(0, 8);
 
-    // ── Recent Orders (RecentOrders) ────────────────────────────────────────
+    // ── Recent Orders ───────────────────────────────────────────────────────
     const STATUS_MAP: Record<string, string> = {
       waiting_master: "searching",
       master_assigned: "assigned",
       in_progress: "in_progress",
       completed: "completed",
       cancelled: "cancelled",
-      on_site: "on_site",
-      awaiting_estimate: "awaiting_estimate",
-      awaiting_payment: "awaiting_payment",
       cancellation_requested: "cancellation_requested",
     };
-    const leadMap = new Map(leads.map(l => [l.id, l]));
-    const masterMap = new Map(masters.map(m => [m.id, m]));
-
-    const recentOrders = orders
+    const leadMapById = new Map(leads.map(l => [l.id, l]));
+    const recentOrders = [...orders]
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 10)
       .map(o => {
-        const lead = o.leadId ? leadMap.get(o.leadId) : null;
-        const master = o.masterId ? masterMap.get(o.masterId) : null;
+        const lead = o.leadId ? leadMapById.get(o.leadId) : null;
+        const master = o.masterId ? masterMapById.get(o.masterId) : null;
         return {
           id: o.id,
           created_at: o.createdAt,
