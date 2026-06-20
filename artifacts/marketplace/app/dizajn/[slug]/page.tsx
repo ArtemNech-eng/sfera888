@@ -109,6 +109,16 @@ function normalizeRoom(room: string): string {
   return room.replace(/-/g, "_");
 }
 
+const ROOM_BREADCRUMB: Record<string, string> = {
+  bathroom: "Ванная",
+  kitchen: "Кухня",
+  living_room: "Гостиная",
+  bedroom: "Спальня",
+  hallway: "Прихожая",
+  apartment: "Квартира",
+  nursery: "Детская",
+};
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(
@@ -228,22 +238,122 @@ export default async function DesignSlugPage(
     const design = await fetchDesign(parsed.slug, anonId);
     if (!design) notFound();
 
+    // Smart-similar buckets — параллельно (3 запроса).
+    let similar: {
+      sameRoomStyle: typeof design extends never ? never : Awaited<ReturnType<typeof fetchRecentDesigns>>;
+      sameStyle: Awaited<ReturnType<typeof fetchRecentDesigns>>;
+      similarBudget: Awaited<ReturnType<typeof fetchRecentDesigns>>;
+    } | undefined = undefined;
+
+    if (design.status === "completed") {
+      const [sameRoomStyle, sameStyle, similarBudget] = await Promise.all([
+        fetchRecentDesigns({ limit: 4, room: design.roomType, style: design.style }),
+        fetchRecentDesigns({ limit: 4, style: design.style }),
+        fetchRecentDesigns({ limit: 6 }),
+      ]);
+      // Исключаем сам этот проект из выдачи.
+      const exclude = (items: typeof sameRoomStyle) => items.filter((it) => it.slug !== design.slug);
+      similar = {
+        sameRoomStyle: exclude(sameRoomStyle).slice(0, 3),
+        sameStyle: exclude(sameStyle).slice(0, 3),
+        similarBudget: exclude(similarBudget).slice(0, 3),
+      };
+    }
+
+    const baseUrl = publicUrl();
+    const pageUrl = `${baseUrl}/dizajn/${slug}`;
+    const aggregateRoomStyleUrl = `${baseUrl}/dizajn/${design.roomType.replace(/_/g, "-")}-${design.style}`;
+
     const jsonLd = design.status === "completed" && design.resultImageUrl
       ? {
           "@context": "https://schema.org",
-          "@type": "CreativeWork",
-          "@id": `${publicUrl()}/dizajn/${slug}`,
-          name: design.h1,
-          description: design.description ?? design.seoDescription,
-          image: {
-            "@type": "ImageObject",
-            url: design.resultImageUrl,
-            width: 1024,
-            height: 768,
-          },
-          url: `${publicUrl()}/dizajn/${slug}`,
-          author: { "@type": "Organization", name: "Честные мастера" },
-          datePublished: design.createdAt,
+          "@graph": [
+            {
+              "@type": "Article",
+              "@id": `${pageUrl}#article`,
+              mainEntityOfPage: pageUrl,
+              headline: design.h1,
+              description: design.description ?? design.seoDescription,
+              image: [
+                design.resultImageUrl,
+                ...(design.views ?? []).map((v) => v.url),
+              ],
+              author: { "@type": "Organization", name: "Честные мастера", url: baseUrl },
+              publisher: {
+                "@type": "Organization",
+                name: "Честные мастера",
+                url: baseUrl,
+              },
+              datePublished: design.createdAt,
+              dateModified: design.createdAt,
+              about: {
+                "@type": "Thing",
+                name: design.h1,
+              },
+              keywords: [design.h1, design.style, design.roomType, design.cityName].filter(Boolean).join(", "),
+            },
+            {
+              "@type": "BreadcrumbList",
+              "@id": `${pageUrl}#breadcrumb`,
+              itemListElement: [
+                {
+                  "@type": "ListItem",
+                  position: 1,
+                  name: "Главная",
+                  item: baseUrl,
+                },
+                {
+                  "@type": "ListItem",
+                  position: 2,
+                  name: "AI-дизайн",
+                  item: `${baseUrl}/dizajn`,
+                },
+                {
+                  "@type": "ListItem",
+                  position: 3,
+                  name: ROOM_BREADCRUMB[design.roomType] ?? "Категория",
+                  item: aggregateRoomStyleUrl,
+                },
+                {
+                  "@type": "ListItem",
+                  position: 4,
+                  name: design.h1 ?? `Проект №${design.id}`,
+                  item: pageUrl,
+                },
+              ],
+            },
+            ...(design.budget
+              ? [
+                  {
+                    "@type": "Service",
+                    "@id": `${pageUrl}#service`,
+                    name: `Реализация дизайн-проекта: ${design.h1}`,
+                    serviceType: "Ремонт и отделка",
+                    areaServed: design.cityName ?? undefined,
+                    provider: {
+                      "@type": "Organization",
+                      name: "Честные мастера",
+                      url: baseUrl,
+                    },
+                    offers: {
+                      "@type": "Offer",
+                      priceCurrency: "RUB",
+                      price: design.budget,
+                      availability: "https://schema.org/InStock",
+                      url: pageUrl,
+                    },
+                  },
+                ]
+              : []),
+            ...(design.views ?? []).map((v, i) => ({
+              "@type": "ImageObject",
+              "@id": `${pageUrl}#image-${i + 1}`,
+              contentUrl: v.url,
+              caption: v.label,
+              width: 1024,
+              height: 768,
+            })),
+          ],
         }
       : null;
 
@@ -256,7 +366,7 @@ export default async function DesignSlugPage(
           />
         ) : null}
         {design.status === "completed" ? (
-          <DesignBoard design={design} />
+          <DesignBoard design={design} similar={similar} />
         ) : (
           <DesignBoardPending slug={slug} initialDesign={design} />
         )}

@@ -361,6 +361,20 @@ export interface DesignImageDTO {
   sortOrder: number;
 }
 
+/** Один из 4 ракурсов проекта (общий вид / акцент / хранение / окно). */
+export interface DesignViewDTO {
+  url: string;
+  label: string;
+  position: number; // 1..4
+}
+
+/** Один из 6 крупных планов (мебель/детали), нарезаны из ракурсов через sharp. */
+export interface DesignDetailCropDTO {
+  url: string;
+  label: string;
+  fromView?: number | null;
+}
+
 export type DesignStatus = "draft" | "generating" | "completed" | "failed" | "private";
 
 /**
@@ -378,6 +392,7 @@ export interface DesignFullDTO {
   durationWeeks: number | null;
   cityName: string | null;
   citySlug: string | null;
+  district: string | null;
   h1: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
@@ -386,7 +401,14 @@ export interface DesignFullDTO {
   estimate: DesignEstimateItemDTO[] | null;
   solutions: DesignSolutionDTO[] | null;
   colorPalette: DesignColorSwatchDTO[] | null;
+  /** Главный hero ракурс (для og:image). Совпадает с views[0].url. */
   resultImageUrl: string | null;
+  /** «Было» — text2img сгенерированное «до ремонта» или фото пользователя. */
+  inputImageUrl: string | null;
+  /** 4 ракурса (общий / акцент / хранение / окно). null пока generating. */
+  views: DesignViewDTO[] | null;
+  /** 6 кропов деталей мебели — sharp-вырезано из views. null пока generating. */
+  detailCrops: DesignDetailCropDTO[] | null;
   images: DesignImageDTO[];
   viewCount: number;
   saveCount: number;

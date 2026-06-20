@@ -324,6 +324,14 @@ router.get("/:slug", async (req: Request, res: Response) => {
         : 0;
 
     res.set("Cache-Control", "no-store");
+    // R2-key → public URL helper (uploads / before / results / crops).
+    const r2KeyToPublicUrl = (key: string | null): string | null => {
+      if (!key) return null;
+      if (key.startsWith("/")) return key; // уже internal URL (legacy)
+      if (key.startsWith("http")) return key; // external URL — оставляем
+      return "/api/marketplace/dizajn/img/" + key.replace(/^dizajn\//, "");
+    };
+
     res.json({
       ok: true,
       design: {
@@ -337,6 +345,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
         durationWeeks: row.design.durationWeeks,
         cityName: row.city?.name ?? null,
         citySlug: row.city?.slug ?? null,
+        district: row.design.district,
         h1: row.design.h1,
         seoTitle: row.design.seoTitle,
         seoDescription: row.design.seoDescription,
@@ -346,6 +355,9 @@ router.get("/:slug", async (req: Request, res: Response) => {
         solutions: row.design.solutions,
         colorPalette: row.design.colorPalette,
         resultImageUrl: row.design.resultImageUrl,
+        inputImageUrl: r2KeyToPublicUrl(row.design.inputImageUrl),
+        views: row.design.views,
+        detailCrops: row.design.detailCrops,
         images: images.map((img) => ({
           type: img.type,
           url: img.url,
@@ -611,7 +623,9 @@ const STYLE_LABELS_RU: Record<string, string> = {
 router.get("/img/:type/:filename", async (req: Request, res: Response) => {
   const type = typeof req.params.type === "string" ? req.params.type : "";
   const filename = typeof req.params.filename === "string" ? req.params.filename : "";
-  if (!["uploads", "results"].includes(type)) {
+  // Allowlist: uploads (user-photo), results (4 view renders),
+  // before (text2img «было» для seed-проектов), crops (6 deталей через sharp).
+  if (!["uploads", "results", "before", "crops"].includes(type)) {
     res.status(404).json({ ok: false, error: "invalid_type" });
     return;
   }

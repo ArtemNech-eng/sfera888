@@ -414,10 +414,23 @@ export async function fetchDesign(slug: string, anonId: string | null = null): P
     // Абсолютизируем URL'ы (api-server-relative → absolute https://sfera-master.ru/...).
     const design = r.design;
     design.resultImageUrl = absolutizeApiUrl(design.resultImageUrl);
+    design.inputImageUrl = absolutizeApiUrl(design.inputImageUrl);
     design.images = design.images.map((img) => ({
       ...img,
       url: absolutizeApiUrl(img.url) ?? img.url,
     }));
+    if (Array.isArray(design.views)) {
+      design.views = design.views.map((v) => ({
+        ...v,
+        url: absolutizeApiUrl(v.url) ?? v.url,
+      }));
+    }
+    if (Array.isArray(design.detailCrops)) {
+      design.detailCrops = design.detailCrops.map((c) => ({
+        ...c,
+        url: absolutizeApiUrl(c.url) ?? c.url,
+      }));
+    }
     return design;
   } catch (e) {
     if (e instanceof MarketplaceApiError && e.status === 404) return null;

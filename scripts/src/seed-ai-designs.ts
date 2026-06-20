@@ -1,249 +1,289 @@
 /**
- * Seed AI-design starter content (план D из обсуждения SEO-засева):
- *   • 20 hero дизайнов — куроированные комбинации, длинные prompts с
- *     детализированным описанием материалов и решений
- *   • 50 standard дизайнов — random выборка из cartesian product, обычные
- *     prompts
+ * Seed AI-design v2 — 50 проектов как мини-кейсы для SEO L1.
  *
- * Архитектура:
- *   1. Скрипт INSERT'ит rows в `designs` со статусом 'generating',
- *      `input_image_url=NULL` (text2img mode), уникальными anon_id и
- *      случайными параметрами (room/style/area/budget/duration/city).
- *   2. На Railway api-server's `designWorker` polls каждые 5s и подхватывает
- *      pending rows. Branch'ится на text2img mode когда inputImageUrl=null
- *      (см. designWorker.ts).
- *   3. Worker генерит 4 view renders + GPT artefacts + color palette,
- *      переводит в status='completed', is_public=true.
- *   4. Sitemap revalidate (1h) автоматом включит новые URL'ы.
+ * Концепция: каждая страница = полноценный мини-проект (см. план обсуждения
+ * с user'ом). Не шаблонные «дизайн спальни» × 100К, а проработанные кейсы с
+ * параметрами / районом / бюджетом / решениями / материалами / сметой.
+ *
+ * Распределение городов: Краснодар 15, Ростов-на-Дону 13, Ставрополь 11,
+ * Волгоград 11 — итого 50.
+ *
+ * Тексты:
+ *   • Проект №1 (флаг `seedContent` заполнен) — handwritten by Claude Opus
+ *     в чате. Используется для тестового запуска: «сначала один проект
+ *     сделаем, посмотрим». Если seed-контент задан, worker не вызывает
+ *     designContent.ts (см. designWorker.ts: hasSeedContent check).
+ *   • Проекты №2-50 — содержат только параметры. Worker запросит
+ *     designContent.ts (наш AI-шлюз через OpenRouter), который ротирует
+ *     8 narrative-стилей по seed=design.id.
  *
  * Использование:
+ *   pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts                  # dry-run
+ *   pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts --apply --limit=1
+ *   pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts --apply
  *
- *   pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts            # dry-run, печатает план
- *   pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts --apply    # реально создаёт rows
- *   pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts --apply --mode=hero
- *   pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts --apply --mode=standard
- *
- * Требования:
- *   • DATABASE_URL — подключение к prod-БД (где api-server'овский worker крутится)
- *   • FAL_API_KEY на стороне api-server (worker сам прочитает) — баланс должен
- *     быть пополнен ~$5 на 70 дизайнов × 4 render × $0.01
- *
- * Cost: ~$2.80 в Fal.ai + ~$0.07 в OpenAI ≈ $3 разово.
- * Время: 70 designs × 30s в worker = ~35 минут wall time после вставки.
- *
+ * Cost: ~$10-15 в Fal.ai (50 × 5 картинок × ~$0.025 — 1 before + 4 view).
  * NEVER prints DATABASE_URL.
  */
 
 if (!process.env["DATABASE_URL"]) {
   console.error("\n[seed-ai-designs] ERROR: DATABASE_URL is not set.\n");
-  console.error("Provide via env, e.g.:");
-  console.error("  PowerShell: $env:DATABASE_URL='postgresql://...'; pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts");
-  console.error("  bash:       DATABASE_URL='postgresql://...' pnpm --filter @workspace/scripts exec tsx ./src/seed-ai-designs.ts");
   process.exit(1);
 }
 
 import { randomUUID } from "node:crypto";
 
-const { db, designsTable, citiesTable } = await import("@workspace/db");
+const { db, pool, designsTable, citiesTable } = await import("@workspace/db");
+import type {
+  DesignMaterial,
+  DesignEstimateItem,
+  DesignSolution,
+} from "@workspace/db";
 
-// ── CLI args ────────────────────────────────────────────────────────────────
+// ── CLI ─────────────────────────────────────────────────────────────────────
 
-const args = new Set(process.argv.slice(2));
-const apply = args.has("--apply");
+const args = process.argv.slice(2);
+const apply = args.includes("--apply");
 const dryRun = !apply;
-const mode = (() => {
-  for (const a of args) {
-    if (a.startsWith("--mode=")) return a.slice("--mode=".length);
-  }
-  return "all" as const;
-})() as "all" | "hero" | "standard";
+const limit = (() => {
+  const a = args.find((x) => x.startsWith("--limit="));
+  if (!a) return null;
+  const n = parseInt(a.slice("--limit=".length), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+})();
 
-if (!["all", "hero", "standard"].includes(mode)) {
-  console.error(`[seed-ai-designs] invalid --mode=${mode}. Allowed: all | hero | standard`);
-  process.exit(1);
+console.log(
+  `[seed-ai-designs] mode=${dryRun ? "DRY-RUN" : "APPLY"} limit=${limit ?? "all"}`,
+);
+
+// ── Type ────────────────────────────────────────────────────────────────────
+
+interface SeedContent {
+  h1: string;
+  seoTitle: string;
+  seoDescription: string;
+  description: string;
+  materials: DesignMaterial[];
+  estimate: DesignEstimateItem[];
+  solutions: DesignSolution[];
 }
 
-console.log(`[seed-ai-designs] mode=${mode} dry-run=${dryRun ? "YES (no DB writes)" : "NO (will INSERT)"}`);
-
-// ── Combinations ────────────────────────────────────────────────────────────
-
 interface DesignSpec {
+  /** Stable seed-id для slug suffix (детерминистичный run/re-run). */
+  seedKey: string;
   room: string;
   style: string;
   area: number;
   budget: number;
   durationWeeks: number;
-  citySlug: string | null;
-  isHero: boolean;
+  citySlug: string;
+  district: string;
+  /** Если задано — worker возьмёт текст as-is. Иначе AI сгенерирует. */
+  seedContent?: SeedContent;
 }
 
-/**
- * 20 hero combos — куроированный список под популярные SEO-запросы.
- * Каждый «user» создаёт 1 дизайн (уникальные anon_id).
- */
-const HERO_SPECS: DesignSpec[] = [
-  { room: "bathroom", style: "modern", area: 4, budget: 220000, durationWeeks: 6, citySlug: "moskva", isHero: true },
-  { room: "bathroom", style: "scandinavian", area: 5, budget: 250000, durationWeeks: 7, citySlug: "sankt-peterburg", isHero: true },
-  { room: "bathroom", style: "loft", area: 6, budget: 280000, durationWeeks: 8, citySlug: "moskva", isHero: true },
-  { room: "bathroom", style: "minimalism", area: 4, budget: 200000, durationWeeks: 6, citySlug: "moskva", isHero: true },
-  { room: "kitchen", style: "modern", area: 8, budget: 300000, durationWeeks: 7, citySlug: "moskva", isHero: true },
-  { room: "kitchen", style: "scandinavian", area: 10, budget: 380000, durationWeeks: 8, citySlug: "sankt-peterburg", isHero: true },
-  { room: "kitchen", style: "modern", area: 12, budget: 420000, durationWeeks: 9, citySlug: "krasnodar", isHero: true },
-  { room: "kitchen", style: "japandi", area: 9, budget: 350000, durationWeeks: 8, citySlug: "moskva", isHero: true },
-  { room: "living_room", style: "modern", area: 18, budget: 350000, durationWeeks: 8, citySlug: "moskva", isHero: true },
-  { room: "living_room", style: "loft", area: 20, budget: 420000, durationWeeks: 9, citySlug: "moskva", isHero: true },
-  { room: "living_room", style: "scandinavian", area: 16, budget: 280000, durationWeeks: 7, citySlug: "sankt-peterburg", isHero: true },
-  { room: "living_room", style: "minimalism", area: 22, budget: 380000, durationWeeks: 8, citySlug: "moskva", isHero: true },
-  { room: "bedroom", style: "scandinavian", area: 12, budget: 220000, durationWeeks: 6, citySlug: "moskva", isHero: true },
-  { room: "bedroom", style: "japandi", area: 14, budget: 280000, durationWeeks: 7, citySlug: "moskva", isHero: true },
-  { room: "bedroom", style: "modern", area: 10, budget: 180000, durationWeeks: 5, citySlug: "sankt-peterburg", isHero: true },
-  { room: "hallway", style: "modern", area: 5, budget: 90000, durationWeeks: 3, citySlug: "moskva", isHero: true },
-  { room: "hallway", style: "loft", area: 6, budget: 110000, durationWeeks: 4, citySlug: "moskva", isHero: true },
-  { room: "apartment", style: "scandinavian", area: 35, budget: 750000, durationWeeks: 14, citySlug: "moskva", isHero: true },
-  { room: "apartment", style: "modern", area: 50, budget: 1100000, durationWeeks: 18, citySlug: "moskva", isHero: true },
-  { room: "apartment", style: "neoclassic", area: 60, budget: 1500000, durationWeeks: 22, citySlug: "moskva", isHero: true },
+// ── 4 cities — slugs we expect to exist (или upsert'нем сами). ──────────────
+
+const CITY_DATA: Record<string, { name: string; nameIn: string; region: string }> = {
+  "krasnodar": { name: "Краснодар", nameIn: "в Краснодаре", region: "Краснодарский край" },
+  "rostov-na-donu": { name: "Ростов-на-Дону", nameIn: "в Ростове-на-Дону", region: "Ростовская область" },
+  "stavropol": { name: "Ставрополь", nameIn: "в Ставрополе", region: "Ставропольский край" },
+  "volgograd": { name: "Волгоград", nameIn: "в Волгограде", region: "Волгоградская область" },
+};
+
+// ── Project #1: handwritten content (для тест-запуска) ──────────────────────
+//
+// Narrative style: emotional_descriptive (атмосферное описание через ощущения).
+
+const PROJECT_1_CONTENT: SeedContent = {
+  h1: "Спальня 14 м² в стиле японди в Краснодаре",
+  seoTitle: "Дизайн спальни 14 м² в стиле японди — 280 000 ₽, Краснодар",
+  seoDescription: "AI-концепт спальни 14 м² в стиле японди для квартиры в Краснодаре. Подробная смета 280 000 ₽: материалы, мебель, освещение, текстиль.",
+  description:
+    "Утром в этой спальне солнце ложится на пол косыми тёплыми полосами — окно выходит на восток, а лёгкая льняная штора рассеивает свет, не глуша его. Главный материал здесь — дубовый шпон тёплого медового оттенка. Он на изголовье кровати, на фасадах встроенного шкафа и на узкой полке над прикроватной тумбой.\n\nСтены покрыты матовой краской цвета сливочной бумаги. Вечером сценарное освещение делает комнату совсем другой: бра у изголовья дают мягкий тёплый свет, прикроватные лампы светят локально, а потолочный круглый светильник работает только когда нужно полное освещение. Полы — широкая инженерная доска под маслом, ходить по ней можно босиком.",
+  materials: [
+    { category: "Стены", description: "Краска интерьерная матовая, цвет сливочно-белый, два слоя по подложке" },
+    { category: "Изголовье", description: "Шпон дуба натуральный медовый, лак матовый на водной основе" },
+    { category: "Пол", description: "Инженерная доска дуб, ширина 220 мм, масло-воск, монтаж на клей" },
+    { category: "Потолок", description: "Гипсокартон с покраской, точка центрального светильника + контурная подсветка" },
+    { category: "Шкаф", description: "Встроенный во всю стену 2,8 м, фасады из шпона дуба, system Blum-soft-close" },
+    { category: "Текстиль", description: "Льняные шторы небелёного оттенка, плотный хлопок постельный" },
+  ],
+  estimate: [
+    { category: "Отделочные материалы", amountKopeks: 8500000 },
+    { category: "Мебель", amountKopeks: 13000000 },
+    { category: "Освещение", amountKopeks: 2500000 },
+    { category: "Текстиль и декор", amountKopeks: 2500000 },
+    { category: "Прочие расходы", amountKopeks: 1500000 },
+  ],
+  solutions: [
+    { text: "Кровать 160×200 поставлена изголовьем к глухой стене — оба прохода свободны, тумбы по сторонам не блокируются дверями шкафа." },
+    { text: "Встроенный шкаф во всю длину одной стены: 2,8 м, без надстроек до потолка — визуально комната выглядит выше." },
+    { text: "Бра-светильники над тумбами на высоте 1,4 м — свет на книгу не слепит партнёра, выключатели у изголовья." },
+    { text: "Льняные шторы шириной в полтора окна — собранные сбоку дают эффект визуального расширения проёма." },
+    { text: "Палитра ограничена тремя тонами: сливочный, медовый дуб, угольно-серый текстиль — цвет не «дробит» небольшое помещение." },
+  ],
+};
+
+// ── 50 specs (project 1 has handwritten content; 2-50 inherit AI gen) ───────
+
+const SPECS: DesignSpec[] = [
+  // ─── Краснодар (15) ───────────────────────────────────────────────────────
+  { seedKey: "krd-001", room: "bedroom", style: "japandi", area: 14, budget: 280000, durationWeeks: 7, citySlug: "krasnodar", district: "Фестивальный", seedContent: PROJECT_1_CONTENT },
+  { seedKey: "krd-002", room: "kitchen", style: "modern", area: 9, budget: 350000, durationWeeks: 7, citySlug: "krasnodar", district: "Юбилейный" },
+  { seedKey: "krd-003", room: "bathroom", style: "japandi", area: 5, budget: 250000, durationWeeks: 6, citySlug: "krasnodar", district: "Центральный" },
+  { seedKey: "krd-004", room: "living_room", style: "loft", area: 22, budget: 480000, durationWeeks: 9, citySlug: "krasnodar", district: "Музыкальный" },
+  { seedKey: "krd-005", room: "nursery", style: "scandinavian", area: 11, budget: 220000, durationWeeks: 6, citySlug: "krasnodar", district: "Энка" },
+  { seedKey: "krd-006", room: "hallway", style: "minimalism", area: 5, budget: 95000, durationWeeks: 3, citySlug: "krasnodar", district: "Прикубанский" },
+  { seedKey: "krd-007", room: "bedroom", style: "scandinavian", area: 12, budget: 240000, durationWeeks: 6, citySlug: "krasnodar", district: "Карасунский" },
+  { seedKey: "krd-008", room: "apartment", style: "modern", area: 55, budget: 1300000, durationWeeks: 18, citySlug: "krasnodar", district: "Восточно-Кругликовский" },
+  { seedKey: "krd-009", room: "kitchen", style: "scandinavian", area: 11, budget: 380000, durationWeeks: 8, citySlug: "krasnodar", district: "Гидрострой" },
+  { seedKey: "krd-010", room: "bathroom", style: "classic", area: 6, budget: 320000, durationWeeks: 7, citySlug: "krasnodar", district: "Школьный" },
+  { seedKey: "krd-011", room: "living_room", style: "japandi", area: 18, budget: 380000, durationWeeks: 8, citySlug: "krasnodar", district: "Российская" },
+  { seedKey: "krd-012", room: "bedroom", style: "neoclassic", area: 16, budget: 350000, durationWeeks: 8, citySlug: "krasnodar", district: "Северный" },
+  { seedKey: "krd-013", room: "nursery", style: "japandi", area: 10, budget: 200000, durationWeeks: 6, citySlug: "krasnodar", district: "Молодёжный" },
+  { seedKey: "krd-014", room: "kitchen", style: "loft", area: 12, budget: 410000, durationWeeks: 8, citySlug: "krasnodar", district: "Пашковский" },
+  { seedKey: "krd-015", room: "apartment", style: "japandi", area: 45, budget: 950000, durationWeeks: 16, citySlug: "krasnodar", district: "Западный" },
+
+  // ─── Ростов-на-Дону (13) ──────────────────────────────────────────────────
+  { seedKey: "rnd-001", room: "bedroom", style: "modern", area: 13, budget: 240000, durationWeeks: 6, citySlug: "rostov-na-donu", district: "Северный" },
+  { seedKey: "rnd-002", room: "kitchen", style: "classic", area: 10, budget: 360000, durationWeeks: 8, citySlug: "rostov-na-donu", district: "Западный" },
+  { seedKey: "rnd-003", room: "bathroom", style: "scandinavian", area: 4, budget: 180000, durationWeeks: 5, citySlug: "rostov-na-donu", district: "Левенцовка" },
+  { seedKey: "rnd-004", room: "living_room", style: "scandinavian", area: 19, budget: 360000, durationWeeks: 8, citySlug: "rostov-na-donu", district: "ЗЖМ" },
+  { seedKey: "rnd-005", room: "nursery", style: "minimalism", area: 12, budget: 220000, durationWeeks: 6, citySlug: "rostov-na-donu", district: "Сельмаш" },
+  { seedKey: "rnd-006", room: "bedroom", style: "loft", area: 15, budget: 300000, durationWeeks: 7, citySlug: "rostov-na-donu", district: "Чкаловский" },
+  { seedKey: "rnd-007", room: "apartment", style: "scandinavian", area: 42, budget: 850000, durationWeeks: 14, citySlug: "rostov-na-donu", district: "Темерник" },
+  { seedKey: "rnd-008", room: "kitchen", style: "japandi", area: 8, budget: 290000, durationWeeks: 7, citySlug: "rostov-na-donu", district: "СЖМ" },
+  { seedKey: "rnd-009", room: "hallway", style: "classic", area: 6, budget: 130000, durationWeeks: 4, citySlug: "rostov-na-donu", district: "Военвед" },
+  { seedKey: "rnd-010", room: "living_room", style: "classic", area: 24, budget: 580000, durationWeeks: 10, citySlug: "rostov-na-donu", district: "Центральный" },
+  { seedKey: "rnd-011", room: "bedroom", style: "minimalism", area: 10, budget: 180000, durationWeeks: 5, citySlug: "rostov-na-donu", district: "Каменка" },
+  { seedKey: "rnd-012", room: "bathroom", style: "modern", area: 5, budget: 220000, durationWeeks: 6, citySlug: "rostov-na-donu", district: "Стройгородок" },
+  { seedKey: "rnd-013", room: "apartment", style: "loft", area: 60, budget: 1450000, durationWeeks: 20, citySlug: "rostov-na-donu", district: "Ростовское море" },
+
+  // ─── Ставрополь (11) ──────────────────────────────────────────────────────
+  { seedKey: "stv-001", room: "bedroom", style: "classic", area: 14, budget: 270000, durationWeeks: 7, citySlug: "stavropol", district: "Центр" },
+  { seedKey: "stv-002", room: "kitchen", style: "minimalism", area: 9, budget: 280000, durationWeeks: 7, citySlug: "stavropol", district: "Юго-западный" },
+  { seedKey: "stv-003", room: "bathroom", style: "loft", area: 5, budget: 220000, durationWeeks: 6, citySlug: "stavropol", district: "Промышленный" },
+  { seedKey: "stv-004", room: "living_room", style: "modern", area: 20, budget: 400000, durationWeeks: 9, citySlug: "stavropol", district: "Ленинский" },
+  { seedKey: "stv-005", room: "nursery", style: "japandi", area: 11, budget: 200000, durationWeeks: 6, citySlug: "stavropol", district: "Перспективный" },
+  { seedKey: "stv-006", room: "bedroom", style: "scandinavian", area: 12, budget: 220000, durationWeeks: 6, citySlug: "stavropol", district: "Октябрьский" },
+  { seedKey: "stv-007", room: "apartment", style: "minimalism", area: 38, budget: 720000, durationWeeks: 13, citySlug: "stavropol", district: "204-й квартал" },
+  { seedKey: "stv-008", room: "kitchen", style: "neoclassic", area: 11, budget: 350000, durationWeeks: 8, citySlug: "stavropol", district: "Северо-западный" },
+  { seedKey: "stv-009", room: "hallway", style: "scandinavian", area: 4, budget: 75000, durationWeeks: 3, citySlug: "stavropol", district: "Чапаевка" },
+  { seedKey: "stv-010", room: "living_room", style: "minimalism", area: 17, budget: 320000, durationWeeks: 7, citySlug: "stavropol", district: "Бельведер" },
+  { seedKey: "stv-011", room: "apartment", style: "classic", area: 50, budget: 1100000, durationWeeks: 18, citySlug: "stavropol", district: "Центр" },
+
+  // ─── Волгоград (11) ───────────────────────────────────────────────────────
+  { seedKey: "vlg-001", room: "bedroom", style: "japandi", area: 13, budget: 240000, durationWeeks: 7, citySlug: "volgograd", district: "Центральный" },
+  { seedKey: "vlg-002", room: "kitchen", style: "modern", area: 10, budget: 320000, durationWeeks: 7, citySlug: "volgograd", district: "Дзержинский" },
+  { seedKey: "vlg-003", room: "bathroom", style: "minimalism", area: 4, budget: 170000, durationWeeks: 5, citySlug: "volgograd", district: "Краснооктябрьский" },
+  { seedKey: "vlg-004", room: "living_room", style: "neoclassic", area: 21, budget: 450000, durationWeeks: 9, citySlug: "volgograd", district: "Ворошиловский" },
+  { seedKey: "vlg-005", room: "nursery", style: "modern", area: 12, budget: 220000, durationWeeks: 6, citySlug: "volgograd", district: "Тракторозаводский" },
+  { seedKey: "vlg-006", room: "bedroom", style: "loft", area: 12, budget: 230000, durationWeeks: 6, citySlug: "volgograd", district: "Кировский" },
+  { seedKey: "vlg-007", room: "apartment", style: "japandi", area: 48, budget: 1000000, durationWeeks: 16, citySlug: "volgograd", district: "Советский" },
+  { seedKey: "vlg-008", room: "kitchen", style: "scandinavian", area: 9, budget: 310000, durationWeeks: 7, citySlug: "volgograd", district: "Спартановка" },
+  { seedKey: "vlg-009", room: "hallway", style: "loft", area: 5, budget: 100000, durationWeeks: 4, citySlug: "volgograd", district: "Красноармейский" },
+  { seedKey: "vlg-010", room: "living_room", style: "scandinavian", area: 18, budget: 340000, durationWeeks: 8, citySlug: "volgograd", district: "Ангарский" },
+  { seedKey: "vlg-011", room: "bathroom", style: "neoclassic", area: 6, budget: 280000, durationWeeks: 7, citySlug: "volgograd", district: "Тулака" },
 ];
 
-/** Картезианское произведение для standard combos. */
-const ROOMS = ["bathroom", "kitchen", "living_room", "bedroom", "hallway", "apartment"] as const;
-const STYLES = ["modern", "scandinavian", "loft", "minimalism", "neoclassic", "japandi"] as const;
-const AREA_BUCKETS_BY_ROOM: Record<string, number[]> = {
-  bathroom: [3, 4, 5, 6, 7, 8],
-  kitchen: [6, 8, 9, 10, 12, 14, 16],
-  living_room: [14, 16, 18, 20, 22, 25, 28, 30],
-  bedroom: [9, 10, 12, 14, 16, 18, 20],
-  hallway: [3, 4, 5, 6, 7, 8],
-  apartment: [30, 35, 40, 45, 50, 55, 60, 70, 80, 100],
-};
-const POPULAR_CITY_SLUGS = ["moskva", "sankt-peterburg", "krasnodar", "ekaterinburg", "novosibirsk"];
+// ── Slug builder (unique nano suffix) ───────────────────────────────────────
 
-function pickRandom<T>(arr: readonly T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]!;
+function buildSlug(spec: DesignSpec, suffix: string): string {
+  return `${spec.room.replace(/_/g, "-")}-${spec.style}-${suffix}`;
 }
 
-function generateStandardSpecs(count: number): DesignSpec[] {
-  const out: DesignSpec[] = [];
-  const seen = new Set<string>();
-  let attempts = 0;
-  while (out.length < count && attempts < count * 10) {
-    attempts++;
-    const room = pickRandom(ROOMS);
-    const style = pickRandom(STYLES);
-    const area = pickRandom(AREA_BUCKETS_BY_ROOM[room]!);
-    const citySlug = pickRandom(POPULAR_CITY_SLUGS);
-    const key = `${room}-${style}-${area}-${citySlug}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    // Бюджет реалистичный для room+area: ~12-25K ₽/м² для отдельных
-    // комнат, ~18-35K ₽/м² для квартир под-ключ.
-    const isApt = room === "apartment";
-    const ratePerM2 = isApt
-      ? 18000 + Math.floor(Math.random() * 17000)
-      : 12000 + Math.floor(Math.random() * 13000);
-    const budget = Math.round((area * ratePerM2) / 10000) * 10000;
-    const durationWeeks = isApt
-      ? 12 + Math.floor(Math.random() * 12) // 12-24
-      : 4 + Math.floor(Math.random() * 6);  // 4-10
-    out.push({
-      room,
-      style,
-      area,
-      budget,
-      durationWeeks,
-      citySlug,
-      isHero: false,
-    });
+// ── City upsert (Volgograd может отсутствовать) ─────────────────────────────
+
+async function ensureCities(): Promise<Map<string, number>> {
+  const usedSlugs = new Set(SPECS.map((s) => s.citySlug));
+  const existing = await db
+    .select({ id: citiesTable.id, slug: citiesTable.slug, name: citiesTable.name })
+    .from(citiesTable);
+  const slugToId = new Map<string, number>();
+  for (const c of existing) {
+    if (c.slug) slugToId.set(c.slug, c.id);
   }
-  return out;
-}
 
-const STANDARD_SPECS = generateStandardSpecs(50);
-
-// ── Anon ID generation (mimic organic distribution) ────────────────────────
-//
-// Hero — каждый дизайн = уникальный «пользователь» (20 unique anon_ids).
-// Standard — миксованный: 35 unique + 5 групп × 3 (повторные пользователи).
-
-function buildAnonIds(specs: DesignSpec[]): string[] {
-  const ids: string[] = [];
-  const heroes = specs.filter((s) => s.isHero);
-  const standards = specs.filter((s) => !s.isHero);
-
-  // 1 hero = 1 unique anon_id
-  for (const _ of heroes) ids.push(randomUUID());
-
-  // Standard: split into "single" + "clustered" groups
-  const singleCount = Math.max(0, standards.length - 15);
-  const clusterCount = Math.min(standards.length - singleCount, 15); // 5 × 3
-  const singles: string[] = Array.from({ length: singleCount }, () => randomUUID());
-  const clusterIds: string[] = [];
-  const numClusters = 5;
-  for (let i = 0; i < numClusters; i++) {
-    const groupId = randomUUID();
-    const groupSize = Math.floor(clusterCount / numClusters);
-    for (let j = 0; j < groupSize; j++) clusterIds.push(groupId);
+  for (const slug of usedSlugs) {
+    if (slugToId.has(slug)) continue;
+    const meta = CITY_DATA[slug];
+    if (!meta) {
+      console.warn(`[seed-ai-designs] Unknown city slug: ${slug} — skipping upsert`);
+      continue;
+    }
+    if (dryRun) {
+      console.log(`  [dry-run] would upsert city: ${slug} (${meta.name})`);
+      slugToId.set(slug, -1);
+      continue;
+    }
+    // Try to find by name (existing CRM rows have name but no slug).
+    const byName = existing.find((c) => c.name === meta.name);
+    if (byName) {
+      await pool.query(
+        "UPDATE cities SET slug = $1, name_in = $2, region = $3 WHERE id = $4",
+        [slug, meta.nameIn, meta.region, byName.id],
+      );
+      slugToId.set(slug, byName.id);
+      console.log(`  ✓ updated city slug for ${meta.name}: ${slug}`);
+    } else {
+      const [created] = await db
+        .insert(citiesTable)
+        .values({
+          name: meta.name,
+          slug,
+          nameIn: meta.nameIn,
+          region: meta.region,
+          timezone: "Europe/Moscow",
+          isActive: true,
+        })
+        .returning({ id: citiesTable.id });
+      if (created) {
+        slugToId.set(slug, created.id);
+        console.log(`  ✓ created city: ${meta.name} (${slug})`);
+      }
+    }
   }
-  // Pad if remainder
-  while (singles.length + clusterIds.length < standards.length) singles.push(randomUUID());
-
-  ids.push(...singles, ...clusterIds);
-  return ids;
-}
-
-// ── Slug builder ────────────────────────────────────────────────────────────
-function buildSlug(room: string, style: string): string {
-  const suffix = randomUUID().replace(/-/g, "").slice(0, 8);
-  return `${room.replace(/_/g, "-")}-${style}-${suffix}`;
+  return slugToId;
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const allSpecs: DesignSpec[] = [];
-  if (mode === "all" || mode === "hero") allSpecs.push(...HERO_SPECS);
-  if (mode === "all" || mode === "standard") allSpecs.push(...STANDARD_SPECS);
+  const specs = limit ? SPECS.slice(0, limit) : SPECS;
 
-  const anonIds = buildAnonIds(allSpecs);
-
-  // Resolve city slugs → IDs. Тянем все cities одним запросом (их немного,
-  // <100), фильтруем в JS — избегаем drizzle-orm direct import (нет в
-  // scripts/package.json deps).
-  const usedCitySlugs = new Set(
-    allSpecs.map((s) => s.citySlug).filter((s): s is string => Boolean(s)),
-  );
-  const allCities = usedCitySlugs.size > 0
-    ? await db.select({ id: citiesTable.id, slug: citiesTable.slug }).from(citiesTable)
-    : [];
-  const citySlugToId = new Map<string, number>();
-  for (const c of allCities) {
-    if (c.slug && usedCitySlugs.has(c.slug)) citySlugToId.set(c.slug, c.id);
-  }
-
-  console.log(`[seed-ai-designs] Resolved cities: ${citySlugToId.size}/${usedCitySlugs.size}`);
-
-  // Print plan
-  console.log(`\n[seed-ai-designs] Plan: ${allSpecs.length} designs (${HERO_SPECS.length} hero + ${STANDARD_SPECS.length} standard)`);
-  console.log(`  Cost: ~$${(allSpecs.length * 0.05).toFixed(2)} в Fal.ai + ~$${(allSpecs.length * 0.001).toFixed(2)} в OpenAI`);
-  console.log(`  Время: ~${Math.ceil((allSpecs.length * 30) / 60)} min wall time (worker processes ~1 каждые 5-30s)`);
+  console.log(`[seed-ai-designs] Plan: ${specs.length} designs`);
+  const handwritten = specs.filter((s) => s.seedContent).length;
+  console.log(`  • handwritten content: ${handwritten}`);
+  console.log(`  • AI-generated content: ${specs.length - handwritten}`);
+  const estCost = specs.length * 0.13; // 5 images × ~$0.025
+  console.log(`  • est. Fal.ai cost: $${estCost.toFixed(2)}`);
 
   if (dryRun) {
-    console.log("\n[seed-ai-designs] DRY RUN — no DB writes. Sample plan (first 5):");
-    for (const spec of allSpecs.slice(0, 5)) {
-      console.log(`  • ${spec.room} ${spec.style} ${spec.area}m² ${spec.budget}₽ ${spec.durationWeeks}w ${spec.citySlug ?? "—"} hero=${spec.isHero}`);
+    console.log("\nFirst 3 specs:");
+    for (const s of specs.slice(0, 3)) {
+      console.log(`  ${s.seedKey}: ${s.room}/${s.style} ${s.area}m² ${s.budget}₽ — ${s.district}, ${s.citySlug}${s.seedContent ? " [HW]" : ""}`);
     }
-    console.log("\n[seed-ai-designs] To apply: re-run with --apply flag.");
-    process.exit(0);
+    console.log("\n[seed-ai-designs] DRY RUN — re-run with --apply to insert.");
+    return;
   }
 
-  // Apply mode — INSERT all rows.
-  console.log(`\n[seed-ai-designs] Inserting ${allSpecs.length} designs into DB...`);
-  let inserted = 0;
-  let failed = 0;
-  for (let i = 0; i < allSpecs.length; i++) {
-    const spec = allSpecs[i]!;
-    const anonId = anonIds[i]!;
-    const cityId = spec.citySlug ? citySlugToId.get(spec.citySlug) ?? null : null;
-    const slug = buildSlug(spec.room, spec.style);
+  console.log("\n[seed-ai-designs] Resolving cities…");
+  const cityMap = await ensureCities();
+
+  console.log(`\n[seed-ai-designs] Inserting ${specs.length} designs…`);
+  let ok = 0;
+  let fail = 0;
+  for (const spec of specs) {
+    const cityId = cityMap.get(spec.citySlug) ?? null;
+    if (cityId === null) {
+      console.warn(`  ✗ ${spec.seedKey}: city ${spec.citySlug} not resolved — skipping`);
+      fail++;
+      continue;
+    }
+    const suffix = randomUUID().replace(/-/g, "").slice(0, 8);
+    const slug = buildSlug(spec, suffix);
+    const anonId = randomUUID();
 
     try {
       await db.insert(designsTable).values({
@@ -252,30 +292,38 @@ async function main() {
         roomType: spec.room,
         style: spec.style,
         cityId,
+        district: spec.district,
         area: spec.area.toString(),
         budget: spec.budget,
         durationWeeks: spec.durationWeeks,
-        // text2img mode — worker генерит без init image
-        inputImageUrl: null,
+        inputImageUrl: null, // text2img — worker сам сгенерит «Было»
+        // Если есть handwritten content — сразу записываем, worker
+        // увидит hasSeedContent и не вызовет AI text gen.
+        h1: spec.seedContent?.h1,
+        seoTitle: spec.seedContent?.seoTitle,
+        seoDescription: spec.seedContent?.seoDescription,
+        description: spec.seedContent?.description,
+        materials: spec.seedContent?.materials,
+        estimate: spec.seedContent?.estimate,
+        solutions: spec.seedContent?.solutions,
         status: "generating",
       });
-      inserted++;
-      if (inserted % 10 === 0) {
-        console.log(`  ✓ inserted ${inserted}/${allSpecs.length}`);
-      }
+      ok++;
+      console.log(`  ✓ ${spec.seedKey}: /dizajn/${slug}`);
     } catch (e) {
-      failed++;
-      console.error(`  ✗ failed ${spec.room}-${spec.style}-${spec.area}: ${e instanceof Error ? e.message : String(e)}`);
+      fail++;
+      console.error(`  ✗ ${spec.seedKey}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  console.log(`\n[seed-ai-designs] Done. Inserted: ${inserted}, failed: ${failed}.`);
-  console.log(`[seed-ai-designs] Worker will process pending designs over the next ~${Math.ceil((inserted * 30) / 60)} minutes.`);
-  console.log(`[seed-ai-designs] Monitor via: SELECT status, count(*) FROM designs GROUP BY status;`);
-  process.exit(0);
+  console.log(`\n[seed-ai-designs] Done. ok=${ok} fail=${fail}.`);
+  console.log(`[seed-ai-designs] Worker процессит ~30s/проект — итого ~${Math.ceil(ok * 0.5)} мин.`);
+  console.log(`[seed-ai-designs] Monitor: SELECT status, count(*) FROM designs WHERE id > (SELECT max(id)-${ok} FROM designs) GROUP BY status;`);
 }
 
-main().catch((e) => {
-  console.error("[seed-ai-designs] fatal:", e);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((e) => {
+    console.error("[seed-ai-designs] fatal:", e);
+    process.exit(1);
+  });
