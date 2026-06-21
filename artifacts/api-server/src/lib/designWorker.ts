@@ -244,28 +244,41 @@ function buildIsometricPrompt(room: string, style: string, area: number | null):
 }
 
 /**
- * Промпт для одного коллажа 2×2 grid через gpt-image-1.5. Один вызов
- * генерит весь moodboard — модель умеет multi-panel композицию с identity
- * preservation, поэтому все 4 ракурса показывают ОДНУ И ТУ ЖЕ комнату с
- * одинаковой палитрой/материалами/освещением. Затем sharp разрезает на
- * 4 квадранта.
+ * Промпт-эталон от пользователя для создания дизайн-проекта-инфографики
+ * через gpt-image-1.5 (модель что у ChatGPT). Один вызов генерит ВЕСЬ
+ * проект как одно изображение: 4-6 ракурсов + 3D-план + смета + материалы
+ * + палитра + крупные планы мебели — как ChatGPT-референс.
+ *
+ * Меняется только {styleClause} (стиль) и {budget} (бюджет в рублях).
+ * Комната, площадь, объекты мебели и т.д. — фиксированный текст для
+ * спальни (юзеровский эталон). Для других room types нужен отдельный
+ * шаблон (kitchen / bathroom / ...).
  */
-function buildMoodboardPrompt(room: string, style: string, area: number | null): string {
-  const styleDesc = STYLE_DESCRIPTORS[style] ?? style;
-  const subjects = ROOM_VIEW_SUBJECTS[room] ?? ROOM_VIEW_SUBJECTS.bedroom!;
-  const areaPart = area ? ` ${area} sqm` : "";
-  const roomNoun = room.replace(/_/g, " ");
+function buildDesignBoardPrompt(style: string, budget: number | null): string {
+  const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
+  const budgetText = budget ? `до ${budget.toLocaleString("ru-RU")} рублей` : "до 200 000 рублей";
   return [
-    `Interior design moodboard with 2x2 grid layout showing the SAME ${styleDesc} ${roomNoun}${areaPart} apartment from 4 different camera angles in one image.`,
-    `All four panels show the exact same room — same walls, same materials, same color palette, same lighting — only the camera angle changes.`,
-    `Top-left panel: ${subjects[0]}.`,
-    `Top-right panel: ${subjects[1]}.`,
-    `Bottom-left panel: ${subjects[2]}.`,
-    `Bottom-right panel: ${subjects[3]}.`,
-    `Subtle thin white border separating each panel.`,
-    RENDER_SUFFIX,
+    `Создай полноценный дизайн-проект спальни площадью 14–16 м² для квартиры в России.`,
+    `Стиль: ${styleClause}.`,
+    `Бюджет реализации: ${budgetText} на ремонт, мебель и освещение.`,
+    `Покажи проект в нескольких ракурсах: 1. Общий вид спальни от входа. 2. Вид на кровать и акцентную стену. 3. Вид на шкаф и систему хранения. 4. Вид возле окна. 5. Вид сверху с расстановкой мебели. 6. 3D-планировку помещения.`,
+    `В интерьере использовать: двуспальную кровать; прикроватные тумбы; встроенный шкаф; рабочее место у окна; мягкое теплое освещение; светлые стены; натуральное дерево; практичные материалы, доступные в России.`,
+    `Дополнительно покажи: примерную смету реализации; площадь помещения; рекомендуемые материалы; основные цвета интерьера; сроки реализации ремонта.`,
+    `Визуализация должна выглядеть как реальный реализуемый проект, а не дорогой дизайнерский концепт.`,
+    `Фотореализм, интерьерная съемка, wide angle, ultra realistic, architectural visualization, multiple camera angles, professional interior design, high detail, realistic lighting, real apartment, Russian market materials, affordable renovation, 4K.`,
   ].join(" ");
 }
+
+/** RU описания стилей для подстановки в промпт. */
+const STYLE_RU_CLAUSES: Record<string, string> = {
+  modern: "современный минимализм с элементами скандинавского",
+  scandinavian: "скандинавский минимализм со светлыми тонами",
+  loft: "индустриальный лофт с натуральным деревом и металлом",
+  minimalism: "минимализм с акцентом на функциональность",
+  neoclassic: "современная неоклассика с лепниной и натуральным деревом",
+  japandi: "современный минимализм с элементами Japandi",
+  classic: "современная классика с натуральными материалами",
+};
 
 /**
  * 6 detail-crops: какие куски из коллажа вырезать. Координаты в
@@ -517,7 +530,7 @@ async function processDesign(designId: number): Promise<void> {
     && Array.isArray(design.solutions) && design.solutions.length > 0;
 
   console.log(
-    `[designWorker] design ${design.id}: ${isSeedMode ? "gpt-image-1.5 collage 2x2 + sharp slicing + 3D-isometric" : "img2img × 4 from user upload"}`
+    `[designWorker] design ${design.id}: ${isSeedMode ? "gpt-image-1.5 single-call full design board (1024x1536 medium)" : "img2img × 4 from user upload"}`
     + (hasSeedContent ? " (seed content — skipping AI text gen)" : " + AI content"),
   );
 
@@ -562,116 +575,57 @@ async function processDesign(designId: number): Promise<void> {
   const views: DesignView[] = [];
   let mainResultPublicUrl: string | null = null;
   let mainImageBuffer: Buffer | null = null;
-  let collageBuffer: Buffer | null = null;
 
   if (isSeedMode) {
-    // ── 2.1. Один gpt-image-1.5 вызов для коллажа 2×2 (4 ракурса). ──
-    // Эта модель — DALL-E 3 successor, умеет multi-panel композицию с
-    // identity preservation: все 4 ракурса = ОДНА И ТА ЖЕ комната с
-    // одинаковыми материалами/палитрой/освещением, разные углы.
-    console.log(`[designWorker] design ${design.id}: generating 2x2 collage (gpt-image-1.5, 1536x1024 medium)`);
-    const moodboardPrompt = buildMoodboardPrompt(design.roomType, design.style, areaNum);
-    const collageResult = await falGenerateGptImage({
-      prompt: moodboardPrompt,
-      imageSize: "1536x1024",
+    // ── 2.1. Один gpt-image-1.5 вызов = весь дизайн-проект как ОДНА
+    //         большая инфографика (4-6 ракурсов + 3D-план + смета +
+    //         материалы + палитра + кропы), как ChatGPT-референс.
+    //         Меняются только стиль и бюджет в промпте.
+    console.log(`[designWorker] design ${design.id}: generating full design board (gpt-image-1.5, 1024x1536 medium)`);
+    const boardPrompt = buildDesignBoardPrompt(design.style, design.budget);
+    const boardResult = await falGenerateGptImage({
+      prompt: boardPrompt,
+      imageSize: "1024x1536",
       quality: "medium",
     });
-    collageBuffer = await downloadImage(collageResult.imageUrl);
+    const boardBuffer = await downloadImage(boardResult.imageUrl);
 
+    const filename = `${design.id}_board.jpg`;
+    const r2Key = `dizajn/results/${filename}`;
+    const publicUrl = await uploadJpegToR2(bucketId, r2Key, boardBuffer);
+
+    views.push({ url: publicUrl, label: "Дизайн-проект", position: 1 });
+    mainResultPublicUrl = publicUrl;
+    mainImageBuffer = boardBuffer;
+
+    await db.insert(designImagesTable).values({
+      designId: design.id,
+      type: "view_1",
+      url: publicUrl,
+      width: boardResult.width,
+      height: boardResult.height,
+      sortOrder: 0,
+    });
     await db.insert(designGenerationsTable).values({
       designId: design.id,
       provider: "fal-ai",
       model: process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5",
-      prompt: moodboardPrompt,
+      prompt: boardPrompt,
       roomType: design.roomType,
       style: design.style,
       status: "success",
-      costKopeks: collageResult.costKopeks,
+      costKopeks: boardResult.costKopeks,
       providerResponse: {
-        generationMs: collageResult.generationMs,
-        view: "collage-2x2",
-        mode: "text2img-collage",
-        imageSize: `${collageResult.width}x${collageResult.height}`,
+        generationMs: boardResult.generationMs,
+        view: "design_board",
+        mode: "text2img-full-board",
+        imageSize: `${boardResult.width}x${boardResult.height}`,
       },
       completedAt: new Date(),
     });
-
-    // ── 2.2. Sharp нарезает коллаж на 4 view'а: top-left=общий,
-    //         top-right=акцент, bottom-left=шкаф, bottom-right=окно.
-    for (let i = 0; i < 4; i++) {
-      const buf = await cropQuadrant(collageBuffer, i as 0 | 1 | 2 | 3);
-      const position = i + 1;
-      const filename = `${design.id}_view_${position}.jpg`;
-      const r2Key = `dizajn/results/${filename}`;
-      const publicUrl = await uploadJpegToR2(bucketId, r2Key, buf);
-
-      views.push({ url: publicUrl, label: VIEW_LABELS[i]!, position });
-
-      await db.insert(designImagesTable).values({
-        designId: design.id,
-        type: `view_${position}`,
-        url: publicUrl,
-        width: 1024,
-        height: 768,
-        sortOrder: i,
-      });
-
-      if (i === 0) {
-        mainResultPublicUrl = publicUrl;
-        mainImageBuffer = buf;
-      }
-    }
-
-    // ── 2.3. View 5 — 3D-isometric план через gpt-image-1.5. ──────────
-    console.log(`[designWorker] design ${design.id}: generating view 5 — 3D isometric (gpt-image-1.5, 1024x1024 medium)`);
-    try {
-      const isoPrompt = buildIsometricPrompt(design.roomType, design.style, areaNum);
-      const isometricResult = await falGenerateGptImage({
-        prompt: isoPrompt,
-        imageSize: "1024x1024",
-        quality: "medium",
-      });
-      const isoSourceBuffer = await downloadImage(isometricResult.imageUrl);
-      const isoBuffer = await scaleIsometricToView(isoSourceBuffer);
-      const isoFilename = `${design.id}_isometric.jpg`;
-      const isoR2Key = `dizajn/isometric/${isoFilename}`;
-      const isoPublicUrl = await uploadJpegToR2(bucketId, isoR2Key, isoBuffer);
-
-      views.push({ url: isoPublicUrl, label: VIEW_LABELS[4]!, position: 5 });
-
-      await db.insert(designImagesTable).values({
-        designId: design.id,
-        type: "view_5_isometric",
-        url: isoPublicUrl,
-        width: 1024,
-        height: 768,
-        sortOrder: 4,
-      });
-      await db.insert(designGenerationsTable).values({
-        designId: design.id,
-        provider: "fal-ai",
-        model: process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5",
-        prompt: isoPrompt,
-        roomType: design.roomType,
-        style: design.style,
-        status: "success",
-        costKopeks: isometricResult.costKopeks,
-        providerResponse: {
-          generationMs: isometricResult.generationMs,
-          view: "view_5_isometric",
-          mode: "text2img-isometric",
-          imageSize: `${isometricResult.width}x${isometricResult.height}`,
-        },
-        completedAt: new Date(),
-      });
-    } catch (e) {
-      // Non-fatal: если isometric не удался — оставляем 4 view'а.
-      console.error("[designWorker] isometric render failed (non-fatal):", e instanceof Error ? e.message : e);
-    }
   } else {
     // ── User-upload: img2img × 4 от user-фото. Сохраняет геометрию
-    //    реальной комнаты пользователя. View 5 (isometric) не генерится —
-    //    оригинальной планировки не знаем точно.
+    //    реальной комнаты пользователя.
     const falInputUrl = await signR2(bucketId, beforeKey);
     console.log(`[designWorker] design ${design.id}: generating 4 views (img2img × 4 from user upload)`);
 
@@ -742,26 +696,27 @@ async function processDesign(designId: number): Promise<void> {
   // ── 3. Ждём AI-text generation. ─────────────────────────────────────────
   const content = await contentPromise;
 
-  // ── 4. 6 detail-crops через sharp из коллажа. ─────────────────────────
-  // Источник: full коллаж 2×2 (для seed) — crops показывают конкретные
-  // panel'ы и их детали. Для user-upload — view 1 (hero crop).
-  console.log(`[designWorker] design ${design.id}: generating 6 detail crops (sharp)`);
+  // ── 4. 6 detail-crops через sharp (только для user-upload). ───────────
+  // Для seed-mode весь дизайн-проект уже одно изображение-инфографика
+  // (включая крупные планы мебели в нижнем ряду коллажа), поэтому
+  // отдельных crops не нужно — оставляем пустой массив.
+  console.log(`[designWorker] design ${design.id}: ${isSeedMode ? "skipping crops (board image already includes furniture details)" : "generating 6 detail crops (sharp)"}`);
   const detailCrops: DesignDetailCrop[] = [];
-  const cropSource = collageBuffer ?? mainImageBuffer;
-  const cropLabels = ROOM_CROP_LABELS[design.roomType] ?? FALLBACK_CROP_LABELS;
+  if (!isSeedMode && mainImageBuffer) {
+    const cropLabels = ROOM_CROP_LABELS[design.roomType] ?? FALLBACK_CROP_LABELS;
+    for (let i = 0; i < CROP_SPECS.length; i++) {
+      const spec = CROP_SPECS[i]!;
+      const cropBuffer = await cropDetailFromPanorama(mainImageBuffer, spec);
+      const filename = `${design.id}_crop_${i + 1}.jpg`;
+      const r2Key = `dizajn/crops/${filename}`;
+      const publicUrl = await uploadJpegToR2(bucketId, r2Key, cropBuffer);
 
-  for (let i = 0; i < CROP_SPECS.length; i++) {
-    const spec = CROP_SPECS[i]!;
-    const cropBuffer = await cropDetailFromPanorama(cropSource, spec);
-    const filename = `${design.id}_crop_${i + 1}.jpg`;
-    const r2Key = `dizajn/crops/${filename}`;
-    const publicUrl = await uploadJpegToR2(bucketId, r2Key, cropBuffer);
-
-    detailCrops.push({
-      url: publicUrl,
-      label: cropLabels[i]!,
-      fromView: 1,
-    });
+      detailCrops.push({
+        url: publicUrl,
+        label: cropLabels[i]!,
+        fromView: 1,
+      });
+    }
   }
 
   // ── 5. Цветовая палитра из главного ракурса. ───────────────────────────
