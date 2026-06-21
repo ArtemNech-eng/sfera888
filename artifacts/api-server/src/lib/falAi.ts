@@ -294,6 +294,100 @@ export async function falGenerateGptImage(input: {
 }
 
 /**
+ * GPT Image 1.5 (edit-image) через Fal.ai — image-to-image с reference
+ * картинкой(ами). Ключевое для нашего pipeline: даёт identity preservation
+ * между разными ракурсами одной комнаты — view 1 генерится text-to-image,
+ * views 2/3/4 генерятся edit-image с reference=[view1] чтобы материалы /
+ * мебель / палитра выглядели как в референсе.
+ *
+ * Endpoint: `fal-ai/gpt-image-1.5/edit`
+ * Schema:
+ *   • prompt (required)
+ *   • image_urls: list<string> (required, 1+ reference images)
+ *   • image_size: same enum as text-to-image
+ *   • quality: low/medium/high
+ *   • input_fidelity: "low" | "high" — how strictly to follow reference
+ *   • output_format: jpeg/png/webp
+ */
+export async function falGenerateGptImageEdit(input: {
+  prompt: string;
+  imageUrls: string[];
+  imageSize?: "auto" | "1024x1024" | "1536x1024" | "1024x1536";
+  quality?: "auto" | "low" | "medium" | "high";
+  inputFidelity?: "low" | "high";
+}): Promise<FalGenerationResult> {
+  const apiKey = process.env.FAL_API_KEY;
+  if (!apiKey) {
+    throw new Error("FAL_API_KEY is not set");
+  }
+  const baseModel = process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5";
+  const model = `${baseModel}/edit`;
+  const url = `${FAL_BASE_URL}/${model}`;
+  const imageSize = input.imageSize ?? "1024x1024";
+  const quality = input.quality ?? "medium";
+
+  const body: Record<string, unknown> = {
+    prompt: input.prompt,
+    image_urls: input.imageUrls,
+    image_size: imageSize,
+    quality,
+    input_fidelity: input.inputFidelity ?? "high",
+    output_format: "jpeg",
+    num_images: 1,
+  };
+
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(`Fal.ai gpt-image-edit network error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Fal.ai gpt-image-edit HTTP ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const data = (await response.json()) as {
+    images?: Array<{ url: string; width?: number; height?: number }>;
+  };
+
+  if (!data.images || data.images.length === 0) {
+    throw new Error("Fal.ai gpt-image-edit returned no images");
+  }
+
+  // Edit endpoint cost = output cost (same as text-to-image) + input image
+  // tokens. Approximation: same as text2img + small input overhead.
+  const costMap: Record<string, number> = {
+    "1024x1024": 340,
+    "1536x1024": 500,
+    "1024x1536": 510,
+    auto: 510,
+  };
+  const baseCostKopeks = costMap[imageSize] ?? 500;
+  const qualityMultiplier = quality === "high" ? 4 : quality === "low" ? 0.3 : 1;
+  // +30 kop примерно за 1 input image high fidelity (~3050 tokens × $0.008/1k)
+  const inputOverhead = (input.inputFidelity === "high" ? 30 : 5) * input.imageUrls.length;
+
+  const first = data.images[0]!;
+  return {
+    imageUrl: first.url,
+    width: first.width ?? 1024,
+    height: first.height ?? 1024,
+    generationMs: Date.now() - startedAt,
+    costKopeks: Math.round(baseCostKopeks * qualityMultiplier + inputOverhead),
+  };
+}
+
+/**
  * Text-to-image вызов Fal.ai (без init image). Используется seed-скриптом
  * для генерации starter-designs без user-upload, а также если в будущем
  * добавим «генерация без фото» в публичную форму.

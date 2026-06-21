@@ -36,10 +36,11 @@ import {
 import { and, eq, lt } from "drizzle-orm";
 import sharp from "sharp";
 import { objectStorageClient, signObjectURL } from "./objectStorage.js";
-import { falGenerate, falGenerateText, falGenerateGptImage, downloadImage } from "./falAi.js";
+import { falGenerate, falGenerateText, falGenerateGptImage, falGenerateGptImageEdit, downloadImage } from "./falAi.js";
 import { generateDesignContent } from "./designContent.js";
 import { extractPalette } from "./colorExtraction.js";
 import { pingIndexNow } from "./indexNow.js";
+import { composeInfographic, type InfographicInput } from "./infographicComposer.js";
 
 const TICK_INTERVAL_MS = 5000;
 const STUCK_TIMEOUT_MIN = 10;
@@ -244,29 +245,40 @@ function buildIsometricPrompt(room: string, style: string, area: number | null):
 }
 
 /**
- * Промпт-эталон от пользователя для создания дизайн-проекта-инфографики
- * через gpt-image-1.5 (модель что у ChatGPT). Один вызов генерит ВЕСЬ
- * проект как одно изображение: 4-6 ракурсов + 3D-план + смета + материалы
- * + палитра + крупные планы мебели — как ChatGPT-референс.
- *
- * Меняется только {styleClause} (стиль) и {budget} (бюджет в рублях).
- * Комната, площадь, объекты мебели и т.д. — фиксированный текст для
- * спальни (юзеровский эталон). Для других room types нужен отдельный
- * шаблон (kitchen / bathroom / ...).
+ * Промпт для photo 1 (общий вид от двери) — text-to-image вызов hero
+ * фото. Высокое качество, базовый стиль и материалы определяются здесь —
+ * остальные ракурсы edit-image на основе этого фото.
  */
-function buildDesignBoardPrompt(style: string, budget: number | null): string {
+function buildHeroPhotoPrompt(room: string, style: string, area: number | null): string {
   const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
-  const budgetText = budget ? `до ${budget.toLocaleString("ru-RU")} рублей` : "до 200 000 рублей";
-  return [
-    `Создай полноценный дизайн-проект спальни площадью 14–16 м² для квартиры в России.`,
-    `Стиль: ${styleClause}.`,
-    `Бюджет реализации: ${budgetText} на ремонт, мебель и освещение.`,
-    `Покажи проект в нескольких ракурсах: 1. Общий вид спальни от входа. 2. Вид на кровать и акцентную стену. 3. Вид на шкаф и систему хранения. 4. Вид возле окна. 5. Вид сверху с расстановкой мебели. 6. 3D-планировку помещения.`,
-    `В интерьере использовать: двуспальную кровать; прикроватные тумбы; встроенный шкаф; рабочее место у окна; мягкое теплое освещение; светлые стены; натуральное дерево; практичные материалы, доступные в России.`,
-    `Дополнительно покажи: примерную смету реализации; площадь помещения; рекомендуемые материалы; основные цвета интерьера; сроки реализации ремонта.`,
-    `Визуализация должна выглядеть как реальный реализуемый проект, а не дорогой дизайнерский концепт.`,
-    `Фотореализм, интерьерная съемка, wide angle, ultra realistic, architectural visualization, multiple camera angles, professional interior design, high detail, realistic lighting, real apartment, Russian market materials, affordable renovation, 4K.`,
-  ].join(" ");
+  const areaPart = area ? `, площадь ${area} м²` : "";
+  if (room === "bedroom") {
+    return [
+      `Реалистичная интерьерная фотография спальни${areaPart} в стиле «${styleClause}» в обычной квартире в России.`,
+      `Ракурс: общий вид от входа в комнату, широкоугольный кадр на уровне глаз, видна вся планировка.`,
+      `В кадре: двуспальная кровать с мягким изголовьем по центру, прикроватные тумбы по бокам, встроенный шкаф вдоль одной стены, рабочее место со столом и стулом у окна, мягкий ковёр под кроватью.`,
+      `Светлые стены, натуральное дерево, тёплое мягкое освещение, точечные светильники, бра у кровати.`,
+      `Реалистичная интерьерная съёмка для каталога, без людей, без подписей, без водяных знаков, фотореализм 4K, Architectural Digest quality.`,
+    ].join(" ");
+  }
+  // Generic fallback for other room types
+  return `Реалистичная интерьерная фотография ${room} в стиле «${styleClause}»${areaPart}, общий вид от входа, фотореализм 4K, без людей, без текста.`;
+}
+
+/** Описания 3 дополнительных ракурсов для edit-image вызовов с reference=hero. */
+const ANGLE_PROMPTS_BEDROOM: [string, string, string] = [
+  // view 2: вид на кровать и акцентную стену
+  "Та же спальня, та же палитра, те же материалы. Покажи её с другого ракурса: фронтальный вид на кровать и акцентную стену с рейками или декоративной отделкой над изголовьем. Прикроватные тумбы с лампами, декоративные подушки, без людей, фотореализм.",
+  // view 3: вид на шкаф и систему хранения
+  "Та же спальня, тот же стиль и материалы. Покажи её с третьего ракурса: вид на встроенный шкаф вдоль стены — двери шкафа в натуральном дереве, открытые полки с книгами и декором, дверь комнаты в кадре. Без людей, фотореализм.",
+  // view 4: вид возле окна
+  "Та же спальня, идентичная палитра и материалы. Покажи её с четвёртого ракурса: вид возле окна с рабочим местом — стол с растением, стул, тонкие шторы, мягкий дневной свет, край кровати в углу кадра. Без людей, фотореализм.",
+];
+
+function buildAnglePrompt(room: string, idx: 0 | 1 | 2): string {
+  if (room === "bedroom") return ANGLE_PROMPTS_BEDROOM[idx];
+  // Generic fallback
+  return `Та же ${room}, тот же стиль, материалы и палитра. Покажи её с другого ракурса: ${["фронтальный вид на главную мебель", "вид на зону хранения", "вид у окна"][idx]}. Без людей, фотореализм.`;
 }
 
 /** RU описания стилей для подстановки в промпт. */
@@ -281,38 +293,35 @@ const STYLE_RU_CLAUSES: Record<string, string> = {
 };
 
 /**
- * 6 detail-crops: какие куски из коллажа вырезать. Координаты в
- * относительных долях ширины/высоты коллажа (0-1), чтобы работало для
- * любого размера. Coords указывают на конкретные panel'ы в 2×2 grid.
+ * 6 detail-crops: координаты zoom-кропов из конкретных views (1024×1024).
+ * Каждый указывает откуда (viewPos) и какой регион вырезать.
  */
 interface CropSpec {
-  /** Центр crop'а в долях от ширины (0=left, 1=right). */
+  /** Из какого view вырезать (1..4). */
+  viewPos: 1 | 2 | 3 | 4;
+  /** Центр crop'а в долях от ширины source (0=left, 1=right). */
   cx: number;
-  /** Центр crop'а в долях от высоты (0=top, 1=bottom). */
+  /** Центр crop'а в долях от высоты source (0=top, 1=bottom). */
   cy: number;
-  /** Размер crop'а в долях от высоты (квадратный, 0.5 = половина высоты). */
+  /** Размер crop'а в долях от высоты source. */
   size: number;
 }
 
-// 6 crops по разным частям 2×2 коллажа — center каждого panel + 2 zoom'а
-// в самые «детальные» области.
+// 6 crops per bedroom — конкретные мебельные объекты:
+// 1=кровать(view 2 центр), 2=тумба(view 2 right), 3=шкаф(view 3 центр),
+// 4=стол(view 4 right), 5=бра(view 2 верх), 6=светильник(view 1 потолок).
 const CROP_SPECS: CropSpec[] = [
-  { cx: 0.25, cy: 0.25, size: 0.40 }, // top-left center (главный объект)
-  { cx: 0.75, cy: 0.25, size: 0.40 }, // top-right center (детали кровати/акцент)
-  { cx: 0.25, cy: 0.75, size: 0.40 }, // bottom-left center (шкаф/хранение)
-  { cx: 0.75, cy: 0.75, size: 0.40 }, // bottom-right center (окно/workspace)
-  { cx: 0.65, cy: 0.20, size: 0.25 }, // zoom: акцент (top-right inset)
-  { cx: 0.30, cy: 0.80, size: 0.25 }, // zoom: текстура (bottom-left inset)
+  { viewPos: 2, cx: 0.50, cy: 0.55, size: 0.50 }, // кровать с изголовьем
+  { viewPos: 2, cx: 0.20, cy: 0.65, size: 0.32 }, // прикроватная тумба
+  { viewPos: 3, cx: 0.50, cy: 0.50, size: 0.55 }, // встроенный шкаф
+  { viewPos: 4, cx: 0.55, cy: 0.55, size: 0.45 }, // рабочий стол
+  { viewPos: 2, cx: 0.55, cy: 0.30, size: 0.25 }, // бра у кровати
+  { viewPos: 1, cx: 0.50, cy: 0.18, size: 0.22 }, // потолочные светильники
 ];
 
-/**
- * Подписи к 6 кропам по типу комнаты — конкретные объекты мебели.
- * Соответствует визуальной структуре 2×2 коллажа: top-left=общий план,
- * top-right=кровать/диван/ванна, bottom-left=шкаф/гарнитур,
- * bottom-right=окно/workspace.
- */
+/** Подписи к 6 кропам — для bedroom фиксированный набор. */
 const ROOM_CROP_LABELS: Record<string, [string, string, string, string, string, string]> = {
-  bedroom:     ["Кровать", "Прикроватная тумба", "Встроенный шкаф", "Рабочий стол", "Бра у кровати", "Полки шкафа"],
+  bedroom:     ["Кровать с мягким изголовьем", "Прикроватная тумба", "Встроенный шкаф", "Рабочий стол", "Бра у кровати", "Потолочные светильники"],
   kitchen:     ["Гарнитур", "Фартук и плита", "Хранение", "Обеденный стол", "Декор стены", "Светильник"],
   bathroom:    ["Ванна", "Раковина", "Шкаф для полотенец", "Душ", "Зеркало и сантехника", "Текстура плитки"],
   living_room: ["Диван", "Журнальный столик", "Зона ТВ", "Кресло у окна", "Декор стены", "Освещение"],
@@ -359,21 +368,22 @@ async function signR2(bucketId: string, key: string, ttlSec = 600): Promise<stri
 }
 
 /**
- * Вырезает квадратный crop 768×768 из source-коллажа по относительным
- * координатам (cx, cy, size). Используется для 6 detail-кропов.
+ * Вырезает квадратный crop 768×768 из view-buffer'а по относительным
+ * координатам (cx, cy, size). Используется для 6 detail-кропов из
+ * конкретных views (1024×1024).
  */
-async function cropDetailFromPanorama(
-  panoramaBuffer: Buffer,
+async function cropDetailFromView(
+  viewBuffer: Buffer,
   spec: CropSpec,
 ): Promise<Buffer> {
-  const meta = await sharp(panoramaBuffer).metadata();
-  const W = meta.width ?? 1536;
+  const meta = await sharp(viewBuffer).metadata();
+  const W = meta.width ?? 1024;
   const H = meta.height ?? 1024;
   const sizePx = Math.floor(spec.size * H);
   const left = clamp(Math.floor(spec.cx * W - sizePx / 2), 0, W - sizePx);
   const top = clamp(Math.floor(spec.cy * H - sizePx / 2), 0, H - sizePx);
 
-  return sharp(panoramaBuffer)
+  return sharp(viewBuffer)
     .extract({ left, top, width: sizePx, height: sizePx })
     .resize(768, 768, { fit: "cover" })
     .jpeg({ quality: 86, progressive: true })
@@ -382,49 +392,6 @@ async function cropDetailFromPanorama(
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
-}
-
-/**
- * Вырезает один из 4 квадрантов 2×2 grid коллажа через sharp. Indexing:
- *   0 = top-left  (общий вид)
- *   1 = top-right (акцентная стена)
- *   2 = bottom-left (зона хранения)
- *   3 = bottom-right (у окна)
- *
- * Source — коллаж от gpt-image-1.5. Output 1024×768 (4:3) с cover-fit.
- * Внутренний крошечный inset (~3% от размера квадранта) — чтобы не зацепить
- * белую границу между панелями.
- */
-async function cropQuadrant(collageBuffer: Buffer, index: 0 | 1 | 2 | 3): Promise<Buffer> {
-  const meta = await sharp(collageBuffer).metadata();
-  const W = meta.width ?? 1536;
-  const H = meta.height ?? 1024;
-  const halfW = Math.floor(W / 2);
-  const halfH = Math.floor(H / 2);
-  const insetW = Math.floor(halfW * 0.03);
-  const insetH = Math.floor(halfH * 0.03);
-
-  const left = (index % 2) === 0 ? insetW : halfW + insetW;
-  const top = index < 2 ? insetH : halfH + insetH;
-  const cellW = halfW - insetW * 2;
-  const cellH = halfH - insetH * 2;
-
-  return sharp(collageBuffer)
-    .extract({ left, top, width: cellW, height: cellH })
-    .resize(1024, 768, { fit: "cover" })
-    .jpeg({ quality: 88, progressive: true })
-    .toBuffer();
-}
-
-/**
- * Возвращает 3D-isometric, scaled to 4:3 1024×768. Используется как
- * view 5 в hero gallery + plan section.
- */
-async function scaleIsometricToView(isoBuffer: Buffer): Promise<Buffer> {
-  return sharp(isoBuffer)
-    .resize(1024, 768, { fit: "cover" })
-    .jpeg({ quality: 88, progressive: true })
-    .toBuffer();
 }
 
 /**
@@ -530,7 +497,7 @@ async function processDesign(designId: number): Promise<void> {
     && Array.isArray(design.solutions) && design.solutions.length > 0;
 
   console.log(
-    `[designWorker] design ${design.id}: ${isSeedMode ? "gpt-image-1.5 single-call full design board (1024x1536 medium)" : "img2img × 4 from user upload"}`
+    `[designWorker] design ${design.id}: ${isSeedMode ? "gpt-image-1.5 hero (high) + 3 edits (medium) + isometric + sharp crops + infographic" : "img2img × 4 from user upload"}`
     + (hasSeedContent ? " (seed content — skipping AI text gen)" : " + AI content"),
   );
 
@@ -575,54 +542,157 @@ async function processDesign(designId: number): Promise<void> {
   const views: DesignView[] = [];
   let mainResultPublicUrl: string | null = null;
   let mainImageBuffer: Buffer | null = null;
+  const viewBuffers: Buffer[] = [];
+  let isometricBuffer: Buffer | null = null;
 
   if (isSeedMode) {
-    // ── 2.1. Один gpt-image-1.5 вызов = весь дизайн-проект как ОДНА
-    //         большая инфографика (4-6 ракурсов + 3D-план + смета +
-    //         материалы + палитра + кропы), как ChatGPT-референс.
-    //         Меняются только стиль и бюджет в промпте.
-    console.log(`[designWorker] design ${design.id}: generating full design board (gpt-image-1.5, 1024x1536 medium)`);
-    const boardPrompt = buildDesignBoardPrompt(design.style, design.budget);
-    const boardResult = await falGenerateGptImage({
-      prompt: boardPrompt,
-      imageSize: "1024x1536",
-      quality: "medium",
+    // ── 2.1. View 1 (общий вид от двери) — text-to-image high quality.
+    //         Это reference для views 2/3/4 — они генерятся edit-image
+    //         с image_urls=[view1] для identity preservation (DALL-E
+    //         style — лучше FLUX'а image_prompt в этом).
+    console.log(`[designWorker] design ${design.id}: generating view 1 hero (gpt-image-1.5 high, 1024x1024)`);
+    const heroPrompt = buildHeroPhotoPrompt(design.roomType, design.style, areaNum);
+    const heroResult = await falGenerateGptImage({
+      prompt: heroPrompt,
+      imageSize: "1024x1024",
+      quality: "high",
     });
-    const boardBuffer = await downloadImage(boardResult.imageUrl);
+    const heroBuffer = await downloadImage(heroResult.imageUrl);
+    viewBuffers[0] = heroBuffer;
 
-    const filename = `${design.id}_board.jpg`;
-    const r2Key = `dizajn/results/${filename}`;
-    const publicUrl = await uploadJpegToR2(bucketId, r2Key, boardBuffer);
-
-    views.push({ url: publicUrl, label: "Дизайн-проект", position: 1 });
-    mainResultPublicUrl = publicUrl;
-    mainImageBuffer = boardBuffer;
+    const heroFilename = `${design.id}_view_1.jpg`;
+    const heroR2Key = `dizajn/results/${heroFilename}`;
+    const heroPublicUrl = await uploadJpegToR2(bucketId, heroR2Key, heroBuffer);
+    views.push({ url: heroPublicUrl, label: VIEW_LABELS[0]!, position: 1 });
+    mainResultPublicUrl = heroPublicUrl;
+    mainImageBuffer = heroBuffer;
 
     await db.insert(designImagesTable).values({
       designId: design.id,
       type: "view_1",
-      url: publicUrl,
-      width: boardResult.width,
-      height: boardResult.height,
+      url: heroPublicUrl,
+      width: heroResult.width,
+      height: heroResult.height,
       sortOrder: 0,
     });
     await db.insert(designGenerationsTable).values({
       designId: design.id,
       provider: "fal-ai",
       model: process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5",
-      prompt: boardPrompt,
+      prompt: heroPrompt,
       roomType: design.roomType,
       style: design.style,
       status: "success",
-      costKopeks: boardResult.costKopeks,
+      costKopeks: heroResult.costKopeks,
       providerResponse: {
-        generationMs: boardResult.generationMs,
-        view: "design_board",
-        mode: "text2img-full-board",
-        imageSize: `${boardResult.width}x${boardResult.height}`,
+        generationMs: heroResult.generationMs,
+        view: "view_1_hero",
+        mode: "text2img-high",
+        imageSize: `${heroResult.width}x${heroResult.height}`,
       },
       completedAt: new Date(),
     });
+
+    // ── 2.2. Views 2/3/4 — edit-image medium с reference=hero. ─────────
+    //         Параллельно. input_fidelity=high → строго сохраняет стиль
+    //         палитру и материалы hero, но композицию определяет prompt.
+    console.log(`[designWorker] design ${design.id}: generating views 2/3/4 (gpt-image-1.5 edit medium, reference=view1)`);
+    const followupResults = await Promise.all(
+      [0, 1, 2].map(async (idx) => {
+        const prompt = buildAnglePrompt(design.roomType, idx as 0 | 1 | 2);
+        const result = await falGenerateGptImageEdit({
+          prompt,
+          imageUrls: [heroResult.imageUrl],
+          imageSize: "1024x1024",
+          quality: "medium",
+          inputFidelity: "high",
+        });
+        const buffer = await downloadImage(result.imageUrl);
+        return { idx, prompt, result, buffer };
+      }),
+    );
+
+    for (const { idx, prompt, result, buffer } of followupResults) {
+      const position = idx + 2; // views 2, 3, 4
+      viewBuffers[position - 1] = buffer;
+      const filename = `${design.id}_view_${position}.jpg`;
+      const r2Key = `dizajn/results/${filename}`;
+      const publicUrl = await uploadJpegToR2(bucketId, r2Key, buffer);
+      views.push({ url: publicUrl, label: VIEW_LABELS[position - 1]!, position });
+
+      await db.insert(designImagesTable).values({
+        designId: design.id,
+        type: `view_${position}`,
+        url: publicUrl,
+        width: result.width,
+        height: result.height,
+        sortOrder: position - 1,
+      });
+      await db.insert(designGenerationsTable).values({
+        designId: design.id,
+        provider: "fal-ai",
+        model: `${process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5"}/edit`,
+        prompt,
+        roomType: design.roomType,
+        style: design.style,
+        status: "success",
+        costKopeks: result.costKopeks,
+        providerResponse: {
+          generationMs: result.generationMs,
+          view: `view_${position}`,
+          mode: "edit-image-medium",
+          imageSize: `${result.width}x${result.height}`,
+        },
+        completedAt: new Date(),
+      });
+    }
+
+    // ── 2.3. View 5 — 3D-isometric план (gpt-image-1.5 medium). ──────
+    console.log(`[designWorker] design ${design.id}: generating view 5 — 3D isometric`);
+    try {
+      const isoPrompt = buildIsometricPrompt(design.roomType, design.style, areaNum);
+      const isometricResult = await falGenerateGptImage({
+        prompt: isoPrompt,
+        imageSize: "1024x1024",
+        quality: "medium",
+      });
+      isometricBuffer = await downloadImage(isometricResult.imageUrl);
+      const isoFilename = `${design.id}_isometric.jpg`;
+      const isoR2Key = `dizajn/isometric/${isoFilename}`;
+      const isoPublicUrl = await uploadJpegToR2(bucketId, isoR2Key, isometricBuffer);
+
+      views.push({ url: isoPublicUrl, label: VIEW_LABELS[4]!, position: 5 });
+
+      await db.insert(designImagesTable).values({
+        designId: design.id,
+        type: "view_5_isometric",
+        url: isoPublicUrl,
+        width: isometricResult.width,
+        height: isometricResult.height,
+        sortOrder: 4,
+      });
+      await db.insert(designGenerationsTable).values({
+        designId: design.id,
+        provider: "fal-ai",
+        model: process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5",
+        prompt: isoPrompt,
+        roomType: design.roomType,
+        style: design.style,
+        status: "success",
+        costKopeks: isometricResult.costKopeks,
+        providerResponse: {
+          generationMs: isometricResult.generationMs,
+          view: "view_5_isometric",
+          mode: "text2img-isometric",
+          imageSize: `${isometricResult.width}x${isometricResult.height}`,
+        },
+        completedAt: new Date(),
+      });
+    } catch (e) {
+      // Non-fatal: если isometric не удался — оставляем 4 view'а.
+      console.error("[designWorker] isometric render failed (non-fatal):", e instanceof Error ? e.message : e);
+      isometricBuffer = null;
+    }
   } else {
     // ── User-upload: img2img × 4 от user-фото. Сохраняет геометрию
     //    реальной комнаты пользователя.
@@ -649,6 +719,7 @@ async function processDesign(designId: number): Promise<void> {
     for (let i = 0; i < renderResults.length; i++) {
       const r = renderResults[i]!;
       const buf = await downloadImage(r.imageUrl);
+      viewBuffers[i] = buf;
 
       const filename = `${design.id}_view_${r.position}.jpg`;
       const r2Key = `dizajn/results/${filename}`;
@@ -696,26 +767,72 @@ async function processDesign(designId: number): Promise<void> {
   // ── 3. Ждём AI-text generation. ─────────────────────────────────────────
   const content = await contentPromise;
 
-  // ── 4. 6 detail-crops через sharp (только для user-upload). ───────────
-  // Для seed-mode весь дизайн-проект уже одно изображение-инфографика
-  // (включая крупные планы мебели в нижнем ряду коллажа), поэтому
-  // отдельных crops не нужно — оставляем пустой массив.
-  console.log(`[designWorker] design ${design.id}: ${isSeedMode ? "skipping crops (board image already includes furniture details)" : "generating 6 detail crops (sharp)"}`);
+  // ── 4. 6 detail-crops через sharp из конкретных views. ────────────────
+  console.log(`[designWorker] design ${design.id}: generating 6 detail crops (sharp from views)`);
   const detailCrops: DesignDetailCrop[] = [];
-  if (!isSeedMode && mainImageBuffer) {
-    const cropLabels = ROOM_CROP_LABELS[design.roomType] ?? FALLBACK_CROP_LABELS;
-    for (let i = 0; i < CROP_SPECS.length; i++) {
-      const spec = CROP_SPECS[i]!;
-      const cropBuffer = await cropDetailFromPanorama(mainImageBuffer, spec);
-      const filename = `${design.id}_crop_${i + 1}.jpg`;
-      const r2Key = `dizajn/crops/${filename}`;
-      const publicUrl = await uploadJpegToR2(bucketId, r2Key, cropBuffer);
+  const cropLabels = ROOM_CROP_LABELS[design.roomType] ?? FALLBACK_CROP_LABELS;
+  const cropBuffers: Buffer[] = [];
 
-      detailCrops.push({
-        url: publicUrl,
-        label: cropLabels[i]!,
-        fromView: 1,
+  for (let i = 0; i < CROP_SPECS.length; i++) {
+    const spec = CROP_SPECS[i]!;
+    const sourceBuffer = viewBuffers[spec.viewPos - 1] ?? mainImageBuffer;
+    if (!sourceBuffer) continue;
+    const cropBuffer = await cropDetailFromView(sourceBuffer, spec);
+    cropBuffers.push(cropBuffer);
+    const filename = `${design.id}_crop_${i + 1}.jpg`;
+    const r2Key = `dizajn/crops/${filename}`;
+    const publicUrl = await uploadJpegToR2(bucketId, r2Key, cropBuffer);
+
+    detailCrops.push({
+      url: publicUrl,
+      label: cropLabels[i]!,
+      fromView: spec.viewPos,
+    });
+  }
+
+  // ── 4b. Финальная инфографика — sharp+SVG композиция всех ассетов
+  //         в одно большое изображение типа ChatGPT-референса. Только
+  //         для seed-mode (где есть полный набор assets).
+  let infographicPublicUrl: string | null = null;
+  if (isSeedMode && viewBuffers.length === 4 && isometricBuffer && cropBuffers.length === 6) {
+    try {
+      console.log(`[designWorker] design ${design.id}: composing final infographic (sharp + SVG)`);
+      const composerInput: InfographicInput = {
+        views: [viewBuffers[0]!, viewBuffers[1]!, viewBuffers[2]!, viewBuffers[3]!],
+        isometric: isometricBuffer,
+        detailCrops: [cropBuffers[0]!, cropBuffers[1]!, cropBuffers[2]!, cropBuffers[3]!, cropBuffers[4]!, cropBuffers[5]!],
+        viewLabels: [VIEW_LABELS[0]!, VIEW_LABELS[1]!, VIEW_LABELS[2]!, VIEW_LABELS[3]!],
+        cropLabels: [cropLabels[0]!, cropLabels[1]!, cropLabels[2]!, cropLabels[3]!, cropLabels[4]!, cropLabels[5]!],
+        design: {
+          roomType: design.roomType,
+          area: areaNum,
+          style: design.style,
+          budget: design.budget,
+          durationWeeks: design.durationWeeks,
+          materials: content.materials ?? [],
+          estimate: content.estimate ?? [],
+          colorPalette: design.colorPalette ?? [],
+          solutions: content.solutions ?? [],
+        },
+      };
+      const infographicBuffer = await composeInfographic(composerInput);
+      const infographicFilename = `${design.id}_infographic.jpg`;
+      const infographicR2Key = `dizajn/results/${infographicFilename}`;
+      infographicPublicUrl = await uploadJpegToR2(bucketId, infographicR2Key, infographicBuffer);
+
+      await db.insert(designImagesTable).values({
+        designId: design.id,
+        type: "infographic",
+        url: infographicPublicUrl,
+        width: 2048,
+        height: 1366,
+        sortOrder: -1, // shown first
       });
+
+      // Override mainResultPublicUrl чтобы инфографика стала hero на странице
+      mainResultPublicUrl = infographicPublicUrl;
+    } catch (e) {
+      console.error("[designWorker] infographic composition failed (non-fatal):", e instanceof Error ? e.message : e);
     }
   }
 
