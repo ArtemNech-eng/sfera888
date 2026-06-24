@@ -369,6 +369,7 @@ export default async function DesignSlugPage(
           <DesignBoard
             design={design}
             similar={similar}
+            baseUrl={baseUrl}
             topDownPlanUrl={design.topDownPlanUrl}
             pickedFurniture={design.pickedFurniture}
             currentStep={design.currentStep}

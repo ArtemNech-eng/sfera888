@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { DesignFullDTO, DesignFeedItemDTO, DesignStatus } from "../../lib/types";
-import { publicUrl } from "../../lib/env";
 import { SaveButton } from "./SaveButton";
 import { DesignLeadForm } from "./DesignLeadForm";
 import { ShareButton } from "./ShareButton";
@@ -101,6 +100,12 @@ interface Props {
   design: DesignFullDTO;
   similar?: SimilarBuckets;
   /**
+   * Base public URL (e.g. `https://chestnye-mastera.ru`) passed from the
+   * server component. Avoids importing `lib/env` (server-only) in this
+   * client component.
+   */
+  baseUrl: string;
+  /**
    * Программно отрисованный 2D-план комнаты (Requirement 8). `null`, если
    * шаблонная отрисовка не выполнена для типа помещения; в этом случае
    * блок «Вид сверху» показывает placeholder вместо изображения
@@ -146,6 +151,7 @@ const PIPELINE_STEP_LABELS: Record<string, string> = {
 export function DesignBoard({
   design,
   similar,
+  baseUrl,
   topDownPlanUrl = null,
   pickedFurniture = null,
   currentStep: initialCurrentStep = null,
@@ -289,7 +295,7 @@ export function DesignBoard({
   const roomGen = ROOM_LABELS_GENITIVE[design.roomType] ?? design.roomType;
   const roomNom = ROOM_LABELS_NOMINATIVE[design.roomType] ?? design.roomType;
   const cityIn = design.cityNameIn ?? (design.cityName ? `в ${design.cityName}` : null);
-  const designUrl = `${publicUrl().replace(/\/+$/, "")}/dizajn/${design.slug}`;
+  const designUrl = `${baseUrl.replace(/\/+$/, "")}/dizajn/${design.slug}`;
   const shareTitle = design.h1 ?? `Дизайн ${roomGen} в стиле ${styleLabel}`;
 
   const totalEstimateRub = design.estimate
