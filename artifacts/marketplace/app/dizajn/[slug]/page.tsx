@@ -366,7 +366,14 @@ export default async function DesignSlugPage(
           />
         ) : null}
         {design.status === "completed" ? (
-          <DesignBoard design={design} similar={similar} />
+          <DesignBoard
+            design={design}
+            similar={similar}
+            topDownPlanUrl={design.topDownPlanUrl}
+            pickedFurniture={design.pickedFurniture}
+            currentStep={design.currentStep}
+            designAnonId={design.designAnonId}
+          />
         ) : (
           <DesignBoardPending slug={slug} initialDesign={design} />
         )}

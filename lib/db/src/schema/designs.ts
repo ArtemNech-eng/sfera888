@@ -17,6 +17,8 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { citiesTable } from "./settings";
 import { leadsTable } from "./leads";
+import type { LayoutJson } from "../types/layout";
+import type { PickedFurnitureRow } from "../types/furniture";
 
 /**
  * `designs` — полноценный AI-дизайн-проект интерьера (план §22, AI-designer
@@ -146,6 +148,30 @@ export const designsTable = pgTable(
     leadId: integer("lead_id").references((): AnyPgColumn => leadsTable.id, {
       onDelete: "set null",
     }),
+
+    // ── AI_Design_Product extension (migration 2026-01-15-ai-design-product) ─
+    /**
+     * Layout_JSON: room/door/window/furniture[] (Requirement 6).
+     * Структура — `LayoutJson` из `lib/db/src/types/layout.ts` (чистый тип
+     * без зависимостей от api-server, чтобы избежать циркулярных импортов).
+     */
+    layoutJson: jsonb("layout_json").$type<LayoutJson>(),
+    /** R2 ключ или public URL Top_Down_Plan PNG (Requirement 8.6). */
+    topDownPlanUrl: text("top_down_plan_url"),
+    /**
+     * `PickedFurnitureRow[]` — результат `Furniture_Matcher` (Requirement 10.6),
+     * хранится как массив подобранных SKU в порядке, согласованном с
+     * `layoutJson.furniture[]`.
+     */
+    pickedFurniture: jsonb("picked_furniture").$type<PickedFurnitureRow[]>(),
+    /** Прогресс пайплайна 0..100 (Requirement 5.2). */
+    progress: integer("progress").notNull().default(0),
+    /** Имя текущего шага пайплайна (Requirement 5.4). */
+    currentStep: varchar("current_step", { length: 60 }),
+    /** R2 ключ PDF после первого рендера (Requirement 13.5). */
+    pdfUrl: text("pdf_url"),
+    /** Soft-lock для concurrent PDF render запросов. */
+    pdfRenderingAt: timestamp("pdf_rendering_at"),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

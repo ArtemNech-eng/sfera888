@@ -388,6 +388,118 @@ export async function falGenerateGptImageEdit(input: {
 }
 
 /**
+ * FLUX.1 Kontext [pro] (edit-image) через Fal.ai — альтернативный edit-image
+ * провайдер для Angle_Render с identity preservation. Принимает один
+ * reference image и текстовую инструкцию редактирования; модель оптимизирована
+ * на сохранении персонажей/материалов/палитры между ракурсами.
+ *
+ * Контракт сигнатуры зеркалит `falGenerateGptImageEdit`, чтобы воркер мог
+ * переключать провайдеров через `getEditImageProvider()` (env
+ * `AI_DESIGN_EDIT_PROVIDER`) без переделки пайплайна — см. Requirement 7.5,
+ * 7.6 и `design.md` §Identity_Preservation.
+ *
+ * Endpoint: `fal-ai/flux-pro/kontext` (см. https://fal.ai/docs/model-api-reference/image-generation-api/flux-pro-kontext)
+ * Schema:
+ *   • prompt (required)
+ *   • image_url (single reference image; берём `imageUrls[0]`)
+ *   • aspect_ratio: "21:9" | "16:9" | "4:3" | "3:2" | "1:1" | "2:3" | "3:4" | "9:16" | "9:21"
+ *   • guidance_scale: 1..20 (default 3.5)
+ *   • num_images: 1..4
+ *   • output_format: "jpeg" | "png"
+ *   • safety_tolerance: "1".."6"
+ *
+ * Pricing: фиксированные $0.04 за изображение = 400 копеек, не зависит от
+ * `imageSize` / `quality` — поэтому соответствующие параметры принимаются
+ * только для совместимости с контрактом `falGenerateGptImageEdit` и
+ * мапятся в `aspect_ratio` / `guidance_scale`.
+ *
+ * Используется в воркере (5 параллельных вызовов на дизайн с
+ * `image_urls = [Hero_Render.imageUrl]`) и в оффлайн-пилоте Identity_Preservation.
+ */
+export async function falGenerateFluxKontextPro(input: {
+  prompt: string;
+  imageUrls: string[];
+  imageSize?: "auto" | "1024x1024" | "1536x1024" | "1024x1536";
+  quality?: "auto" | "low" | "medium" | "high";
+  inputFidelity?: "low" | "high";
+}): Promise<FalGenerationResult> {
+  const apiKey = process.env.FAL_API_KEY;
+  if (!apiKey) {
+    throw new Error("FAL_API_KEY is not set");
+  }
+  if (!input.imageUrls || input.imageUrls.length === 0) {
+    throw new Error("Fal.ai flux-kontext-pro requires at least one reference image_url");
+  }
+
+  const model = process.env.FAL_MODEL_FLUX_KONTEXT_PRO ?? "fal-ai/flux-pro/kontext";
+  const url = `${FAL_BASE_URL}/${model}`;
+  const imageSize = input.imageSize ?? "1024x1024";
+  const quality = input.quality ?? "medium";
+
+  // FLUX Kontext Pro принимает один reference image (image_url, не image_urls).
+  // Воркер передаёт одно изображение Hero_Render; если когда-нибудь придёт
+  // больше — берём первое и не падаем, чтобы контракт оставался совместим.
+  const referenceImageUrl = input.imageUrls[0]!;
+
+  const body: Record<string, unknown> = {
+    prompt: input.prompt,
+    image_url: referenceImageUrl,
+    aspect_ratio: imageSizeToKontextAspectRatio(imageSize),
+    guidance_scale: qualityToKontextGuidance(quality),
+    num_images: 1,
+    output_format: "jpeg",
+    safety_tolerance: "2",
+  };
+
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(
+      `Fal.ai flux-kontext-pro network error: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Fal.ai flux-kontext-pro HTTP ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const data = (await response.json()) as {
+    images?: Array<{ url: string; width?: number; height?: number }>;
+    has_nsfw_concepts?: boolean[];
+  };
+
+  if (!data.images || data.images.length === 0) {
+    throw new Error("Fal.ai flux-kontext-pro returned no images");
+  }
+  if (data.has_nsfw_concepts?.some((flag) => flag === true)) {
+    throw new Error("Fal.ai flux-kontext-pro flagged image as NSFW");
+  }
+
+  const first = data.images[0]!;
+  // FLUX Kontext Pro: фиксированные $0.04/image = 400 копеек, не зависит от
+  // imageSize/quality (см. https://fal.ai/docs/.../flux-pro-kontext §Pricing).
+  const FLUX_KONTEXT_PRO_COST_KOPEKS = 400;
+
+  return {
+    imageUrl: first.url,
+    width: first.width ?? 1024,
+    height: first.height ?? 1024,
+    generationMs: Date.now() - startedAt,
+    costKopeks: FLUX_KONTEXT_PRO_COST_KOPEKS,
+  };
+}
+
+/**
  * Text-to-image вызов Fal.ai (без init image). Используется seed-скриптом
  * для генерации starter-designs без user-upload, а также если в будущем
  * добавим «генерация без фото» в публичную форму.
@@ -495,6 +607,47 @@ function aspectToImageSize(aspect: "16:9" | "4:3" | "1:1"): { width: number; hei
     case "4:3":
     default:
       return { width: 1024, height: 768 };
+  }
+}
+
+/**
+ * Маппинг enum'а `imageSize` (контракт `falGenerateGptImageEdit`) в
+ * `aspect_ratio` FLUX Kontext Pro. `auto` оставляем undefined — модель
+ * подберёт пропорцию под reference. Сохраняет визуальную совместимость
+ * между провайдерами edit-image при переключении через env.
+ */
+function imageSizeToKontextAspectRatio(
+  imageSize: "auto" | "1024x1024" | "1536x1024" | "1024x1536",
+): "1:1" | "3:2" | "2:3" | undefined {
+  switch (imageSize) {
+    case "1024x1024":
+      return "1:1";
+    case "1536x1024":
+      return "3:2";
+    case "1024x1536":
+      return "2:3";
+    case "auto":
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Маппинг enum'а `quality` (контракт `falGenerateGptImageEdit`) в
+ * `guidance_scale` FLUX Kontext Pro. У Kontext Pro нет прямого аналога
+ * quality/inputFidelity — повышаем CFG для high (строже следует промпту)
+ * и понижаем для low. `medium`/`auto` — дефолт модели 3.5.
+ */
+function qualityToKontextGuidance(quality: "auto" | "low" | "medium" | "high"): number {
+  switch (quality) {
+    case "high":
+      return 5.0;
+    case "low":
+      return 2.5;
+    case "medium":
+    case "auto":
+    default:
+      return 3.5;
   }
 }
 

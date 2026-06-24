@@ -16,6 +16,13 @@ const bundleBlocklist: string[] = [
   // on the target platform. Keep it external so Node's require resolves it
   // from node_modules at runtime.
   "sharp",
+  // puppeteer-core + @sparticuz/chromium-min are loaded lazily by
+  // `lib/pdfRenderer.ts` via Function-wrapped dynamic import. Keep them
+  // external so esbuild doesn't try to bundle the (large) chromium loader
+  // into the main server bundle. They're resolved from node_modules at
+  // runtime when `getOrRenderPdf` is first called (Requirement 13).
+  "puppeteer-core",
+  "@sparticuz/chromium-min",
 ];
 
 async function buildAll() {

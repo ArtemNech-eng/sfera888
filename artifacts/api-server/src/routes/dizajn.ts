@@ -4,7 +4,9 @@
  * Mount:  `/api/marketplace/dizajn/*`
  *
  * Endpoints:
- *   POST /generate          — start генерации (multipart, файл + room/style/...)
+ *   POST /generate          — JSON-форма {roomType, style, widthCm, lengthCm,
+ *                             heightCm, budget, features?, cityId?,
+ *                             cf-turnstile-response} → 202 {slug}
  *   GET  /:slug             — статус + полная инфа дизайн-проекта (для polling)
  *   GET  /                  — recent successful designs (для homepage feed)
  *
@@ -14,8 +16,6 @@
  */
 
 import { Router, type Request, type Response } from "express";
-import multer from "multer";
-import { randomUUID } from "crypto";
 import { Readable } from "stream";
 import {
   db,
@@ -25,28 +25,30 @@ import {
   userSavesTable,
   leadsTable,
 } from "@workspace/db";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { objectStorageClient, s3Client } from "../lib/objectStorage.js";
-import { preprocessUserUpload } from "../lib/falAi.js";
+import { s3Client } from "../lib/objectStorage.js";
+import { verifyTurnstileToken } from "../lib/turnstile.js";
+import {
+  checkAndIncrement,
+  decrement,
+  type RateLimitKind,
+} from "../lib/designRateLimit.js";
+import {
+  validateDesignForm,
+  type DesignFormViolation,
+} from "../lib/dizajnFormSchema.js";
+import { checkMinArea } from "../lib/geometricValidator.js";
+import { getOrRenderPdf, PdfRenderError } from "../lib/pdfRenderer.js";
+import { pickUniqueSlug } from "../lib/slug.js";
 
 const router = Router();
 
-const UPLOAD_LIMIT_BYTES = 8 * 1024 * 1024; // 8 MB raw upload
-const RATE_LIMIT_PER_ANON_DAY = 5;
-const RATE_LIMIT_PER_IP_DAY = 30;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: UPLOAD_LIMIT_BYTES },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) cb(null, true);
-    else cb(new Error("Только изображения"));
-  },
-});
-
-// ── ENUM-валидация ──────────────────────────────────────────────────────────
-
+// Whitelist of room/style strings used by GET / and GET /:slug — sourced from
+// the historical handler. POST /generate now relies on Zod (`validateDesignForm`)
+// instead of these sets, so they are kept here for the read-only endpoints only.
 const VALID_ROOMS = new Set([
   "bathroom",
   "kitchen",
@@ -54,6 +56,7 @@ const VALID_ROOMS = new Set([
   "bedroom",
   "hallway",
   "apartment",
+  "nursery",
 ]);
 const VALID_STYLES = new Set([
   "modern",
@@ -62,51 +65,10 @@ const VALID_STYLES = new Set([
   "minimalism",
   "neoclassic",
   "japandi",
+  "classic",
 ]);
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-
-function buildSlug(room: string, style: string): string {
-  // 8-character random suffix — достаточно для ~40 трлн уникальных slugs.
-  const suffix = randomUUID().replace(/-/g, "").slice(0, 8);
-  return `${room.replace(/_/g, "-")}-${style}-${suffix}`;
-}
-
-async function checkRateLimit(anonId: string, clientIp: string | null): Promise<{
-  ok: true;
-} | {
-  ok: false;
-  reason: "anon_daily" | "ip_daily";
-  retryAfterSeconds: number;
-}> {
-  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-  // По anon_id (с учётом UTC last 24h).
-  const anonRows = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(designsTable)
-    .where(
-      and(
-        eq(designsTable.anonId, anonId),
-        gte(designsTable.createdAt, dayAgo),
-      ),
-    );
-  const anonCount = Number(anonRows[0]?.n ?? 0);
-  if (anonCount >= RATE_LIMIT_PER_ANON_DAY) {
-    return { ok: false, reason: "anon_daily", retryAfterSeconds: 86400 };
-  }
-
-  // По IP (если есть).
-  if (clientIp) {
-    // designsTable нет ip колонки — используем design_generations таблицу
-    // позже. На MVP-старте rate-limit только по anon_id, IP-throttle добавим
-    // отдельной миграцией если будет abuse.
-    void RATE_LIMIT_PER_IP_DAY; // suppress unused-warning
-  }
-
-  return { ok: true };
-}
 
 function getClientIp(req: Request): string | null {
   const xff = req.headers["x-forwarded-for"];
@@ -116,135 +78,225 @@ function getClientIp(req: Request): string | null {
   return req.socket.remoteAddress ?? null;
 }
 
+/** Бёзопасно вытащить токен капчи из тела запроса. Cloudflare Turnstile widget
+ *  по соглашению присылает `cf-turnstile-response`; для удобства тестов и
+ *  программного клиента также принимаем `turnstileToken`. */
+function extractTurnstileToken(body: unknown): string {
+  if (typeof body !== "object" || body === null) return "";
+  const b = body as Record<string, unknown>;
+  const cf = b["cf-turnstile-response"];
+  if (typeof cf === "string" && cf.length > 0) return cf;
+  const fallback = b["turnstileToken"];
+  if (typeof fallback === "string" && fallback.length > 0) return fallback;
+  return "";
+}
+
+/**
+ * Откатить инкрементированные на этом запросе счётчики rate-limiter'а.
+ *
+ * Используется при неуспехах валидации формы и pre-flight `checkMinArea`
+ * (Requirement 3.6). Намеренно НЕ вызывается при последующих сбоях в воркере
+ * по `Cost_Ceiling` (Requirement 3.7) — это происходит уже в `Design_Worker`,
+ * не в HTTP-обработчике.
+ *
+ * Принимает массив пар `(kind, key)`, инкрементированных в текущем запросе.
+ * Идемпотентна: повторный вызов на нулевом счётчике — no-op.
+ */
+async function rollbackRateLimits(
+  pairs: ReadonlyArray<readonly [RateLimitKind, string]>,
+): Promise<void> {
+  for (const [kind, key] of pairs) {
+    try {
+      await decrement(kind, key);
+    } catch (e) {
+      // Откат — best-effort; логируем, не падаем — пользователю и так уже
+      // отдают 400, второстепенные ошибки только зашумят ответ.
+      console.error("[dizajn/generate] decrement failed:", kind, e instanceof Error ? e.message : e);
+    }
+  }
+}
+
 // ── POST /generate ──────────────────────────────────────────────────────────
+//
+// Порядок проверок зафиксирован в `design.md` секция Rate_Limiter
+// (Requirements 1.8, 1.9, 1.10, 2.3, 3.1, 3.2, 3.5, 3.6, 3.7, 4.1):
+//
+//   1. `req.anonId` (заполняется `anonIdMiddleware`, см. app.ts).
+//   2. `verifyTurnstileToken(...)` — fail → 400 `invalid_captcha`.
+//   3. `checkAndIncrement("anon", anonId)` и `checkAndIncrement("ip", ip)` —
+//      fail хотя бы один → 429 `rate_limited` (с откатом другого, если уже
+//      прошёл успешно).
+//   4. Zod-валидация формы (`validateDesignForm`) — fail → 400 + `decrement`
+//      обоих счётчиков.
+//   5. `checkMinArea(roomType, widthCm, lengthCm)` — fail → 400 + `decrement`
+//      обоих.
+//   6. `pickUniqueSlug({ roomType, style })`.
+//   7. `INSERT INTO designs (..., status='generating', progress=0,
+//      anon_id = req.anonId)`.
+//   8. 202 `{ ok: true, design: { slug } }` — фронт делает `router.push`
+//      на `/dizajn/${slug}`.
 
-router.post("/generate", upload.single("image"), async (req: Request, res: Response) => {
+router.post("/generate", async (req: Request, res: Response) => {
+  // 1. Anon_Id из middleware. Это инвариант: middleware всегда устанавливает
+  // req.anonId (либо из cookie, либо свежий UUID + Set-Cookie). Безопасно
+  // полагаемся на типы; если поле всё же пустое — отдаём 500, потому что
+  // продолжать без owner'а нельзя (Requirement 4.1).
+  const anonId = req.anonId;
+  if (typeof anonId !== "string" || !UUID_RE.test(anonId)) {
+    console.error("[dizajn/generate] req.anonId missing — anonIdMiddleware not mounted?");
+    res.status(500).json({ ok: false, error: "anon_id_unavailable" });
+    return;
+  }
+
+  const clientIp = getClientIp(req);
+  // Если IP не удалось получить (тестовый соккет, прокси без XFF) — используем
+  // запасной ключ "unknown". Это вырождает IP-лимит для подобных запросов
+  // в общий бакет, что приемлемо для anti-abuse: производственный фронт
+  // всегда идёт через прокси с проброшенным XFF.
+  const ipKey = clientIp ?? "unknown";
+
+  // 2. Captcha verify — ПЕРВАЯ блокирующая проверка перед любыми внутренними
+  // вызовами (Requirement 3.2 / Property 4). Никаких rate-limit/Zod/min-area
+  // быть не должно до успешного `verifyTurnstileToken`.
+  const turnstileToken = extractTurnstileToken(req.body);
+  const captcha = await verifyTurnstileToken({
+    token: turnstileToken,
+    remoteIp: clientIp,
+    expectedAction: "ai_design_submit",
+  });
+  if (!captcha.success) {
+    res.status(400).json({ ok: false, error: "invalid_captcha" });
+    return;
+  }
+
+  // 3. Rate-limit — anon, потом ip. Если anon уже за лимитом, ip даже не
+  // трогаем (Property 2: «ни одна новая запись не появляется»). Если anon
+  // прошёл, а ip упал — откатываем anon, чтобы не «расходовать» слот зря
+  // (Requirement 3.5).
+  const incremented: Array<readonly [RateLimitKind, string]> = [];
+
+  const anonResult = await checkAndIncrement("anon", anonId);
+  if (!anonResult.allowed) {
+    res.status(429).json({
+      ok: false,
+      error: "rate_limited",
+      retryAfterSeconds: anonResult.retryAfterSeconds,
+      kind: "anon",
+    });
+    return;
+  }
+  incremented.push(["anon", anonId]);
+
+  const ipResult = await checkAndIncrement("ip", ipKey);
+  if (!ipResult.allowed) {
+    await rollbackRateLimits(incremented);
+    res.status(429).json({
+      ok: false,
+      error: "rate_limited",
+      retryAfterSeconds: ipResult.retryAfterSeconds,
+      kind: "ip",
+    });
+    return;
+  }
+  incremented.push(["ip", ipKey]);
+
+  // 4. Zod-валидация формы. При нарушениях возвращаем ВСЕ violations
+  // (Requirement 1.10) и откатываем оба счётчика (Requirement 3.6).
+  const validation = validateDesignForm(req.body);
+  if (!validation.ok) {
+    await rollbackRateLimits(incremented);
+    const violations: DesignFormViolation[] = validation.violations;
+    res.status(400).json({
+      ok: false,
+      error: "validation_error",
+      violations,
+    });
+    return;
+  }
+  const form = validation.data;
+
+  // 5. Pre-flight площадь (Requirement 2.3). Откатываем счётчики при отказе.
+  const minArea = checkMinArea(form.roomType, form.widthCm, form.lengthCm);
+  if (!minArea.ok) {
+    await rollbackRateLimits(incremented);
+    res.status(400).json({
+      ok: false,
+      error: "room_too_small",
+      roomType: form.roomType,
+      areaSqm: Number(minArea.areaSqm.toFixed(2)),
+      minSqm: minArea.minSqm,
+      message:
+        `Площадь ${minArea.areaSqm.toFixed(2)} м² меньше минимально допустимой ` +
+        `${minArea.minSqm} м² для типа «${form.roomType}». Увеличьте размеры комнаты.`,
+    });
+    return;
+  }
+
+  // 6. Уникальный slug под `designs.slug` (Requirements 1.8, 1.9). Сама функция
+  // делает SELECT по `designs.slug` и пытается суффиксировать `-2`, `-3`, ...
+  // Объектный overload `pickUniqueSlug({ roomType, style })` гарантирует regex
+  // `^[a-z0-9-]+$` и длину ≤ 160.
+  let slug: string;
   try {
-    // 1. Validate file
-    if (!req.file) {
-      res.status(400).json({ ok: false, error: "missing_file" });
-      return;
-    }
+    slug = await pickUniqueSlug({
+      roomType: form.roomType,
+      style: form.style,
+    });
+  } catch (e) {
+    // Если slug-поиск исчерпал maxAttempts (что чрезвычайно маловероятно)
+    // или упал по DB — это серверная ошибка. На rate-limit она не возвращается:
+    // пользователь сделал всё корректно, винить его не за что (Requirement 3.6
+    // про «отказы по валидации», а не серверные сбои).
+    const errMessage = e instanceof Error ? e.message : String(e);
+    console.error("[dizajn/generate] slug pick failed:", errMessage);
+    res.status(500).json({
+      ok: false,
+      error: "internal_error",
+      message: errMessage.slice(0, 500),
+    });
+    return;
+  }
 
-    // 2. Validate other fields
-    const { room, style, area, citySlug, budget, durationWeeks, anonId: bodyAnonId } = req.body as {
-      room?: string;
-      style?: string;
-      area?: string;
-      citySlug?: string;
-      budget?: string;
-      durationWeeks?: string;
-      anonId?: string;
-    };
+  // 7. INSERT designs row. `area` хранится как numeric(10,2) в м² — считаем
+  // из cm² по той же формуле, что и в `routes/admin/dizajnShowcase.ts`.
+  // Width/length/height сохраняются в `layout_json` после генерации воркером;
+  // на момент INSERT они известны только из формы и в текущей схеме отдельных
+  // колонок не имеют.
+  const areaSqm = (form.widthCm * form.lengthCm) / 10_000;
+  const areaStr = areaSqm.toFixed(2);
 
-    if (!room || !VALID_ROOMS.has(room)) {
-      res.status(400).json({ ok: false, error: "invalid_room" });
-      return;
-    }
-    if (!style || !VALID_STYLES.has(style)) {
-      res.status(400).json({ ok: false, error: "invalid_style" });
-      return;
-    }
-
-    const anonId = bodyAnonId && UUID_RE.test(bodyAnonId) ? bodyAnonId : null;
-    if (!anonId) {
-      res.status(400).json({ ok: false, error: "missing_anon_id" });
-      return;
-    }
-
-    const areaNum = area ? parseFloat(area) : null;
-    const budgetNum = budget ? parseInt(budget, 10) : null;
-    const durationWeeksNum = durationWeeks ? parseInt(durationWeeks, 10) : null;
-
-    // 3. Resolve city if provided
-    let cityId: number | null = null;
-    if (citySlug && citySlug.length > 0) {
-      const [city] = await db
-        .select({ id: citiesTable.id })
-        .from(citiesTable)
-        .where(eq(citiesTable.slug, citySlug))
-        .limit(1);
-      if (city) cityId = city.id;
-    }
-
-    // 4. Rate limit
-    const clientIp = getClientIp(req);
-    const limit = await checkRateLimit(anonId, clientIp);
-    if (!limit.ok) {
-      res.status(429).json({
-        ok: false,
-        error: "rate_limit",
-        reason: limit.reason,
-        retryAfterSeconds: limit.retryAfterSeconds,
-      });
-      return;
-    }
-
-    // 5. Preprocess user upload
-    const processedBuffer = await preprocessUserUpload(req.file.buffer);
-
-    // 6. Upload to R2 (private). Используем objectStorageClient
-    // pattern из master-pwa.ts (DEFAULT_OBJECT_STORAGE_BUCKET_ID + key).
-    // ACL не меняем — read через наш custom proxy endpoint /img/* ниже.
-    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-    if (!bucketId) {
-      res.status(500).json({ ok: false, error: "storage_not_configured" });
-      return;
-    }
-    const inputId = randomUUID();
-    const inputKey = `dizajn/uploads/${inputId}.jpg`;
-    await objectStorageClient
-      .bucket(bucketId)
-      .file(inputKey)
-      .save(processedBuffer, { contentType: "image/jpeg" });
-
-    // URL который пойдёт worker'у в Fal.ai — генерируется через signed URL
-    // с TTL 10 минут (gen занимает ~30s sync). Worker сам подпишет URL прямо
-    // перед вызовом Fal.ai, тут только сохраняем R2-key.
-    // Internal URL для UI «фото до» — наш custom proxy.
-    const inputImageInternalUrl = `/api/marketplace/dizajn/img/uploads/${inputId}.jpg`;
-
-    // 7. INSERT designs row
-    const slug = buildSlug(room, style);
+  try {
     const [created] = await db
       .insert(designsTable)
       .values({
         slug,
+        // Requirement 4.1: запись принадлежит текущему `kiro_anon_id`.
         anonId,
-        roomType: room,
-        style,
-        cityId,
-        area: areaNum != null ? areaNum.toString() : null,
-        budget: budgetNum,
-        durationWeeks: durationWeeksNum,
-        // Сохраняем R2 key (а не full URL) — worker подписывает signed URL
-        // прямо перед Fal.ai вызовом из этого ключа.
-        inputImageUrl: inputKey,
+        roomType: form.roomType,
+        style: form.style,
+        cityId: form.cityId ?? null,
+        area: areaStr,
+        budget: form.budget,
+        // Requirement 5.2: пайплайн начинает с status='generating', progress=0.
         status: "generating",
+        progress: 0,
+        currentStep: null,
       })
       .returning({ id: designsTable.id, slug: designsTable.slug });
 
     if (!created) {
+      // Сюда мы попадаем только если drizzle вернул 0 строк — теоретически
+      // невозможно для INSERT без конфликта; это серверная ошибка, decrement
+      // не нужен (Requirement 3.7: бюджет/AI-вызовы тут ещё не были потрачены,
+      // но и пользовательской вины нет).
       res.status(500).json({ ok: false, error: "insert_failed" });
       return;
     }
 
-    // Мы используем R2 public URL для Fal-генерации; лог-сохраняем internal
-    // URL в design_images type='input', чтобы UI мог отрендерить «до».
-    await db.insert(designImagesTable).values({
-      designId: created.id,
-      type: "input",
-      url: inputImageInternalUrl,
-      sortOrder: 0,
-    });
-
+    // 8. 202 + slug — клиент делает `router.push('/dizajn/' + slug)`.
     res.status(202).json({
       ok: true,
-      design: {
-        id: created.id,
-        slug: created.slug,
-        status: "generating",
-      },
+      design: { slug: created.slug },
     });
   } catch (e) {
     const errMessage = e instanceof Error ? e.message : String(e);
@@ -254,6 +306,53 @@ router.post("/generate", upload.single("image"), async (req: Request, res: Respo
       error: "internal_error",
       message: errMessage.slice(0, 500),
     });
+  }
+});
+
+// ── GET /mine — список дизайнов текущего Anon_Id ───────────────────────────
+//
+// Requirements 4.3, 4.7: эндпоинт для страницы «мои дизайны». Фильтр по
+// `designs.anon_id = req.anonId`, сортировка `created_at DESC`, лимит 50,
+// поля строго ограничены безопасным набором (без layout_json, materials,
+// estimate, picked_furniture и прочих heavy-payload колонок — они нужны
+// только на странице конкретного проекта).
+//
+// ВАЖНО: маршрут зарегистрирован ДО `GET /:slug`, иначе express подхватил бы
+// `/mine` параметром `:slug` и до этого хендлера запрос бы не дошёл.
+
+router.get("/mine", async (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+
+  // anonIdMiddleware (см. middlewares/anonIdMiddleware.ts) обязан выставить
+  // `req.anonId`. Если поле отсутствует — middleware не подключён, это
+  // серверная ошибка, а не пустой результат.
+  const anonId = req.anonId;
+  if (typeof anonId !== "string" || !UUID_RE.test(anonId)) {
+    console.error("[dizajn/mine] req.anonId missing — anonIdMiddleware not mounted?");
+    res.status(500).json({ ok: false, error: "anon_id_unavailable" });
+    return;
+  }
+
+  try {
+    const rows = await db
+      .select({
+        slug: designsTable.slug,
+        roomType: designsTable.roomType,
+        style: designsTable.style,
+        status: designsTable.status,
+        progress: designsTable.progress,
+        resultImageUrl: designsTable.resultImageUrl,
+        createdAt: designsTable.createdAt,
+      })
+      .from(designsTable)
+      .where(eq(designsTable.anonId, anonId))
+      .orderBy(desc(designsTable.createdAt))
+      .limit(50);
+
+    res.json({ ok: true, items: rows });
+  } catch (e) {
+    console.error("[dizajn/mine]", e instanceof Error ? e.message : e);
+    res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
 
@@ -366,6 +465,15 @@ router.get("/:slug", async (req: Request, res: Response) => {
           height: img.height,
           sortOrder: img.sortOrder,
         })),
+        // Программный 2D-план + подобранная мебель + текущий шаг
+        // пайплайна — нужны странице дизайна для отрисовки соответствующих
+        // секций (Requirements 8.6/8.7, 10.6/10.7, 5.2/5.4) и owner-бейджа
+        // (Requirement 4.4). `designAnonId` — это `anon_id` владельца,
+        // фронт сравнивает его с cookie `kiro_anon_id` на клиенте.
+        topDownPlanUrl: r2KeyToPublicUrl(row.design.topDownPlanUrl),
+        pickedFurniture: row.design.pickedFurniture,
+        currentStep: row.design.currentStep,
+        designAnonId: row.design.anonId,
         viewCount: row.design.viewCount,
         saveCount: row.design.saveCount,
         isSavedByCurrentUser,
@@ -376,6 +484,114 @@ router.get("/:slug", async (req: Request, res: Response) => {
     });
   } catch (e) {
     console.error("[dizajn/:slug]", e);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+// ── GET /:slug/status — лёгкий polling без heavy joins ─────────────────────
+//
+// Requirements 5.3, 5.4, 5.5, 5.6: фронт-end опрашивает каждые 3 секунды,
+// пока `status=generating`. Возвращаем только то, что нужно для UI
+// прогресс-бара: текущий статус, прогресс 0..100, имя текущего шага и
+// `errorMessage` для экрана ошибки. Никаких JOIN'ов, изображений и
+// counter-апдейтов — это «горячая» точка, которая должна быть максимально
+// дешёвой по latency и DB-нагрузке.
+
+router.get("/:slug/status", async (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+  const slug = typeof req.params.slug === "string" ? req.params.slug : "";
+  if (!slug) {
+    res.status(404).json({ ok: false, error: "not_found" });
+    return;
+  }
+
+  try {
+    const [row] = await db
+      .select({
+        status: designsTable.status,
+        progress: designsTable.progress,
+        currentStep: designsTable.currentStep,
+        errorMessage: designsTable.errorMessage,
+      })
+      .from(designsTable)
+      .where(eq(designsTable.slug, slug))
+      .limit(1);
+
+    if (!row) {
+      res.status(404).json({ ok: false, error: "not_found" });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      status: row.status,
+      progress: row.progress,
+      currentStep: row.currentStep,
+      errorMessage: row.errorMessage,
+    });
+  } catch (e) {
+    console.error("[dizajn/:slug/status]", e instanceof Error ? e.message : e);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+// ── GET /:slug/pdf — синхронный рендер/выдача PDF ──────────────────────────
+//
+// Requirements 13.1, 13.2, 13.5, 13.6: lazy-render с кэшем в R2.
+// `getOrRenderPdf(designId)`:
+//   - возвращает кэшированный буфер из `dizajn/pdf/{designId}.pdf`, если уже есть;
+//   - иначе берёт soft-lock через `designs.pdf_rendering_at`, рендерит,
+//     грузит в R2 и снимает lock.
+//
+// Соответствие Requirement 13.6: при любой ошибке рендера фронт получает
+// `503 { error: "pdf_temporarily_unavailable" }` и показывает на месте
+// кнопки сообщение «PDF временно недоступен», не блокируя просмотр страницы.
+
+router.get("/:slug/pdf", async (req: Request, res: Response) => {
+  const slug = typeof req.params.slug === "string" ? req.params.slug : "";
+  if (!slug) {
+    res.status(404).json({ ok: false, error: "not_found" });
+    return;
+  }
+
+  try {
+    const [row] = await db
+      .select({ id: designsTable.id })
+      .from(designsTable)
+      .where(eq(designsTable.slug, slug))
+      .limit(1);
+
+    if (!row) {
+      res.status(404).json({ ok: false, error: "not_found" });
+      return;
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await getOrRenderPdf(row.id);
+    } catch (e) {
+      // PdfRenderError — ожидаемый класс ошибок: проблема рендера, soft-lock,
+      // отсутствующие зависимости и т.п. Отдаём 503, чтобы фронт показал
+      // пометку «временно недоступен» (Requirement 13.6) — без 5xx-стектрейса
+      // в логах мониторинга.
+      if (e instanceof PdfRenderError) {
+        console.warn(
+          "[dizajn/:slug/pdf] render failed:",
+          e.message,
+          e.cause instanceof Error ? e.cause.message : e.cause,
+        );
+        res.status(503).json({ ok: false, error: "pdf_temporarily_unavailable" });
+        return;
+      }
+      throw e;
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="design-${slug}.pdf"`);
+    res.setHeader("Content-Length", String(buffer.length));
+    res.end(buffer);
+  } catch (e) {
+    console.error("[dizajn/:slug/pdf]", e instanceof Error ? e.message : e);
     res.status(500).json({ ok: false, error: "internal_error" });
   }
 });

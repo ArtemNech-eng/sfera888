@@ -1,5 +1,6 @@
 // Public-facing DTOs returned by the api-server marketplace endpoints.
-// Keep in sync with artifacts/api-server/src/routes/marketplace.ts.
+// Keep in sync with artifacts/api-server/src/routes/marketplace.ts
+// (and artifacts/api-server/src/routes/dizajn.ts for design DTOs).
 
 export interface City {
   id: number;
@@ -361,6 +362,29 @@ export interface DesignImageDTO {
   sortOrder: number;
 }
 
+/**
+ * Подобранная под Layout_JSON позиция мебели — одна строка
+ * `designs.picked_furniture[]`. Зеркало `PickedFurnitureRow` из
+ * `lib/db/src/types/furniture.ts` (Requirement 10.6, 10.7).
+ *
+ * Дублируется здесь для marketplace-пакета, который не зависит от
+ * `@workspace/db`. Также экспортируется напрямую из
+ * `components/dizajn/DesignBoard.tsx`; держать в синхронизации.
+ */
+export interface DesignPickedFurnitureDTO {
+  /** `FurnitureItem.id` из Layout_JSON, по которому подбирался SKU. */
+  layoutId: string;
+  /** Тип мебели из Layout_JSON (`bed`, `wardrobe`, …). */
+  type: string;
+  /** SKU из `furniture_products`; `null` — позиция «уточняется». */
+  sku: string | null;
+  name: string | null;
+  /** Фактическая цена в копейках; `0`, если sku=null. */
+  pricePaidKopeks: number;
+  partnerUrl: string | null;
+  imageUrl: string | null;
+}
+
 /** Один из ракурсов проекта (общий / акцент / хранение / окно / 3D-план). */
 export interface DesignViewDTO {
   url: string;
@@ -412,6 +436,30 @@ export interface DesignFullDTO {
   /** 6 кропов деталей мебели — sharp-вырезано из views. null пока generating. */
   detailCrops: DesignDetailCropDTO[] | null;
   images: DesignImageDTO[];
+  /**
+   * R2 ключ или public URL Top_Down_Plan PNG (Requirement 8.6, 8.7).
+   * Программный 2D-план «вид сверху» из Layout_JSON; `null`, если
+   * комната не поддерживается шаблонной отрисовкой или рендер упал.
+   */
+  topDownPlanUrl: string | null;
+  /**
+   * Подобранные SKU мебели в порядке `Layout_JSON.furniture[]`
+   * (Requirement 10.6, 10.7). `null` пока пайплайн не дошёл до шага
+   * подбора; пустой массив трактуется как «ничего не подобрано».
+   */
+  pickedFurniture: DesignPickedFurnitureDTO[] | null;
+  /**
+   * Имя текущего шага пайплайна (Requirement 5.2, 5.4) для подписи
+   * под прогресс-баром при `status='generating'`. `null` после
+   * завершения генерации.
+   */
+  currentStep: string | null;
+  /**
+   * `Anon_Id` владельца записи (`designs.anon_id`). Используется
+   * для отображения owner-бейджа: фронт сравнивает с cookie
+   * `kiro_anon_id` на клиенте. Не отображается пользователю.
+   */
+  designAnonId: string | null;
   viewCount: number;
   saveCount: number;
   isSavedByCurrentUser: boolean;

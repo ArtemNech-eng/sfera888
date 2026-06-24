@@ -37,6 +37,7 @@ import contractRouter from "./contract.js";
 import systemRouter from "./system.js";
 import marketplaceRouter from "./marketplace.js";
 import dizajnRouter from "./dizajn.js";
+import dizajnShowcaseAdminRouter from "./admin/dizajnShowcase.js";
 import { sendPushToAllOperators } from "../lib/operatorPush.js";
 import { buildItems } from "./dashboard-action-items.js";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -86,6 +87,10 @@ router.use("/system", systemRouter);
 // see routes/dizajn.ts comment "stream R2 image (public, cached)".
 router.use("/marketplace/dizajn", dizajnRouter);
 router.use("/marketplace", marketplaceRouter);
+// Showcase admin endpoint — Requirement 15.4–15.5.
+// Feature-flag gate (env AI_DESIGN_SHOWCASE_ADMIN_ENABLED) и `requireRole("admin")`
+// внутри самого роутера; здесь просто mount без дополнительной авторизации.
+router.use("/admin/dizajn", dizajnShowcaseAdminRouter);
 // Push subscription endpoint for operators (CRM)
 router.post("/push/operator-subscribe", ops, async (req: any, res: any) => {
   const { endpoint, p256dh, auth } = req.body ?? {};

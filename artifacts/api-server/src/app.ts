@@ -9,6 +9,7 @@ import router from "./routes/index.js";
 import partnerPwaRouter from "./routes/partner-pwa.js";
 import crmPartnersRouter from "./routes/crm-partners.js";
 import masterPwaRouter from "./routes/master-pwa.js";
+import dizajnShowcaseRouter from "./routes/admin/dizajnShowcase.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -19,6 +20,7 @@ import { ObjectStorageService } from "./lib/objectStorage.js";
 import { handleMaxUpdate, registerWebhook, sendMaxMessage, sendMaxWithButtons } from "./maxBot.js";
 import { handleManagerUpdate, registerManagerWebhook, notifyManagerReceiptPaid } from "./managerBot.js";
 import { errorLoggerMiddleware } from "./middlewares/errorLogger.js";
+import { anonIdMiddleware } from "./middlewares/anonIdMiddleware.js";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
@@ -137,6 +139,14 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// ── Anonymous ID cookie middleware ────────────────────────────────────────────
+// Reads / issues `kiro_anon_id` cookie so that any downstream handler under
+// `/api/marketplace/dizajn` can rely on `req.anonId` without parsing cookies
+// itself. Must run after `cookieParser()` (so `req.cookies` is populated) and
+// before `app.use("/api", router)` (so the API routes see the value).
+// Implements requirement 4.2 of the AI_Design_Product spec.
+app.use(anonIdMiddleware);
 
 // Log all requests
 app.use((req, res, next) => {
@@ -1007,6 +1017,7 @@ app.use("/api", router);
 app.use("/api/partner", partnerPwaRouter);
 app.use("/api/crm", crmPartnersRouter);
 app.use("/api/master-pwa", masterPwaRouter);
+app.use("/api/admin/dizajn", dizajnShowcaseRouter);
 
 // ── Serve CRM and master-pwa as static files (production deployment) ─────────
 // In development these are served by their own Vite dev servers via path routing.

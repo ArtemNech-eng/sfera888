@@ -1,30 +1,61 @@
+"use client";
+
 import Link from "next/link";
-import type { DesignFullDTO, DesignFeedItemDTO } from "../../lib/types";
+import { useEffect, useState } from "react";
+import type { DesignFullDTO, DesignFeedItemDTO, DesignStatus } from "../../lib/types";
 import { publicUrl } from "../../lib/env";
 import { SaveButton } from "./SaveButton";
 import { DesignLeadForm } from "./DesignLeadForm";
 import { ShareButton } from "./ShareButton";
 
 /**
+ * Подобранная под Layout_JSON позиция мебели — одна строка
+ * `designs.picked_furniture[]`. Чистый DTO, повторяющий
+ * `PickedFurnitureRow` из `lib/db/src/types/furniture.ts`
+ * (Requirement 10.6, 10.7); marketplace-пакет не зависит от
+ * `@workspace/db`, поэтому тип дублируется здесь для UI-слоя.
+ */
+export interface DesignPickedFurnitureDTO {
+  layoutId: string;
+  type: string;
+  /** SKU из `furniture_products`; `null` — позиция «уточняется». */
+  sku: string | null;
+  name: string | null;
+  /** Фактическая цена в копейках; `0`, если sku=null. */
+  pricePaidKopeks: number;
+  partnerUrl: string | null;
+  imageUrl: string | null;
+}
+
+/**
  * AI-design page v2 (магазин-ная разворотка под seed-проекты).
  *
  * Layout (сверху вниз):
- *   1. Header — H1 + breadcrumbs + параметры-chip + 2 CTAs
- *   2. Hero  — 4 ракурса (1 большой + 3 thumbnails)
- *   3. До / После — `inputImageUrl` рядом с views[0] (helper-toggle)
- *   4. План + параметры + палитра — three-column grid
- *   5. Детали проекта — 6 кропов через sharp
- *   6. Материалы + Смета — таблицы side-by-side
- *   7. Решения — bullets с нумерацией
- *   8. Описание — narrative text
- *   9. Похожие проекты — 3×3 (room+style / style / budget)
- *  10. О стиле / о районе — extra SEO text sections
- *  11. CTA «Узнать стоимость» — secondary, scroll to lead-form
- *  12. Lead form — primary CTA «Хочу такой же»
- *  13. UGC place — «Сделали так же? Покажите свой результат»
+ *   1. Header — H1 (+ owner-badge) + breadcrumbs + параметры-chip + 2 CTAs (+ PDF)
+ *   2. Прогресс генерации — шкала + текущий шаг (только при status=generating)
+ *   3. Hero  — 4 ракурса (1 большой + 3 thumbnails)
+ *   4. До / После — `inputImageUrl` рядом с views[0] (helper-toggle)
+ *   5. План + параметры + палитра — three-column grid (top-down + 3D + params + palette)
+ *   6. Детали проекта — 6 кропов через sharp
+ *   7. Материалы + Смета — таблицы side-by-side
+ *   8. Подобранная мебель — карточки SKU с partner-ссылками
+ *   9. Решения — bullets с нумерацией
+ *  10. Описание — narrative text
+ *  11. Похожие проекты — 3×3 (room+style / style / budget)
+ *  12. О стиле / о районе — extra SEO text sections
+ *  13. CTA «Узнать стоимость» — secondary, scroll to lead-form
+ *  14. Lead form — primary CTA «Хочу такой же»
+ *  15. UGC place — «Сделали так же? Покажите свой результат»
  *
  * SEO: JSON-LD (Article + BreadcrumbList + ImageObject) выводится из
  * page.tsx (вне компонента — там есть доступ к metadata-helper).
+ *
+ * Client-only behaviour (Requirements 4.4, 5.4, 5.5, 5.6, 13.1, 13.6):
+ *   • polling `GET /:slug/status` каждые 3 секунды, пока status=generating;
+ *   • остановка polling при переходе в completed/failed;
+ *   • кнопка «Скачать PDF» при completed; при 503 (`pdf_temporarily_unavailable`)
+ *     прячется и заменяется пометкой;
+ *   • бейдж «ваш проект» при совпадении `designAnonId` с cookie `kiro_anon_id`.
  */
 
 const ROOM_LABELS_GENITIVE: Record<string, string> = {
@@ -69,9 +100,165 @@ interface SimilarBuckets {
 interface Props {
   design: DesignFullDTO;
   similar?: SimilarBuckets;
+  /**
+   * Программно отрисованный 2D-план комнаты (Requirement 8). `null`, если
+   * шаблонная отрисовка не выполнена для типа помещения; в этом случае
+   * блок «Вид сверху» показывает placeholder вместо изображения
+   * (Requirement 8.7).
+   */
+  topDownPlanUrl?: string | null;
+  /**
+   * Подобранные SKU мебели в порядке `Layout_JSON.furniture[]`
+   * (Requirement 10.6). `null` — секция скрыта целиком; пустой массив
+   * трактуется как «ничего не подобрано» и тоже скрывается.
+   */
+  pickedFurniture?: DesignPickedFurnitureDTO[] | null;
+  /**
+   * Имя текущего шага пайплайна (Requirement 5.2, 5.4) для подписи под
+   * прогресс-шкалой. Если не передано — берётся initial-значение
+   * `null`, на UI рисуется только числовой процент.
+   */
+  currentStep?: string | null;
+  /**
+   * `Anon_Id` владельца записи (`designs.anon_id`). Используется
+   * только для бейджа «ваш проект» (Requirement 4.4): сравнивается на
+   * клиенте с cookie `kiro_anon_id`. Не отображается пользователю.
+   */
+  designAnonId?: string | null;
 }
 
-export function DesignBoard({ design, similar }: Props) {
+const POLL_INTERVAL_MS = 3000;
+const PIPELINE_STEP_LABELS: Record<string, string> = {
+  layout_json: "Готовим план комнаты",
+  hero_render: "Рисуем общий ракурс",
+  angle_renders: "Дорисовываем ракурсы",
+  top_down_plan: "Чертим вид сверху",
+  isometric_render: "Собираем 3D-вид",
+  detail_crops: "Вырезаем крупные планы",
+  furniture_match: "Подбираем мебель",
+  materials_estimate: "Считаем смету",
+  color_palette: "Извлекаем палитру",
+  ai_text: "Генерируем описание",
+  infographic: "Собираем инфографику",
+  pdf_render: "Готовим PDF",
+};
+
+export function DesignBoard({
+  design,
+  similar,
+  topDownPlanUrl = null,
+  pickedFurniture = null,
+  currentStep: initialCurrentStep = null,
+  designAnonId = null,
+}: Props) {
+  // ── Live status / polling state (Requirements 5.3, 5.4, 5.5, 5.6) ─────────
+  // Polling запускается только когда status='generating'. На completed/failed
+  // setInterval останавливается через cleanup в useEffect.
+  const [status, setStatus] = useState<DesignStatus>(design.status);
+  const [progress, setProgress] = useState<number>(design.progress);
+  const [currentStep, setCurrentStep] = useState<string | null>(initialCurrentStep);
+  const [errorMessage, setErrorMessage] = useState<string | null>(design.errorMessage);
+
+  // ── PDF download state (Requirement 13.1, 13.6) ──────────────────────────
+  // `pdfError=true` — последняя попытка получить PDF вернула 503
+  // `pdf_temporarily_unavailable`; кнопка скрывается, на её месте — пометка.
+  // `pdfBusy` — в процессе скачивания (Requirement 13.1: «скрыта во время
+  // повторного рендера»).
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState(false);
+
+  // ── Owner badge state (Requirement 4.4) ──────────────────────────────────
+  // Cookie читается на клиенте после mount. На сервере значение всегда false,
+  // чтобы не было SSR/CSR mismatch.
+  const [isOwner, setIsOwner] = useState(false);
+
+  useEffect(() => {
+    if (!designAnonId) return;
+    const cookieAnonId = readCookie("kiro_anon_id");
+    if (cookieAnonId && cookieAnonId === designAnonId) {
+      setIsOwner(true);
+    }
+  }, [designAnonId]);
+
+  useEffect(() => {
+    if (status !== "generating") return;
+    let cancelled = false;
+
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `/api/dizajn/${encodeURIComponent(design.slug)}/status`,
+          { cache: "no-store", credentials: "include" },
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          ok?: boolean;
+          status?: DesignStatus;
+          progress?: number;
+          currentStep?: string | null;
+          errorMessage?: string | null;
+        };
+        if (cancelled || !data.ok) return;
+        if (typeof data.status === "string") setStatus(data.status);
+        if (typeof data.progress === "number") {
+          setProgress((prev) => Math.max(prev, data.progress!));
+        }
+        if (data.currentStep !== undefined) setCurrentStep(data.currentStep ?? null);
+        if (data.errorMessage !== undefined) setErrorMessage(data.errorMessage ?? null);
+      } catch {
+        // Сетевые/JSON ошибки игнорируем — следующий тик повторит запрос.
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void tick();
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [status, design.slug]);
+
+  const handlePdfDownload = async () => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const res = await fetch(
+        `/api/dizajn/${encodeURIComponent(design.slug)}/pdf`,
+        { credentials: "include" },
+      );
+      if (res.status === 503) {
+        setPdfError(true);
+        return;
+      }
+      if (!res.ok) {
+        setPdfError(true);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `design-${design.slug}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Освобождаем blob через event-loop, чтобы браузер успел инициировать
+      // скачивание до revoke.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch {
+      setPdfError(true);
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  // Кнопка «Скачать PDF» показывается только при completed AND нет недавней
+  // 503-ошибки рендера AND не идёт активная загрузка PDF (последнее = «во
+  // время повторного рендера», Requirement 13.1).
+  const showPdfButton = status === "completed" && !pdfError && !pdfBusy;
+
   // Используем новые `views`; fallback на legacy `images.type=view_*`.
   const views = (design.views && design.views.length > 0)
     ? design.views.slice().sort((a, b) => a.position - b.position)
@@ -92,6 +279,11 @@ export function DesignBoard({ design, similar }: Props) {
   const otherViews = views.slice(1).filter((v) => v.position !== 5);
   const beforeUrl = design.inputImageUrl ?? design.images.find((img) => img.type === "input")?.url ?? null;
   const detailCrops = design.detailCrops ?? [];
+
+  // Нормализуем picked_furniture: пустой массив трактуется так же, как `null`,
+  // т.е. секция скрывается целиком (Requirement 14.4 — пустые секции
+  // не отображаются).
+  const pickedFurnitureItems = pickedFurniture && pickedFurniture.length > 0 ? pickedFurniture : null;
 
   const styleLabel = STYLE_LABELS[design.style] ?? design.style;
   const roomGen = ROOM_LABELS_GENITIVE[design.roomType] ?? design.roomType;
@@ -125,9 +317,24 @@ export function DesignBoard({ design, similar }: Props) {
           </nav>
 
           <p className="font-eyebrow mt-7">AI-концепт интерьера</p>
-          <h1 className="font-display mt-3 max-w-4xl text-3xl text-[var(--color-text)] sm:text-4xl lg:text-[2.75rem]">
-            {design.h1 ?? `Дизайн ${roomGen} в стиле ${styleLabel}`}
-          </h1>
+          <div className="mt-3 flex flex-wrap items-start gap-3">
+            <h1 className="font-display max-w-4xl text-3xl text-[var(--color-text)] sm:text-4xl lg:text-[2.75rem]">
+              {design.h1 ?? `Дизайн ${roomGen} в стиле ${styleLabel}`}
+            </h1>
+            {/* Owner-badge (Requirement 4.4): показывается только когда
+                cookie `kiro_anon_id` совпала с `designAnonId` владельца. */}
+            {isOwner ? (
+              <span
+                className="mt-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-[var(--color-primary-ring)] bg-[var(--color-primary-soft)] px-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-primary-strong)]"
+                aria-label="Это ваш проект"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                ваш проект
+              </span>
+            ) : null}
+          </div>
 
           {/* Quick-params chip row */}
           <ul className="mt-5 flex flex-wrap gap-2 text-sm">
@@ -164,9 +371,86 @@ export function DesignBoard({ design, similar }: Props) {
               shareTitle={shareTitle}
               shareText={`Создал AI-дизайн-проект: ${shareTitle}. Посмотри.`}
             />
+            {/* PDF-download (Requirement 13.1, 13.6): показывается только при
+                completed AND нет недавней 503-ошибки рендера AND не идёт
+                активная загрузка. На 503 от `/:slug/pdf` button скрывается
+                и заменяется пометкой «PDF временно недоступен». */}
+            {showPdfButton ? (
+              <button
+                type="button"
+                onClick={handlePdfDownload}
+                disabled={pdfBusy}
+                className="inline-flex h-12 items-center gap-2 rounded-full border border-[var(--color-text)] px-6 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white disabled:opacity-60"
+                aria-label="Скачать дизайн-проект в PDF"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 3v12" />
+                  <path d="m7 10 5 5 5-5" />
+                  <path d="M5 21h14" />
+                </svg>
+                Скачать PDF
+              </button>
+            ) : null}
+            {pdfError ? (
+              <span
+                role="status"
+                className="inline-flex h-12 items-center rounded-full border border-[var(--color-border)] bg-[var(--color-cream-deep)] px-5 text-sm text-[var(--color-muted)]"
+              >
+                PDF временно недоступен, вся информация есть на странице
+              </span>
+            ) : null}
           </div>
         </div>
       </header>
+
+      {/* ── 1b. Прогресс генерации (Requirements 5.4–5.6) ─────────────────── */}
+      {/* Шкала + подпись текущего шага рисуются только когда status='generating'.
+          Polling каждые 3 секунды (см. useEffect выше) обновляет progress/step,
+          по переходу в completed/failed setInterval останавливается. */}
+      {status === "generating" ? (
+        <section
+          className="bg-[var(--color-cream-deep)]"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
+            <p className="font-eyebrow">Готовим дизайн</p>
+            <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
+              {pipelineStepLabel(currentStep)}
+            </h2>
+            <div className="mt-5 flex items-center justify-between text-xs text-[var(--color-muted)]">
+              <span>Прогресс</span>
+              <span className="font-semibold text-[var(--color-text)]">
+                {Math.min(100, Math.max(0, Math.round(progress)))}%
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
+              <div
+                className="h-full rounded-full bg-[var(--color-primary)] transition-all duration-1000"
+                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+              />
+            </div>
+            <p className="mt-3 text-xs text-[var(--color-faint)]">
+              Страница обновится автоматически, как только проект будет готов.
+            </p>
+          </div>
+        </section>
+      ) : null}
+
+      {/* ── 1c. Failed-banner (Requirement 5.6) ───────────────────────────── */}
+      {status === "failed" ? (
+        <section className="bg-[var(--color-cream-deep)]" role="alert">
+          <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
+            <p className="font-eyebrow">Ошибка генерации</p>
+            <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
+              {errorMessage ?? "Не удалось завершить генерацию проекта."}
+            </h2>
+            <p className="mt-3 text-sm text-[var(--color-muted)]">
+              Попробуйте создать новый проект — обычно повторная попытка проходит без проблем.
+            </p>
+          </div>
+        </section>
+      ) : null}
 
       {/* ── 2. Hero (1 large + 3 thumbnails; isometric idёт в план-секцию) ── */}
       {heroView ? (
@@ -233,16 +517,55 @@ export function DesignBoard({ design, similar }: Props) {
         </section>
       ) : null}
 
+      {/* ── 4a. Вид сверху (программный 2D-план из Layout_JSON) ─────────────
+           Requirement 8.7: блок отображает `topDownPlanUrl` напрямую и
+           заменяет любой существующий placeholder из infographicComposer.
+           IF поле `null` (тип помещения без шаблонной отрисовки или ошибка
+           генерации) — показываем placeholder, секция остаётся видимой
+           (но без визуала). */}
+      <section className="bg-[var(--color-background)]">
+        <div className="mx-auto max-w-6xl px-4 pt-12 sm:px-6 sm:pt-16">
+          <div className="max-w-2xl">
+            <p className="font-eyebrow">Вид сверху</p>
+            <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
+              План помещения.
+            </h2>
+            <p className="mt-3 text-sm text-[var(--color-muted)]">
+              Точные размеры стен, дверей, окон и габариты мебели — отрисовка
+              без AI, прямо из планировочного JSON.
+            </p>
+          </div>
+          <figure className="mt-7 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
+            <div className="relative aspect-[16/10] w-full bg-[var(--color-cream-deep)]">
+              {topDownPlanUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={topDownPlanUrl}
+                  alt={`Вид сверху — план ${roomGen}`}
+                  loading="lazy"
+                  className="block h-full w-full object-contain"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center px-6 text-center text-sm text-[var(--color-faint)]">
+                  План вида сверху для этого типа помещения скоро появится — пока показаны фотореалистичные ракурсы и аксонометрия.
+                </div>
+              )}
+            </div>
+          </figure>
+        </div>
+      </section>
+
       {/* ── 4. План + параметры + палитра ────────────────── */}
       <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="grid gap-8 lg:grid-cols-[1fr_1fr_1fr] lg:gap-10">
-            {/* 3D-isometric план (если есть) */}
+            {/* 3D-isometric ракурс (если есть) — отделён от «Вид сверху»,
+                который теперь рендерит программный 2D-план (см. секцию 4a). */}
             {isometricView ? (
               <div>
-                <p className="font-eyebrow">Вид сверху</p>
+                <p className="font-eyebrow">Аксонометрия</p>
                 <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
-                  3D-планировка.
+                  Объёмная схема.
                 </h2>
                 <figure className="mt-5 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
                   <div className="relative aspect-[4/3] w-full bg-[var(--color-cream-deep)]">
@@ -410,6 +733,35 @@ export function DesignBoard({ design, similar }: Props) {
           </div>
         </div>
       </section>
+
+      {/* ── 6b. Подобранная мебель (Requirement 10.7) ─────────────────────
+           Карточки SKU из `pickedFurniture[]`. Для позиций `sku=null`
+           (не нашлось подходящего варианта в каталоге, Requirement 10.5)
+           показываем заглушку «уточняется» вместо ссылки.
+           Секция полностью скрыта при `null`/пустом массиве (Requirement 14.4). */}
+      {pickedFurnitureItems ? (
+        <section className="bg-[var(--color-background)]">
+          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+            <div className="max-w-2xl">
+              <p className="font-eyebrow">Подобранная мебель</p>
+              <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
+                Что купить под проект.
+              </h2>
+              <p className="mt-3 text-sm text-[var(--color-muted)]">
+                SKU из каталога партнёра, подходящие по габаритам и стилю.
+                Цены — на момент генерации проекта, могут отличаться в магазине.
+              </p>
+            </div>
+            <ul className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+              {pickedFurnitureItems.map((item, idx) => (
+                <li key={`${item.layoutId}-${idx}`}>
+                  <PickedFurnitureCard item={item} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
 
       {/* ── 7. Решения ──────────────────────────────────── */}
       {design.solutions && design.solutions.length > 0 ? (
@@ -760,4 +1112,132 @@ function pluralWeeks(n: number): string {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Безопасно читает значение cookie по имени. Возвращает `null`, если
+ * cookie не найдена или код выполняется на сервере (нет `document`).
+ */
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const target = name + "=";
+  const parts = document.cookie.split(";");
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(target)) {
+      return decodeURIComponent(trimmed.substring(target.length));
+    }
+  }
+  return null;
+}
+
+/**
+ * Подпись текущего шага пайплайна. Если шаг неизвестен или `null`,
+ * возвращаем нейтральное «Собираем проект…», чтобы UI всегда имел
+ * человеко-читаемую строку.
+ */
+function pipelineStepLabel(step: string | null): string {
+  if (!step) return "Собираем проект…";
+  return PIPELINE_STEP_LABELS[step] ?? "Собираем проект…";
+}
+
+/**
+ * Локализованный человеко-читаемый ярлык для типа предмета мебели.
+ * Используется как подпись для заглушки «уточняется» (Requirement 10.7).
+ */
+const FURNITURE_TYPE_LABELS: Record<string, string> = {
+  bed: "Кровать",
+  wardrobe: "Шкаф",
+  desk: "Рабочий стол",
+  chair: "Кресло",
+  nightstand: "Прикроватная тумба",
+  rug: "Ковёр",
+  sofa: "Диван",
+  dining_table: "Обеденный стол",
+  bookshelf: "Стеллаж",
+  tv_unit: "ТВ-тумба",
+};
+
+function furnitureTypeLabel(type: string): string {
+  return FURNITURE_TYPE_LABELS[type] ?? capitalize(type.replace(/_/g, " "));
+}
+
+/**
+ * Карточка одной позиции `picked_furniture[]`. Для `sku=null` рисует
+ * заглушку «уточняется» с подписью типа мебели, без ссылки на партнёра
+ * (Requirement 10.7).
+ */
+function PickedFurnitureCard({ item }: { item: DesignPickedFurnitureDTO }) {
+  const typeLabel = furnitureTypeLabel(item.type);
+
+  if (item.sku === null) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-center shadow-cozy/40">
+        <div className="flex flex-1 items-center justify-center rounded-xl bg-[var(--color-cream-deep)] py-8 text-xs uppercase tracking-wide text-[var(--color-faint)]">
+          Изображение отсутствует
+        </div>
+        <p className="mt-4 text-sm font-semibold text-[var(--color-text)]">
+          {typeLabel}
+        </p>
+        <p className="mt-1 text-xs text-[var(--color-muted)]">уточняется</p>
+      </div>
+    );
+  }
+
+  const priceRub = Math.round(item.pricePaidKopeks / 100);
+  const cardBody = (
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
+      <div className="relative aspect-[4/3] w-full bg-[var(--color-cream-deep)]">
+        {item.imageUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={item.imageUrl}
+            alt={item.name ?? typeLabel}
+            loading="lazy"
+            className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+          />
+        ) : null}
+      </div>
+      <div className="flex flex-1 flex-col justify-between gap-2 p-4">
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
+            {typeLabel}
+          </p>
+          <p className="mt-1 line-clamp-2 text-sm font-semibold text-[var(--color-text)]">
+            {item.name ?? typeLabel}
+          </p>
+        </div>
+        <div className="flex items-end justify-between gap-2">
+          <span className="text-base font-semibold text-[var(--color-text)]">
+            {priceRub > 0 ? `${formatRub(priceRub)} ₽` : "—"}
+          </span>
+          {item.partnerUrl ? (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)]">
+              В магазин
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (item.partnerUrl) {
+    return (
+      <a
+        href={item.partnerUrl}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        className="group block h-full"
+        aria-label={`${typeLabel}: ${item.name ?? "перейти в магазин"}`}
+      >
+        {cardBody}
+      </a>
+    );
+  }
+
+  return cardBody;
 }

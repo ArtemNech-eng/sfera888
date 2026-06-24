@@ -63,6 +63,11 @@ export * from "./design-images";
 export * from "./design-generations";
 export * from "./user-design-limits";
 
+// ── AI_Design_Product (migration 2026-01-15-ai-design-product) ─────────────
+export * from "./furniture-products";
+export * from "./finishing-materials";
+export * from "./rate-limit-buckets";
+
 // ── Master publication audit log (added in 0007_master_publication_log) ────
 export * from "./master-publication-log";
 

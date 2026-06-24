@@ -22,6 +22,13 @@ export const citiesTable = pgTable("cities", {
   h1: varchar("h1", { length: 100 }),
   bodyMd: text("body_md"),
   isActive: boolean("is_active").notNull().default(true),
+  // ── AI_Design_Product (migration 2026-01-15-ai-design-product) ─────────────
+  /**
+   * Стоимость работ ₽ × 100 за 1 м² помещения для Real_Estimate (Requirement
+   * 11.4). NULL = использовать общероссийское значение по умолчанию
+   * (`DEFAULT_WORK_COEFF_KOPEKS_PER_SQM = 800000`).
+   */
+  workCoefficientKopeksPerSqm: integer("work_coefficient_kopeks_per_sqm"),
 });
 
 // ── service_types ────────────────────────────────────────────────────────────

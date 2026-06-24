@@ -1,15 +1,27 @@
 /**
  * Композитор финальной инфографики дизайн-проекта.
  *
- * Берёт AI-сгенерированные фото-ассеты (4 ракурса + 3D-isometric + 6
- * detail-кропов) и собирает из них одно большое изображение в стиле
- * ChatGPT-референса юзера: top-row 4 фото + middle (план + 3D + текст) +
- * bottom (решения + 6 кропов).
+ * Берёт AI-сгенерированные фото-ассеты (4 ракурса + 3D-isometric с уже
+ * наложенными выносками + 6 detail-кропов) и собирает из них одно большое
+ * изображение в стиле ChatGPT-референса юзера: top-row 4 фото + middle
+ * (план + 3D + текст) + bottom (решения + 6 кропов).
  *
  * Текст рисуется SVG'ом (через sharp/librsvg) — Russian кириллица должна
  * работать через системные DejaVu Sans на Linux/Railway.
  *
  * Output: JPEG buffer, размер 2048×1366 (3:2).
+ *
+ * Вид сверху и выноски на 3D-isometric более не зашиты в этом модуле
+ * (см. task 8.2 в .kiro/specs/ai-design-product/tasks.md):
+ *   • Top_Down_Plan программно отрисовывается в `lib/topDownPlan.ts` из
+ *     `Layout_JSON` и приходит сюда уже как PNG-буфер
+ *     (`topDownPlanPng`); если буфер не передан — слот занимает
+ *     placeholder-SVG с подписью «вид сверху», как и раньше для
+ *     не-bedroom типов помещений (Requirement 8.7).
+ *   • Выноски на 3D-isometric накладываются на этапе Isometric_Render
+ *     через `composeIsometricWithCallouts` из `lib/isometricCallouts.ts`,
+ *     поэтому изображение `isometric` приходит сюда уже готовым
+ *     (Requirement 9.3).
  */
 
 import sharp from "sharp";
@@ -42,12 +54,24 @@ const BOT_RIGHT_W = (W - PAD * 2 - GAP) - BOT_LEFT_W;
 const CROP_W = Math.floor((BOT_RIGHT_W - GAP * 5) / 6);
 const CROP_H = BOT_H - 32; // leave 32px for caption
 
+// Floor plan slot (Section A) — координаты сохраняются такими же, как до
+// task 8.2, чтобы сама компоновка инфографики не менялась.
+const PLAN_W = 480;
+const PLAN_H = 400;
+const PLAN_X = PAD;
+const PLAN_Y = MID_Y + 28;
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface InfographicInput {
   /** 4 photo views (1024×1024 jpeg buffers from gpt-image-1.5). */
   views: [Buffer, Buffer, Buffer, Buffer];
-  /** 3D-isometric jpeg buffer (1024×1024). */
+  /**
+   * 3D-isometric jpeg buffer (1024×1024). Приходит уже с наложенными
+   * выносками (см. `composeIsometricWithCallouts` из
+   * `lib/isometricCallouts.ts`) — этот модуль больше не дорисовывает
+   * подписи поверх (Requirement 9.3).
+   */
   isometric: Buffer;
   /** 6 detail-crop jpeg buffers (768×768). */
   detailCrops: [Buffer, Buffer, Buffer, Buffer, Buffer, Buffer];
@@ -56,6 +80,18 @@ export interface InfographicInput {
   viewLabels: [string, string, string, string];
   /** RU label под каждым из 6 кропов. */
   cropLabels: [string, string, string, string, string, string];
+
+  /**
+   * Программно отрисованный «вид сверху» в виде PNG-буфера, тот же
+   * самый, который сохраняется в `designs.top_down_plan_url` через
+   * `lib/topDownPlan.ts`. Если `null`/отсутствует — слот занимает
+   * placeholder-SVG (Requirement 8.5, 8.7).
+   *
+   * Поле опциональное для обратной совместимости с уже существующими
+   * вызовами composer'а: старые вызовы без поля продолжают работать
+   * через placeholder.
+   */
+  topDownPlanPng?: Buffer | null;
 
   design: {
     roomType: string;
@@ -95,84 +131,21 @@ function formatRub(rub: number): string {
   return Math.round(rub).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
 }
 
-// ─── Top-down floor plan SVG (per roomType) ─────────────────────────────────
+// ─── Top-down floor plan placeholder SVG ────────────────────────────────────
 
 /**
- * Генерирует SVG-схему вида сверху для bedroom 14-16 м². Размер 480×400
- * (под Section A в middle-left). Простая иллюстрация с прямоугольниками
- * для мебели — не AI, а программная отрисовка.
+ * Placeholder для слота «вид сверху» — используется ТОЛЬКО когда готовый
+ * PNG из `lib/topDownPlan.ts` не передан (например, тип помещения,
+ * отличный от `bedroom`, или MVP-fallback при ошибке отрисовки —
+ * Requirement 8.5).
+ *
+ * Размер совпадает с прямоугольником слота (`PLAN_W` × `PLAN_H`), чтобы
+ * placeholder не «вылазил» за пределы и общая компоновка 2048×1366
+ * оставалась прежней.
  */
-function buildFloorPlanSvg(roomType: string, _area: number | null): string {
-  // Для теста — статичный bedroom layout. Для других room types можно
-  // расширить (kitchen / bathroom / living_room).
-  if (roomType !== "bedroom") {
-    // Generic placeholder
-    return `<rect x="0" y="0" width="480" height="400" fill="#F4F1ED" stroke="#8A7B6A" stroke-width="3"/>
-            <text x="240" y="200" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" fill="#8A7B6A">Вид сверху</text>`;
-  }
-
-  // Bedroom 14-16 м² — simplified top-down with bed centered, wardrobe along
-  // one wall, desk by window. Reference layout matches user's ChatGPT image.
-  return `
-    <!-- Room walls -->
-    <rect x="20" y="20" width="440" height="360" fill="#F4F1ED" stroke="#3A4956" stroke-width="3"/>
-    <!-- Door (left wall) -->
-    <line x1="20" y1="60" x2="20" y2="140" stroke="#FFFFFF" stroke-width="6"/>
-    <path d="M 20 60 Q 60 60 60 100" fill="none" stroke="#3A4956" stroke-width="1.5" stroke-dasharray="3,3"/>
-    <!-- Window (top wall) -->
-    <line x1="180" y1="20" x2="300" y2="20" stroke="#94B0C2" stroke-width="6"/>
-    <!-- Bed (center) -->
-    <rect x="170" y="120" width="140" height="180" fill="#E2D6C5" stroke="#8A7B6A" stroke-width="2"/>
-    <rect x="180" y="135" width="50" height="40" fill="#FFFFFF" stroke="#8A7B6A" stroke-width="1"/>
-    <rect x="250" y="135" width="50" height="40" fill="#FFFFFF" stroke="#8A7B6A" stroke-width="1"/>
-    <!-- Bedside tables -->
-    <rect x="125" y="125" width="35" height="50" fill="#C9B59A" stroke="#8A7B6A" stroke-width="1.5"/>
-    <rect x="320" y="125" width="35" height="50" fill="#C9B59A" stroke="#8A7B6A" stroke-width="1.5"/>
-    <!-- Built-in wardrobe (right wall) -->
-    <rect x="380" y="40" width="80" height="200" fill="#A8927A" stroke="#8A7B6A" stroke-width="2"/>
-    <line x1="420" y1="40" x2="420" y2="240" stroke="#FFFFFF" stroke-width="1"/>
-    <!-- Desk (top, by window) -->
-    <rect x="60" y="40" width="120" height="40" fill="#C9B59A" stroke="#8A7B6A" stroke-width="1.5"/>
-    <!-- Chair -->
-    <circle cx="100" cy="100" r="14" fill="#E2D6C5" stroke="#8A7B6A" stroke-width="1.5"/>
-    <!-- Rug -->
-    <rect x="140" y="280" width="200" height="80" fill="none" stroke="#C9B59A" stroke-width="2" stroke-dasharray="5,3"/>
-  `;
-}
-
-// ─── 3D-isometric callouts SVG overlay ──────────────────────────────────────
-
-/**
- * Выноски (callouts) к 3D-isometric: линии-стрелки от точек на изображении
- * до подписей мебели. Координаты hardcoded для bedroom — предполагаем что
- * AI поместит мебель в типичных местах. На референсе: «Рабочее место у
- * окна», «Прикроватные тумбы», «Двуспальная кровать», «Встроенный шкаф».
- */
-function buildIsometricCalloutsSvg(roomType: string): string {
-  if (roomType !== "bedroom") return "";
-
-  // 3D-isometric image area: 560×420 (bedroom layout assumed)
-  return `
-    <!-- "Рабочее место у окна" — top-left of isometric -->
-    <line x1="155" y1="80" x2="245" y2="80" stroke="#3A4956" stroke-width="1.2"/>
-    <text x="148" y="76" text-anchor="end" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">Рабочее место</text>
-    <text x="148" y="92" text-anchor="end" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">у окна</text>
-
-    <!-- "Прикроватные тумбы" — middle-left -->
-    <line x1="135" y1="220" x2="220" y2="220" stroke="#3A4956" stroke-width="1.2"/>
-    <text x="128" y="216" text-anchor="end" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">Прикроватные</text>
-    <text x="128" y="232" text-anchor="end" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">тумбы</text>
-
-    <!-- "Двуспальная кровать" — middle-bottom -->
-    <line x1="155" y1="320" x2="280" y2="280" stroke="#3A4956" stroke-width="1.2"/>
-    <text x="148" y="316" text-anchor="end" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">Двуспальная</text>
-    <text x="148" y="332" text-anchor="end" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">кровать</text>
-
-    <!-- "Встроенный шкаф" — middle-right -->
-    <line x1="430" y1="180" x2="370" y2="180" stroke="#3A4956" stroke-width="1.2"/>
-    <text x="438" y="176" text-anchor="start" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">Встроенный</text>
-    <text x="438" y="192" text-anchor="start" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">шкаф</text>
-  `;
+function buildFloorPlanPlaceholderSvg(): string {
+  return `<rect x="0" y="0" width="${PLAN_W}" height="${PLAN_H}" fill="#F4F1ED" stroke="#8A7B6A" stroke-width="3"/>
+          <text x="${PLAN_W / 2}" y="${PLAN_H / 2}" text-anchor="middle" dominant-baseline="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" fill="#8A7B6A">Вид сверху</text>`;
 }
 
 // ─── Text block builders ────────────────────────────────────────────────────
@@ -308,16 +281,31 @@ export async function composeInfographic(input: InfographicInput): Promise<Buffe
     ),
   );
 
-  // 4. Build SVG overlay for all text + floor plan + callouts + captions.
-  const svg = buildSvgOverlay(input);
+  // 4. Подготовить «вид сверху»: если в input передан готовый PNG из
+  //    `lib/topDownPlan.ts` — масштабируем под слот и кладём как полноценный
+  //    composite-слой; если нет — слот заполняется placeholder-SVG в общем
+  //    оверлее (см. `buildSvgOverlay`). Requirement 8.7.
+  const planCell = input.topDownPlanPng
+    ? await sharp(input.topDownPlanPng)
+        .resize(PLAN_W, PLAN_H, { fit: "contain", background: "#FFFFFF" })
+        .jpeg({ quality: 92 })
+        .toBuffer()
+    : null;
+
+  // 5. Build SVG overlay for all text + (optional placeholder floor plan) +
+  //    captions. Выноски на изометрию более не накладываются здесь —
+  //    Requirement 9.3.
+  const svg = buildSvgOverlay(input, planCell === null);
   const svgBuffer = Buffer.from(svg);
 
-  // 5. Composite. Layers (bottom-up):
+  // 6. Composite. Layers (bottom-up):
   //    a. White background canvas
   //    b. 4 photos in top row
-  //    c. 3D-isometric in middle-center
-  //    d. 6 detail crops in bottom-right
-  //    e. SVG overlay (floor plan, callouts, all text, captions, table backgrounds)
+  //    c. Top_Down_Plan PNG (если есть) в Section A
+  //    d. 3D-isometric в middle-center
+  //    e. 6 detail crops в bottom-right
+  //    f. SVG overlay (текст, captions, table backgrounds, опц. placeholder
+  //       плана)
   const composites: sharp.OverlayOptions[] = [];
 
   // 4 top photos
@@ -326,8 +314,12 @@ export async function composeInfographic(input: InfographicInput): Promise<Buffe
     composites.push({ input: photoCells[i]!, left: x, top: TOP_Y });
   }
 
+  // Top_Down_Plan PNG (если передан) в Section A
+  if (planCell) {
+    composites.push({ input: planCell, left: PLAN_X, top: PLAN_Y });
+  }
+
   // 3D-isometric in middle-left section (right side of left half)
-  const PLAN_W = 480;
   const isoX = PAD + PLAN_W + GAP;
   const isoY = MID_Y + 20;
   composites.push({ input: isoCell, left: isoX, top: isoY });
@@ -339,7 +331,7 @@ export async function composeInfographic(input: InfographicInput): Promise<Buffe
     composites.push({ input: cropCells[i]!, left: x, top: BOT_Y });
   }
 
-  // SVG overlay (text, floor plan, captions, table backgrounds, callouts).
+  // SVG overlay (text, captions, table backgrounds, placeholder при необх.).
   composites.push({ input: svgBuffer, left: 0, top: 0 });
 
   return sharp({
@@ -355,7 +347,15 @@ export async function composeInfographic(input: InfographicInput): Promise<Buffe
     .toBuffer();
 }
 
-function buildSvgOverlay(input: InfographicInput): string {
+/**
+ * Сборка единого SVG-слоя поверх растровых ассетов.
+ *
+ * @param renderPlanPlaceholder если `true` — вставить placeholder-SVG в
+ *   слот «вид сверху» (когда готовый PNG из `topDownPlan.ts` отсутствует);
+ *   если `false` — слот уже занят PNG-композитом, поэтому placeholder не
+ *   рисуется. Caption «5. Вид сверху...» рисуется в обоих случаях.
+ */
+function buildSvgOverlay(input: InfographicInput, renderPlanPlaceholder: boolean): string {
   // Photo captions (top row)
   let captions = "";
   for (let i = 0; i < 4; i++) {
@@ -376,20 +376,11 @@ function buildSvgOverlay(input: InfographicInput): string {
     });
   }
 
-  // Top-down floor plan (Section A)
-  const PLAN_W = 480;
-  const PLAN_X = PAD;
-  const PLAN_Y = MID_Y + 28;
-  const planSvg = buildFloorPlanSvg(input.design.roomType, input.design.area);
-  const planCaption = `<text x="${PLAN_X}" y="${PLAN_Y + 420}" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">5. Вид сверху с расстановкой мебели</text>`;
-
-  // 3D-isometric callouts (overlay on top of isoCell)
-  const ISO_X = PAD + PLAN_W + GAP;
-  const ISO_Y = MID_Y + 20;
-  const calloutsSvg = buildIsometricCalloutsSvg(input.design.roomType);
-  const calloutsGroup = calloutsSvg
-    ? `<g transform="translate(${ISO_X}, ${ISO_Y})">${calloutsSvg}</g>`
+  // Placeholder для слота «вид сверху» — только когда готовый PNG отсутствует.
+  const planPlaceholder = renderPlanPlaceholder
+    ? `<g transform="translate(${PLAN_X}, ${PLAN_Y})">${buildFloorPlanPlaceholderSvg()}</g>`
     : "";
+  const planCaption = `<text x="${PLAN_X}" y="${PLAN_Y + PLAN_H + 20}" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">5. Вид сверху с расстановкой мебели</text>`;
 
   // Right-side text blocks (params + palette top, materials + estimate bottom)
   const textX = PAD + MID_LEFT_W + GAP;
@@ -405,14 +396,9 @@ function buildSvgOverlay(input: InfographicInput): string {
 
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <!-- Top-down floor plan -->
-  <g transform="translate(${PLAN_X}, ${PLAN_Y})">
-    ${planSvg}
-  </g>
+  <!-- Top-down floor plan placeholder (только если готовый PNG не передан) -->
+  ${planPlaceholder}
   ${planCaption}
-
-  <!-- 3D-isometric callouts -->
-  ${calloutsGroup}
 
   <!-- Photo captions -->
   ${captions}

@@ -2,7 +2,10 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
+    // Без rootDir: пилот identity-preservation импортирует модули из
+    // ../artifacts/api-server/src/lib (см. scripts/src/identity-preservation-pilot.ts).
+    // Скрипты исполняются через tsx и не собираются через tsc, --noEmit, поэтому
+    // отсутствие rootDir не влияет на эмит.
     "types": ["node"]
   },
   "include": ["src"]
