@@ -59,8 +59,8 @@ interface ParsedRoute {
 function parseRoute(combo: string): ParsedRoute | null {
   const segments = combo.split("-");
   const last = segments[segments.length - 1] ?? "";
-  // Full design slug: ends with 8-char alphanumeric nanoid.
-  if (segments.length >= 3 && /^[a-z0-9]{8}$/.test(last)) {
+  // Full design slug: ends with 6-8 char alphanumeric nanoid.
+  if (segments.length >= 3 && /^[a-z0-9]{6,8}$/.test(last)) {
     return { kind: "design", slug: combo };
   }
 
