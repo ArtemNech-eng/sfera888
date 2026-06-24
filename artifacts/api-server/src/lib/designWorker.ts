@@ -229,15 +229,6 @@ const ROOM_VIEW_SUBJECTS: Record<string, [string, string, string, string]> = {
   ],
 };
 
-/** RU labels для 5 ракурсов в порядке UI [общий, кровать-акцент, шкаф, окно, 3D-план]. */
-const VIEW_LABELS: [string, string, string, string, string] = [
-  "Общий вид от входа",
-  "Вид на кровать и акцент",
-  "Шкаф и хранение",
-  "Зона у окна",
-  "3D-планировка",
-];
-
 /**
  * Промпт для 3D-isometric плана — отдельный FLUX Pro Ultra вызов после
  * основного moodboard'а. Воспроизводит стиль архитектурного аксонометри-
@@ -289,21 +280,8 @@ function buildHeroPhotoPrompt(room: string, style: string, area: number | null):
   return `Реалистичная интерьерная фотография ${room} в стиле «${styleClause}»${areaPart}, общий вид от входа, фотореализм 4K, без людей, без текста.`;
 }
 
-/** Описания 3 дополнительных ракурсов для edit-image вызовов с reference=hero. */
-const ANGLE_PROMPTS_BEDROOM: [string, string, string] = [
-  // view 2: вид на кровать и акцентную стену
-  "Та же спальня, та же палитра, те же материалы. Покажи её с другого ракурса: фронтальный вид на кровать и акцентную стену с рейками или декоративной отделкой над изголовьем. Прикроватные тумбы с лампами, декоративные подушки, без людей, фотореализм.",
-  // view 3: вид на шкаф и систему хранения
-  "Та же спальня, тот же стиль и материалы. Покажи её с третьего ракурса: вид на встроенный шкаф вдоль стены — двери шкафа в натуральном дереве, открытые полки с книгами и декором, дверь комнаты в кадре. Без людей, фотореализм.",
-  // view 4: вид возле окна
-  "Та же спальня, идентичная палитра и материалы. Покажи её с четвёртого ракурса: вид возле окна с рабочим местом — стол с растением, стул, тонкие шторы, мягкий дневной свет, край кровати в углу кадра. Без людей, фотореализм.",
-];
-
-function buildAnglePrompt(room: string, idx: 0 | 1 | 2): string {
-  if (room === "bedroom") return ANGLE_PROMPTS_BEDROOM[idx];
-  // Generic fallback
-  return `Та же ${room}, тот же стиль, материалы и палитра. Покажи её с другого ракурса: ${["фронтальный вид на главную мебель", "вид на зону хранения", "вид у окна"][idx]}. Без людей, фотореализм.`;
-}
+// (legacy 3-prompt array and buildAnglePrompt removed — current pipeline uses
+// ANGLE_PROMPTS_BEDROOM_5 with dispatchEditImage for 5 angle renders)
 
 /** RU описания стилей для подстановки в промпт. */
 const STYLE_RU_CLAUSES: Record<string, string> = {
@@ -443,10 +421,9 @@ async function pingForDesign(slug: string, room: string, style: string): Promise
 //
 // Эти константы и вспомогательные функции — отдельный детерминированный
 // конечный автомат, описанный в `.kiro/specs/ai-design-product/design.md`
-// секция «Generation_Pipeline и его прогресс». Старые ROOM_VIEW_SUBJECTS /
-// ANGLE_PROMPTS_BEDROOM (с 3 ракурсами) сохранены для будущего user-upload
-// режима, но в продуктовом FSM используются новые 5 angle-промптов
-// (Hero + 5 Angle = 6 ракурсов, Requirement 7.1).
+// секция «Generation_Pipeline и его прогресс». Продуктовый FSM использует
+// 5 angle-промптов через edit-image (Hero + 5 Angle = 6 ракурсов,
+// Requirement 7.1). ROOM_VIEW_SUBJECTS сохранены для будущего user-upload режима.
 
 /**
  * 5 промптов для Angle_Render через edit-image c reference=Hero_Render
