@@ -79,9 +79,9 @@ export default function Hero() {
         </div>
         <div className="hidden lg:block">
           <img
-            src="https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1200&h=600&fit=crop&q=80"
+            src="https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&h=1000&fit=crop&q=80"
             alt="Квартира после ремонта — светлая комната"
-            className="rounded-2xl shadow-lg w-full"
+            className="rounded-2xl shadow-lg w-full h-full object-cover max-h-[600px]"
           />
         </div>
         </div>
