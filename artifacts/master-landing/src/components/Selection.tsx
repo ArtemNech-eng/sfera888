@@ -19,7 +19,7 @@ const forbidden = [
 
 export default function Selection() {
   return (
-    <section className="relative py-20 sm:py-28 bg-[#F1EEE7]">
+    <section className="relative py-14 sm:py-20 bg-[#F1EEE7]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
           С кем мы <span className="text-[#D9342B]">работаем</span>

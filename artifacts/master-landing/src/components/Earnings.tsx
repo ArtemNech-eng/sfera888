@@ -2,7 +2,7 @@ import { TrendingUp, Repeat } from 'lucide-react';
 
 export default function Earnings() {
   return (
-    <section className="relative py-20 sm:py-28">
+    <section className="relative py-14 sm:py-20">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
           Сколько можно <span className="text-[#D9342B]">заработать</span>

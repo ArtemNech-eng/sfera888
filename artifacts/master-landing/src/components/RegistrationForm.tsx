@@ -111,7 +111,7 @@ export default function RegistrationForm() {
   // Success screen — показываем логин/пароль и ссылку
   if (status === 'success') {
     return (
-      <section id="registration-form" className="relative py-20 sm:py-28">
+      <section id="registration-form" className="relative py-14 sm:py-20">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
           <div className="p-10 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm">
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-6" />
@@ -144,7 +144,7 @@ export default function RegistrationForm() {
   // Duplicate screen — номер уже зарегистрирован
   if (status === 'duplicate') {
     return (
-      <section id="registration-form" className="relative py-20 sm:py-28">
+      <section id="registration-form" className="relative py-14 sm:py-20">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
           <div className="p-10 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm">
             <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -167,7 +167,7 @@ export default function RegistrationForm() {
   }
 
   return (
-    <section id="registration-form" className="relative py-20 sm:py-28">
+    <section id="registration-form" className="relative py-14 sm:py-20">
       <div className="max-w-2xl mx-auto px-4 sm:px-6">
         <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
           <span className="text-[#D9342B]">Регистрация</span> мастера

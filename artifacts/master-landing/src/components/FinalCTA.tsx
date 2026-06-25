@@ -6,7 +6,7 @@ export default function FinalCTA() {
   };
 
   return (
-    <section className="relative py-20 sm:py-28 bg-[#F1EEE7]">
+    <section className="relative py-14 sm:py-20 bg-[#F1EEE7]">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
         <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-6">
           Хватит искать клиентов <span className="text-[#D9342B]">вслепую</span>
