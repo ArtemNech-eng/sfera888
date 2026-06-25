@@ -353,7 +353,7 @@ export function DesignBoard({
               </div>
 
               {/* CENTER: params + materials + estimate */}
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-4">
                 {/* Параметры проекта */}
                 <div>
                   <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Параметры проекта</h3>
@@ -393,7 +393,7 @@ export function DesignBoard({
 
                 {/* Смета реализации */}
                 {design.estimate && design.estimate.length > 0 && (
-                  <div className="sm:col-span-2">
+                  <div>
                     <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Смета реализации</h3>
                     <table className="mt-2 w-full text-xs">
                       <tbody>
