@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Send, CheckCircle, Loader2 } from 'lucide-react';
+import { Send, CheckCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 
 const SPECIALIZATIONS = [
   'Обои',
@@ -17,6 +17,15 @@ interface FormData {
   phone: string;
   city: string;
   specialization: string[];
+  password: string;
+}
+
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('8') && digits.length === 11) {
+    return '7' + digits.slice(1);
+  }
+  return digits;
 }
 
 export default function RegistrationForm() {
@@ -25,9 +34,12 @@ export default function RegistrationForm() {
     phone: '',
     city: '',
     specialization: [],
+    password: '',
   });
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'duplicate' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [registeredPhone, setRegisteredPhone] = useState('');
 
   const toggleSpecialization = (spec: string) => {
     setForm((prev) => ({
@@ -47,43 +59,107 @@ export default function RegistrationForm() {
       return;
     }
 
+    if (form.password.length < 6) {
+      setErrorMessage('Пароль должен быть минимум 6 символов');
+      setStatus('error');
+      return;
+    }
+
+    const normalizedPhone = normalizePhone(form.phone);
+    if (normalizedPhone.length < 10) {
+      setErrorMessage('Введите корректный номер телефона');
+      setStatus('error');
+      return;
+    }
+
     setStatus('loading');
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/landing/leads', {
+      const response = await fetch('/api/master-pwa/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: form.name.trim(),
-          phone: form.phone.trim(),
+          alias: form.name.trim(),
+          phone: normalizedPhone,
           city: form.city.trim(),
-          specialization: form.specialization.join(', '),
-          source: 'master_landing',
+          specialization: form.specialization[0] || 'Другое',
+          specializations: form.specialization,
+          login: normalizedPhone,
+          password: form.password,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Ошибка отправки');
+      if (response.status === 409) {
+        setStatus('duplicate');
+        return;
       }
 
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || 'Ошибка регистрации');
+      }
+
+      setRegisteredPhone(normalizedPhone);
       setStatus('success');
-    } catch {
-      setErrorMessage('Не удалось отправить заявку. Попробуйте ещё раз.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Не удалось зарегистрироваться. Попробуйте ещё раз.');
       setStatus('error');
     }
   };
 
+  // Success screen — показываем логин/пароль и ссылку
   if (status === 'success') {
     return (
       <section id="registration-form" className="relative py-20 sm:py-28">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
           <div className="p-10 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm">
-            <CheckCircle className="w-16 h-16 text-[#D9342B] mx-auto mb-6" />
-            <h3 className="text-2xl font-bold text-[#0F172A] mb-3">Заявка отправлена!</h3>
-            <p className="text-[#475569] text-lg">
-              Спасибо, {form.name}! Мы свяжемся с вами в ближайшее время и дадим доступ к приложению.
+            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-6" />
+            <h3 className="text-2xl font-bold text-[#0F172A] mb-4">✅ Аккаунт создан!</h3>
+            <p className="text-[#475569] text-lg mb-6">
+              {form.name}, ваш аккаунт готов. Сохраните данные для входа:
             </p>
+            <div className="bg-[#F8FAFC] rounded-xl p-6 mb-6 text-left space-y-3 border border-[#EDEAE2]">
+              <div className="flex items-center justify-between">
+                <span className="text-[#475569] text-sm">Логин:</span>
+                <span className="font-mono font-bold text-[#0F172A]">{registeredPhone}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[#475569] text-sm">Пароль:</span>
+                <span className="font-mono font-bold text-[#0F172A]">{form.password}</span>
+              </div>
+            </div>
+            <a
+              href="/master-pwa/login"
+              className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-[#D9342B] text-white font-bold text-lg shadow-md hover:bg-[#B8281F] hover:shadow-lg transition-all duration-300 hover:scale-[1.01]"
+            >
+              Войти в приложение
+            </a>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Duplicate screen — номер уже зарегистрирован
+  if (status === 'duplicate') {
+    return (
+      <section id="registration-form" className="relative py-20 sm:py-28">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
+          <div className="p-10 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-3xl">⚠️</span>
+            </div>
+            <h3 className="text-2xl font-bold text-[#0F172A] mb-3">Номер уже зарегистрирован</h3>
+            <p className="text-[#475569] text-lg mb-6">
+              Этот номер уже зарегистрирован. Войдите через приложение.
+            </p>
+            <a
+              href="/master-pwa/login"
+              className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-[#D9342B] text-white font-bold text-lg shadow-md hover:bg-[#B8281F] hover:shadow-lg transition-all duration-300 hover:scale-[1.01]"
+            >
+              Войти в приложение
+            </a>
           </div>
         </div>
       </section>
@@ -97,7 +173,7 @@ export default function RegistrationForm() {
           <span className="text-[#D9342B]">Регистрация</span> мастера
         </h2>
         <p className="text-[#475569] text-center mb-10 text-lg">
-          Заполните форму — мы подключим вас к системе и откроем доступ к заказам
+          Заполните форму — получите доступ к заказам сразу после регистрации
         </p>
 
         <form
@@ -149,6 +225,32 @@ export default function RegistrationForm() {
             />
           </div>
 
+          {/* Password */}
+          <div>
+            <label htmlFor="reg-password" className="block text-[#0F172A] text-sm font-medium mb-2">
+              Пароль
+            </label>
+            <div className="relative">
+              <input
+                id="reg-password"
+                type={showPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="Минимум 6 символов"
+                minLength={6}
+                className="w-full px-4 py-3 pr-12 rounded-xl bg-white border border-[#EDEAE2] text-[#0F172A] placeholder-[#94A3B8] focus:border-[#D9342B] focus:outline-none focus:ring-1 focus:ring-[#D9342B]/50 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#475569] transition-colors cursor-pointer"
+                aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
+
           {/* Specialization multi-select */}
           <div>
             <label className="block text-[#0F172A] text-sm font-medium mb-3">
@@ -191,12 +293,12 @@ export default function RegistrationForm() {
             {status === 'loading' ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Отправка...
+                Регистрация...
               </>
             ) : (
               <>
                 <Send className="w-5 h-5" />
-                Начать получать заказы
+                Зарегистрироваться
               </>
             )}
           </button>
