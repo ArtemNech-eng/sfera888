@@ -2933,9 +2933,9 @@ router.get("/pending-actions", requireMasterPwa, async (req, res) => {
     needs_commission_payment: "commission_payment",
   };
   const TITLE_BY_CATEGORY: Record<string, (i: typeof items[0]) => string> = {
-    needs_call_report:        (i) => `По заказу #${i.id} (${i.serviceType}, ${i.city}) — отчитайтесь о созвоне с клиентом`,
-    needs_result:             (i) => `По заказу #${i.id} (${i.serviceType}, ${i.city}) — пришлите фото и итоговую сумму`,
-    needs_commission_payment: (i) => `По заказу #${i.id} — оплатите комиссию${i.netPayable ? ` (${i.netPayable.toLocaleString("ru-RU")} ₽)` : ""}`,
+    needs_call_report:        (i) => `По заказу #${i.leadId ?? i.id} (${i.serviceType}, ${i.city}) — отчитайтесь о созвоне с клиентом`,
+    needs_result:             (i) => `По заказу #${i.leadId ?? i.id} (${i.serviceType}, ${i.city}) — пришлите фото и итоговую сумму`,
+    needs_commission_payment: (i) => `По заказу #${i.leadId ?? i.id} — оплатите комиссию${i.netPayable ? ` (${i.netPayable.toLocaleString("ru-RU")} ₽)` : ""}`,
   };
   const CTA_BY_CATEGORY: Record<string, string> = {
     needs_call_report:        "Отчитаться о созвоне",
@@ -2946,6 +2946,7 @@ router.get("/pending-actions", requireMasterPwa, async (req, res) => {
   res.json(
     visible.map(i => ({
       orderId: i.id,
+      leadId: i.leadId ?? null,
       type: TYPE_BY_CATEGORY[i.category],
       title: TITLE_BY_CATEGORY[i.category](i),
       ctaText: CTA_BY_CATEGORY[i.category],

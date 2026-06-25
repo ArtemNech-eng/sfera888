@@ -33,6 +33,7 @@ export type StuckCategory =
 
 export interface StuckOrderItem {
   id: number;
+  leadId: number | null;
   category: StuckCategory;
   masterId: number | null;
   masterAlias: string | null;
@@ -209,6 +210,7 @@ function toStuckItem(
 
   return {
     id: order.id,
+    leadId: order.leadId ?? null,
     category,
     masterId: order.masterId ?? null,
     masterAlias: master?.alias ?? null,

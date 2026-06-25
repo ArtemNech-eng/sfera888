@@ -43,7 +43,7 @@ export function PendingActionsBanner() {
   const [, setLocation] = useLocation();
   const [actions, setActions] = useState<PendingAction[] | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const [callReportFor, setCallReportFor] = useState<number | null>(null);
+  const [callReportFor, setCallReportFor] = useState<{ orderId: number; leadId: number | null } | null>(null);
   const [snoozing, setSnoozing] = useState(false);
 
   async function load() {
@@ -65,7 +65,7 @@ export function PendingActionsBanner() {
 
   const handleAction = (a: PendingAction) => {
     if (a.type === "call_report") {
-      setCallReportFor(a.orderId);
+      setCallReportFor({ orderId: a.orderId, leadId: a.leadId ?? null });
       return;
     }
     if (a.type === "commission_payment") {
@@ -161,7 +161,8 @@ export function PendingActionsBanner() {
       {/* Inline call-report modal */}
       {callReportFor != null && (
         <CallReportModal
-          orderId={callReportFor}
+          orderId={callReportFor.orderId}
+          displayId={callReportFor.leadId ?? callReportFor.orderId}
           onClose={() => setCallReportFor(null)}
           onSubmitted={async () => {
             setCallReportFor(null);

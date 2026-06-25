@@ -2,6 +2,7 @@ const BASE = "/api/master-pwa";
 
 export interface PendingAction {
   orderId: number;
+  leadId: number | null;
   type: "call_report" | "photos_and_amount" | "commission_payment";
   title: string;
   ctaText: string;

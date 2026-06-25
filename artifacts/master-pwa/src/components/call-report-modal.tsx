@@ -14,13 +14,14 @@ import { toast } from "sonner";
 
 interface Props {
   orderId: number;
+  displayId?: number;
   onClose: () => void;
   onSubmitted: () => void;
 }
 
 type Mode = "scheduled" | "no_contact";
 
-export function CallReportModal({ orderId, onClose, onSubmitted }: Props) {
+export function CallReportModal({ orderId, displayId, onClose, onSubmitted }: Props) {
   const [mode, setMode] = useState<Mode>("scheduled");
   const [scheduledAt, setScheduledAt] = useState<string>("");
   const [note, setNote] = useState<string>("");
@@ -65,7 +66,7 @@ export function CallReportModal({ orderId, onClose, onSubmitted }: Props) {
         <div className="flex items-start justify-between px-5 pt-5 pb-3">
           <div>
             <h2 className="text-lg font-bold leading-tight">Отчёт о созвоне</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Заказ #{orderId}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Заказ #{displayId ?? orderId}</p>
           </div>
           <button
             onClick={onClose}
