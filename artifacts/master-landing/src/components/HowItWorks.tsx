@@ -1,57 +1,70 @@
-import { UserPlus, Eye, Ruler, CheckCircle } from 'lucide-react';
+import { FileText, UserCheck, ThumbsUp, Smartphone, Briefcase } from 'lucide-react';
 
 const steps = [
   {
-    icon: UserPlus,
+    icon: FileText,
     number: '01',
     title: 'Заполняете форму',
-    description: 'Регистрируетесь на сайте — получаете доступ к PWA-приложению с лентой заказов.',
+    description: 'Указываете специализацию, город, опыт. Занимает 2 минуты.',
   },
   {
-    icon: Eye,
+    icon: UserCheck,
     number: '02',
-    title: 'Видите заявки — откликаетесь',
-    description: 'В ленте появляются заявки по вашей специализации и городу. Берёте подходящую.',
+    title: 'Проверка анкеты',
+    description: 'Менеджер проверяет вашу заявку и связывается с вами.',
   },
   {
-    icon: Ruler,
+    icon: ThumbsUp,
     number: '03',
-    title: 'Замер → смета → работа',
-    description: 'Выезжаете к клиенту, составляете смету в приложении, выполняете работу.',
+    title: 'Менеджер одобряет',
+    description: 'Получаете подтверждение и приглашение в систему.',
   },
   {
-    icon: CheckCircle,
+    icon: Smartphone,
     number: '04',
-    title: 'Клиент заплатил → оплатили → новый',
-    description: 'Клиент оплачивает вам → вы оплачиваете 500₽ + 15%. Получаете следующий заказ.',
+    title: 'Доступ к приложению',
+    description: 'Устанавливаете PWA-приложение и видите ленту заказов.',
+  },
+  {
+    icon: Briefcase,
+    number: '05',
+    title: 'Берёте первый объект',
+    description: 'Выбираете подходящий заказ из ленты и начинаете работать.',
   },
 ];
 
-export default function HowItWorks() {
+export default function HowToStart() {
   return (
-    <section id="how-it-works" className="relative py-20 sm:py-28 bg-[#F1EEE7]">
+    <section id="how-to-start" className="relative py-20 sm:py-28 bg-[#F1EEE7]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
-          Как это <span className="text-[#D9342B]">работает</span>
+          Как <span className="text-[#D9342B]">начать</span>
         </h2>
         <p className="text-[#475569] text-center max-w-3xl mx-auto mb-14 text-lg">
-          Четыре простых шага от регистрации до дохода
+          От заявки до первого объекта — 5 простых шагов
         </p>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {steps.map((step) => (
+        <div className="max-w-3xl mx-auto space-y-4">
+          {steps.map((step, index) => (
             <div
               key={step.number}
-              className="relative p-6 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm hover:shadow-md transition-all duration-300"
+              className="flex items-start gap-5 p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm"
             >
-              <div className="absolute -top-3 right-6 px-3 py-1 rounded-full text-xs font-bold bg-[#FCE9E7] border border-[#EDEAE2] text-[#D9342B]">
-                Шаг {step.number}
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-[#FCE9E7] border border-[#EDEAE2]">
+                  <step.icon className="w-6 h-6 text-[#D9342B]" />
+                </div>
               </div>
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 bg-[#FCE9E7] border border-[#EDEAE2]">
-                <step.icon className="w-6 h-6 text-[#D9342B]" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-1">
+                  <span className="text-[#D9342B] text-xs font-bold">Шаг {step.number}</span>
+                  <h3 className="text-[#0F172A] font-bold">{step.title}</h3>
+                </div>
+                <p className="text-[#475569] text-sm">{step.description}</p>
               </div>
-              <h3 className="text-lg font-bold text-[#0F172A] mb-2">{step.title}</h3>
-              <p className="text-[#475569] text-sm leading-relaxed">{step.description}</p>
+              {index < steps.length - 1 && (
+                <div className="hidden sm:block absolute left-[2.15rem] mt-14 w-0.5 h-4 bg-[#EDEAE2]" />
+              )}
             </div>
           ))}
         </div>
