@@ -1,107 +1,52 @@
-import { User, Star } from 'lucide-react';
+import { TrendingUp, Calendar, Repeat } from 'lucide-react';
 
 export default function Earnings() {
   return (
-    <section className="bg-white py-20 px-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-extrabold text-[#1A1A1A] mb-4">
-            Сколько можно зарабатывать
-          </h2>
-          <div className="text-[#8E8E93] text-base leading-relaxed space-y-3 max-w-xl mx-auto">
-            <p>
-              Один заказ обычно занимает{' '}
-              <span className="text-[#1A1A1A] font-semibold">2–3 дня</span>.
-              Средний мастер закрывает{' '}
-              <span className="text-[#1A1A1A] font-semibold">6–9 заказов в месяц</span>.
-            </p>
-            <p>Доход зависит от вашей конверсии, скорости работы, качества и умения доводить клиента до предоплаты.</p>
-          </div>
-        </div>
-
-        {/* Income highlight */}
-        <div
-          className="rounded-2xl p-8 text-center mb-10"
-          style={{
-            background: 'linear-gradient(135deg, rgba(52,199,89,0.08) 0%, rgba(52,199,89,0.03) 100%)',
-            border: '1.5px solid rgba(52,199,89,0.18)',
-          }}
-        >
-          <p className="text-sm text-[#8E8E93] font-medium mb-2 uppercase tracking-wide">
-            Средний активный мастер зарабатывает
-          </p>
-          <p className="text-4xl md:text-5xl font-black text-[#34C759]">
-            120 000 — 220 000 ₽
-          </p>
-          <p className="text-[#8E8E93] text-sm mt-2">в месяц</p>
-        </div>
-
-        {/* Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-10">
-          {/* Regular master */}
-          <div className="card border border-[#E5E5EA]">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-xl bg-[#F5F5F5] flex items-center justify-center">
-                <User size={18} color="#8E8E93" strokeWidth={2} />
-              </div>
-              <h3 className="text-base font-bold text-[#1A1A1A]">Обычный мастер</h3>
-            </div>
-            <ul className="space-y-2.5">
-              {[
-                '4–6 заказов в месяц',
-                'Есть простои',
-                'Доход 100–130 тысяч ₽',
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-2 text-sm text-[#8E8E93]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#8E8E93] mt-1.5 flex-shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Top master */}
-          <div
-            className="card relative overflow-hidden"
-            style={{
-              border: '1.5px solid #34C759',
-              background: 'linear-gradient(135deg, #fff 0%, rgba(52,199,89,0.04) 100%)',
-            }}
-          >
-            <div className="absolute top-4 right-4">
-              <span className="text-xs font-bold bg-[#34C759] text-white rounded-full px-3 py-1">
-                Топ
-              </span>
-            </div>
-            <div className="flex items-center gap-3 mb-5">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: 'rgba(52,199,89,0.1)' }}
-              >
-                <Star size={18} color="#34C759" strokeWidth={2} />
-              </div>
-              <h3 className="text-base font-bold text-[#1A1A1A]">Топ-мастер</h3>
-            </div>
-            <ul className="space-y-2.5">
-              {[
-                '7–9 заказов в месяц',
-                'Высокая конверсия',
-                'Почти без простоев',
-                'Доход 160–220 тысяч ₽',
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-2 text-sm text-[#1A1A1A] font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#34C759] mt-1.5 flex-shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        <p className="text-center text-sm text-[#8E8E93] leading-relaxed max-w-md mx-auto">
-          Мы не обещаем лёгкие деньги. Мы даём систему, в которой{' '}
-          <span className="text-[#1A1A1A] font-semibold">сильные мастера зарабатывают больше</span>.
+    <section className="relative py-20 sm:py-28">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
+          Сколько можно <span className="text-[#D9342B]">заработать</span>
+        </h2>
+        <p className="text-[#475569] text-center max-w-3xl mx-auto mb-12 text-lg">
+          Один объект — 2–3 дня. Средний мастер закрывает 6–9 объектов в месяц.
         </p>
+
+        {/* Big number */}
+        <div className="max-w-2xl mx-auto p-8 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm text-center mb-10">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <TrendingUp className="w-8 h-8 text-[#D9342B]" />
+            <span className="text-[#475569] text-lg">Доход активного мастера:</span>
+          </div>
+          <div className="text-5xl sm:text-6xl font-bold text-[#0F172A] mb-2">
+            120 000 – 220 000 <span className="text-[#D9342B]">₽</span>
+          </div>
+          <div className="text-[#475569]">в месяц</div>
+        </div>
+
+        {/* Stats row */}
+        <div className="grid sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
+          <div className="p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm text-center">
+            <Calendar className="w-6 h-6 text-[#D9342B] mx-auto mb-3" />
+            <div className="text-2xl font-bold text-[#0F172A]">2–3 дня</div>
+            <div className="text-[#475569] text-sm mt-1">на один объект</div>
+          </div>
+          <div className="p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm text-center">
+            <Repeat className="w-6 h-6 text-[#D9342B] mx-auto mb-3" />
+            <div className="text-2xl font-bold text-[#0F172A]">6–9</div>
+            <div className="text-[#475569] text-sm mt-1">заказов в месяц</div>
+          </div>
+          <div className="p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm text-center">
+            <TrendingUp className="w-6 h-6 text-[#D9342B] mx-auto mb-3" />
+            <div className="text-2xl font-bold text-[#0F172A]">от 15%</div>
+            <div className="text-[#475569] text-sm mt-1">комиссия с заказа</div>
+          </div>
+        </div>
+
+        <div className="max-w-2xl mx-auto mt-8 text-center">
+          <p className="text-[#475569] leading-relaxed">
+            Конвейер: закрыли объект → получили следующую заявку. Чем выше рейтинг и конверсия, тем чаще система направляет заказы именно вам.
+          </p>
+        </div>
       </div>
     </section>
   );

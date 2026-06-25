@@ -1,77 +1,60 @@
-import { Bell, Zap, Calculator, CheckSquare } from 'lucide-react';
+import { UserPlus, Eye, Ruler, CheckCircle } from 'lucide-react';
 
 const steps = [
   {
+    icon: UserPlus,
     number: '01',
-    icon: Bell,
-    title: 'Получаете заявку',
-    description:
-      'В приложении появляются новые заказы по вашему городу и специализации',
+    title: 'Заполняете форму',
+    description: 'Регистрируетесь на сайте — получаете доступ к PWA-приложению с лентой заказов.',
   },
   {
+    icon: Eye,
     number: '02',
-    icon: Zap,
-    title: 'Откликаетесь',
-    description:
-      'Система выбирает мастера по конверсии, рейтингу и скорости. Быстрее откликаетесь — больше шансов',
+    title: 'Видите заявки — откликаетесь',
+    description: 'В ленте появляются заявки по вашей специализации и городу. Берёте подходящую.',
   },
   {
+    icon: Ruler,
     number: '03',
-    icon: Calculator,
-    title: 'Едете на замер',
-    description:
-      'Считаете смету прямо в приложении и отправляете клиенту',
+    title: 'Замер → смета → работа',
+    description: 'Выезжаете к клиенту, составляете смету в приложении, выполняете работу.',
   },
   {
+    icon: CheckCircle,
     number: '04',
-    icon: CheckSquare,
-    title: 'Берёте объект',
-    description:
-      'Клиент вносит предоплату, выходите на работу и закрываете заказ в системе. После закрытия — новые заявки доступны.',
+    title: 'Закрыли объект → оплатили → новый',
+    description: 'После завершения оплачиваете 500₽ + 15% комиссии. Получаете следующий заказ.',
   },
 ];
 
 export default function HowItWorks() {
   return (
-    <section className="bg-white py-20 px-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-extrabold text-[#1A1A1A] mb-3">
-            Как вы работаете с нами
-          </h2>
-          <p className="text-[#8E8E93] text-lg">Четыре простых шага</p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-10">
-          {steps.map((step) => {
-            const Icon = step.icon;
-            return (
-              <div key={step.number} className="card relative overflow-hidden">
-                {/* Step number background */}
-                <div className="absolute top-4 right-5 text-6xl font-black text-[#F5F5F5] select-none leading-none">
-                  {step.number}
-                </div>
-                <div className="relative">
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
-                    style={{ backgroundColor: 'rgba(52,199,89,0.1)' }}
-                  >
-                    <Icon size={22} color="#34C759" strokeWidth={2} />
-                  </div>
-                  <h3 className="text-lg font-bold text-[#1A1A1A] mb-2">{step.title}</h3>
-                  <p className="text-[#8E8E93] text-sm leading-relaxed">{step.description}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <p className="text-center text-[#1A1A1A] font-medium text-base">
-          Вы не ищете клиентов вручную —{' '}
-          <span className="text-[#34C759] font-bold">
-            сервис сам приводит их в систему
-          </span>
+    <section id="how-it-works" className="relative py-20 sm:py-28 bg-[#F1EEE7]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
+          Как это <span className="text-[#D9342B]">работает</span>
+        </h2>
+        <p className="text-[#475569] text-center max-w-3xl mx-auto mb-14 text-lg">
+          Четыре простых шага от регистрации до дохода
         </p>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {steps.map((step) => (
+            <div
+              key={step.number}
+              className="relative p-6 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm hover:shadow-md transition-all duration-300"
+            >
+              <div className="absolute -top-3 right-6 px-3 py-1 rounded-full text-xs font-bold bg-[#FCE9E7] border border-[#EDEAE2] text-[#D9342B]">
+                Шаг {step.number}
+              </div>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 bg-[#FCE9E7] border border-[#EDEAE2]">
+                <step.icon className="w-6 h-6 text-[#D9342B]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#0F172A] mb-2">{step.title}</h3>
+              <p className="text-[#475569] text-sm leading-relaxed">{step.description}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

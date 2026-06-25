@@ -1,24 +1,5 @@
-import { Router, Route, Switch } from 'wouter';
-import LegacyLanding from './components/LegacyLanding.tsx';
-import HonestLanding from './components/honest/HonestLanding.tsx';
+import Landing from './components/Landing';
 
 export default function App() {
-  return (
-    <Router base={(import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '/'}>
-      <Switch>
-        <Route path="/">
-          <LegacyLanding />
-        </Route>
-        <Route path="/honest">
-          <HonestLanding />
-        </Route>
-        <Route path="/legacy">
-          <LegacyLanding />
-        </Route>
-        <Route>
-          <LegacyLanding />
-        </Route>
-      </Switch>
-    </Router>
-  );
+  return <Landing />;
 }

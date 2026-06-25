@@ -3,87 +3,78 @@ import { ChevronDown } from 'lucide-react';
 
 const faqs = [
   {
-    q: 'Я плачу за заявки?',
-    a: 'Нет. Мастер не платит за отклик. Комиссия сервиса оплачивается только после завершения заказа. До 50 000 ₽ — 5 000 ₽, свыше 50 000 ₽ — 15%.',
+    question: 'Я что-то плачу при подключении?',
+    answer: 'Нет. Вход полностью бесплатный. Вы заполняете форму, получаете доступ к приложению и начинаете видеть заявки. Никаких предоплат.',
   },
   {
-    q: 'Я работаю по своим ценам?',
-    a: 'Да. Вы сами считаете смету. Но цены должны быть рыночными, иначе конверсия будет падать и заказов станет меньше.',
+    question: 'Когда я плачу 500₽ за заявку?',
+    answer: 'Только после завершения объекта. Вы берёте заявку, работаете, закрываете объект — и после этого оплачиваете 500₽ + комиссию. Не раньше.',
   },
   {
-    q: 'Сколько заказов будет?',
-    a: 'Зависит от города, вашей конверсии и дисциплины. Лучшие мастера получают приоритет и работают практически без простоев.',
+    question: 'А если клиент откажется?',
+    answer: 'Если клиент отказался не по вашей вине (передумал, переехал, нашёл другого) — заявка не оплачивается. Вы ничего не теряете.',
   },
   {
-    q: 'Нужно ли постоянно сидеть в приложении?',
-    a: 'Нет. Вам приходят уведомления, когда появляются новые заказы. Достаточно откликнуться вовремя.',
+    question: 'Сколько комиссия?',
+    answer: 'От 15% с суммы заказа. Комиссия оплачивается вместе с 500₽ за заявку после завершения объекта.',
   },
   {
-    q: 'Можно ли брать два заказа сразу?',
-    a: 'По умолчанию — один активный заказ. Принцип простой: взял заказ → выполнил → оплатил комиссию → получил новый. Для сильных мастеров лимит может быть увеличен до 2.',
+    question: 'Могу работать по своим ценам?',
+    answer: 'Да. Вы сами составляете смету и определяете стоимость работ. Мы не навязываем расценки.',
   },
   {
-    q: 'Что если клиент откажется после замера?',
-    a: 'Это нормальная ситуация. Вы сообщаете диспетчеру, заказ снимается, и вы снова можете откликаться на новые.',
+    question: 'Сколько заказов будет?',
+    answer: 'Зависит от вашей специализации, города и конверсии. Чем лучше вы работаете (рейтинг, отзывы), тем больше система направляет заявок именно вам.',
   },
   {
-    q: 'Что будет если работать мимо системы?',
-    a: 'Это нарушение условий сотрудничества. Доступ к заявкам будет закрыт. Все сделки проходят только через приложение.',
+    question: 'Какие специализации подходят?',
+    answer: 'Обои, шпаклёвка, покраска, плитка, сантехника, электрика, комплексная отделка. Если ваша специализация не в списке — напишите нам, обсудим.',
+  },
+  {
+    question: 'Что за приложение?',
+    answer: 'PWA-приложение (работает через браузер, устанавливается на телефон). В нём вы видите заявки, откликаетесь, ведёте сметы и общаетесь с клиентами.',
   },
 ];
 
-function FAQItem({ q, a, isOpen, onClick }: { q: string; a: string; isOpen: boolean; onClick: () => void }) {
-  return (
-    <div className="accordion-item">
-      <button
-        className="w-full flex items-center justify-between gap-4 py-5 text-left cursor-pointer"
-        onClick={onClick}
-        aria-expanded={isOpen}
-      >
-        <span className="text-base font-600 text-[#1A1A1A] leading-snug">{q}</span>
-        <ChevronDown
-          size={20}
-          color="#8E8E93"
-          strokeWidth={2}
-          className={`flex-shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
-        />
-      </button>
-      <div
-        className="overflow-hidden transition-all duration-300"
-        style={{ maxHeight: isOpen ? '300px' : '0px' }}
-      >
-        <p className="text-sm text-[#8E8E93] leading-relaxed pb-5">{a}</p>
-      </div>
-    </div>
-  );
-}
-
 export default function FAQ() {
-  const [openIdx, setOpenIdx] = useState<number | null>(0);
-
-  const toggle = (idx: number) => {
-    setOpenIdx(openIdx === idx ? null : idx);
-  };
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section className="section-bg py-20 px-4">
-      <div className="max-w-2xl mx-auto">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl md:text-4xl font-800 text-[#1A1A1A]">Частые вопросы</h2>
-        </div>
+    <section id="faq" className="relative py-20 sm:py-28 bg-[#F1EEE7]">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6">
+        <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
+          Частые <span className="text-[#D9342B]">вопросы</span>
+        </h2>
+        <p className="text-[#475569] text-center mb-12 text-lg">
+          Всё, что мастера спрашивают перед подключением
+        </p>
 
-        <div className="card p-0 overflow-hidden">
-          <div className="px-6">
-            {faqs.map((faq, idx) => (
-              <FAQItem
-                key={idx}
-                q={faq.q}
-                a={faq.a}
-                isOpen={openIdx === idx}
-                onClick={() => toggle(idx)}
-              />
-            ))}
-          </div>
+        <div className="space-y-3">
+          {faqs.map((faq, index) => (
+            <div
+              key={index}
+              className="rounded-2xl bg-white border border-[#EDEAE2] shadow-sm overflow-hidden transition-all duration-300"
+            >
+              <button
+                onClick={() => setOpenIndex(openIndex === index ? null : index)}
+                className="w-full flex items-center justify-between p-5 text-left cursor-pointer"
+              >
+                <span className="text-[#0F172A] font-medium pr-4">{faq.question}</span>
+                <ChevronDown
+                  className={`w-5 h-5 text-[#D9342B] flex-shrink-0 transition-transform duration-300 ${
+                    openIndex === index ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              <div
+                className={`overflow-hidden transition-all duration-300 ${
+                  openIndex === index ? 'max-h-48 pb-5' : 'max-h-0'
+                }`}
+              >
+                <p className="px-5 text-[#475569] leading-relaxed">{faq.answer}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>

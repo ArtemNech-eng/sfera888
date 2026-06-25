@@ -1,92 +1,75 @@
-import { CreditCard, ClipboardList, RefreshCw, Award } from 'lucide-react';
+import { CreditCard, Percent, Layers, Smartphone, FileText } from 'lucide-react';
 
-const sections = [
+const conditions = [
   {
     icon: CreditCard,
-    title: 'Комиссия сервиса',
-    items: [
-      'Заказ до 50 000 ₽ — 5 000 ₽ (фиксированно)',
-      'Заказ свыше 50 000 ₽ — 15% от суммы',
-      'Комиссия оплачивается после завершения объекта',
-    ],
+    label: 'Заявка',
+    value: '500 ₽',
+    note: 'оплачивается после завершения объекта',
   },
   {
-    icon: ClipboardList,
-    title: 'Правила работы',
-    items: [
-      'Все заказы ведутся только через приложение',
-      'Смета считается через приложение',
-      'Никакой работы мимо системы',
-      'Один активный заказ в одни руки (по умолчанию)',
-      'Предоплата клиента проходит через сервис',
-    ],
+    icon: Percent,
+    label: 'Комиссия',
+    value: 'от 15%',
+    note: 'с суммы заказа, оплачивается после завершения',
   },
   {
-    icon: RefreshCw,
-    title: 'Принцип конвейера',
-    items: [
-      'Взяли заказ',
-      'Выполнили работу',
-      'Оплатили комиссию',
-      'Получили новый заказ',
-      'Никаких "возьму 5 объектов и буду делать месяц"',
-    ],
+    icon: Layers,
+    label: 'Активные заказы',
+    value: '1 заказ',
+    note: 'для топовых мастеров — 2 одновременно',
   },
   {
-    icon: Award,
-    title: 'Для лучших мастеров',
-    items: [
-      'Высокая конверсия → больше заказов',
-      'Лучший рейтинг → приоритет в ленте',
-      'Топ-мастера → лимит до 2 заказов одновременно',
-    ],
+    icon: Smartphone,
+    label: 'Сделки',
+    value: 'Через приложение',
+    note: 'все этапы фиксируются в PWA',
+  },
+  {
+    icon: FileText,
+    label: 'Смета',
+    value: 'В приложении',
+    note: 'прозрачные расчёты для клиента и мастера',
   },
 ];
 
 export default function Conditions() {
   return (
-    <section className="section-bg py-20 px-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-4">
-          <h2 className="text-3xl md:text-4xl font-extrabold text-[#1A1A1A] mb-3">
-            Условия сотрудничества
-          </h2>
-          <p className="text-[#8E8E93] text-base max-w-md mx-auto">
-            Мы работаем честно и прозрачно. Вот что нужно знать до начала работы:
+    <section id="conditions" className="relative py-20 sm:py-28 bg-[#F1EEE7]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
+          Условия <span className="text-[#D9342B]">сотрудничества</span>
+        </h2>
+        <p className="text-[#475569] text-center max-w-3xl mx-auto mb-14 text-lg">
+          Всё прозрачно — вы платите только после выполненной работы
+        </p>
+
+        <div className="max-w-3xl mx-auto space-y-4">
+          {conditions.map((item) => (
+            <div
+              key={item.label}
+              className="flex items-center gap-4 p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm"
+            >
+              <div className="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center bg-[#FCE9E7] border border-[#EDEAE2]">
+                <item.icon className="w-6 h-6 text-[#D9342B]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-3 flex-wrap">
+                  <span className="text-[#475569] text-sm">{item.label}:</span>
+                  <span className="text-[#0F172A] font-bold text-lg">{item.value}</span>
+                </div>
+                <p className="text-[#94A3B8] text-sm mt-0.5">{item.note}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="max-w-3xl mx-auto mt-8 p-5 rounded-2xl bg-[#FCE9E7] border border-[#EDEAE2] text-center">
+          <p className="text-[#475569]">
+            <span className="text-[#D9342B] font-semibold">Важно:</span> вы ничего не платите при подключении.
+            500₽ + комиссия списываются только после того, как объект закрыт и клиент принял работу.
           </p>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-10">
-          {sections.map((sec) => {
-            const Icon = sec.icon;
-            return (
-              <div key={sec.title} className="card">
-                <div className="flex items-center gap-3 mb-5">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: 'rgba(52,199,89,0.1)' }}
-                  >
-                    <Icon size={20} color="#34C759" strokeWidth={2} />
-                  </div>
-                  <h3 className="font-bold text-[#1A1A1A] text-base">{sec.title}</h3>
-                </div>
-                <ul className="space-y-2">
-                  {sec.items.map((item) => (
-                    <li key={item} className="flex items-start gap-2 text-sm text-[#8E8E93]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#34C759] mt-1.5 flex-shrink-0" />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-
-        <p className="text-center mt-10 text-base font-semibold text-[#1A1A1A]">
-          Простые правила. Честная работа.{' '}
-          <span className="text-[#34C759]">Стабильный поток заказов.</span>
-        </p>
       </div>
     </section>
   );

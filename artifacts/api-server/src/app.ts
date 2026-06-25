@@ -1103,9 +1103,9 @@ if (fs.existsSync(landingV2DistPath)) {
 // canonical URL clean and gives us room to replace this redirect with proper
 // SSR rendering on the future marketplace artifact.
 app.get(["/masteram", "/masteram/"], (_req, res) =>
-  res.redirect(301, "/master-landing/v3/honest"),
+  res.redirect(301, "/"),
 );
-app.get("/masters", (_req, res) => res.redirect(301, "/master-landing/v3/honest"));
+app.get("/masters", (_req, res) => res.redirect(301, "/"));
 
 // ── Serve master-landing-v3 (honest + legacy SPA) ────────────────────────────
 const landingV3DistPath = path.join(__dirname, "../../master-landing/dist/public");
@@ -1148,10 +1148,15 @@ if (fs.existsSync(partnerLandingDistPath)) {
   });
 }
 
-// Root: serve master-landing-v2 directly at sfera-master.ru/
+// Root: serve the current master-landing (v3) directly at sfera-master.ru/
+// This is the main recruitment landing for masters — new business model
+// (free onboarding, 500₽/lead + 15% commission after completion).
+if (fs.existsSync(landingV3DistPath)) {
+  app.use("/", express.static(landingV3DistPath, { index: false }));
+}
 app.get("/", (_req, res) => {
-  if (fs.existsSync(landingV2DistPath)) {
-    res.sendFile(path.join(landingV2DistPath, "index.html"));
+  if (fs.existsSync(landingV3DistPath)) {
+    res.sendFile(path.join(landingV3DistPath, "index.html"));
   } else if (fs.existsSync(landingV1DistPath)) {
     res.redirect(301, "/master-landing/");
   } else {
