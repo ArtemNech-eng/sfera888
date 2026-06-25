@@ -6,15 +6,15 @@ export default function Hero() {
   };
 
   return (
-    <section className="relative min-h-screen flex items-center overflow-hidden bg-[#FAFAF7]">
-      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 py-20 sm:py-32 w-full">
-        <div className="grid lg:grid-cols-2 gap-10 items-center">
+    <section className="relative flex items-center overflow-hidden bg-[#FAFAF7]">
+      <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24 w-full">
+        <div className="grid lg:grid-cols-[3fr_2fr] gap-10 items-center">
           <div className="max-w-3xl">
             <p className="text-[#D9342B] font-semibold text-sm uppercase tracking-wide mb-4">
               IT-платформа для профессиональных мастеров
             </p>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-[#0F172A] leading-tight mb-6">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#0F172A] leading-tight mb-5">
               Получайте заказы.
               <br />
               Работайте напрямую.
