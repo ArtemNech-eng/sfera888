@@ -464,7 +464,7 @@ export function DesignBoard({
           <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6 sm:pb-16">
             <div className="grid gap-3 sm:gap-4 lg:grid-cols-[2fr_1fr]">
               <figure className="relative overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy">
-                <div className="relative aspect-[4/3] w-full">
+                <div className="relative aspect-[3/2] w-full">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={heroView.url}
