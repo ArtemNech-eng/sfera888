@@ -5,13 +5,13 @@ const conditions = [
     icon: CreditCard,
     label: 'Заявка',
     value: '500 ₽',
-    note: 'оплачивается после завершения объекта',
+    note: 'оплачивается после получения денег от клиента',
   },
   {
     icon: Percent,
     label: 'Комиссия',
     value: 'от 15%',
-    note: 'с суммы заказа, оплачивается после завершения',
+    note: 'с суммы заказа, оплачивается по поступлению оплаты от клиента',
   },
   {
     icon: Layers,
@@ -67,7 +67,7 @@ export default function Conditions() {
         <div className="max-w-3xl mx-auto mt-8 p-5 rounded-2xl bg-[#FCE9E7] border border-[#EDEAE2] text-center">
           <p className="text-[#475569]">
             <span className="text-[#D9342B] font-semibold">Важно:</span> вы ничего не платите при подключении.
-            500₽ + комиссия списываются только после того, как объект закрыт и клиент принял работу.
+            500₽ + комиссия списываются только после того, как клиент оплатил работу мастеру.
           </p>
         </div>
       </div>

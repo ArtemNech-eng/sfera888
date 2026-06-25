@@ -16,7 +16,7 @@ export default function Hero() {
           </h1>
 
           <p className="text-lg sm:text-xl text-[#475569] mb-10 max-w-2xl">
-            Получайте заявки → выезжайте на замер → работайте → оплачиваете комиссию после завершения объекта. Никаких предоплат и токенов.
+            Получайте заявки → выезжайте на замер → работайте → оплачиваете комиссию после получения денег от клиента. Никаких предоплат и токенов.
           </p>
 
           {/* 3 badges */}
@@ -72,7 +72,7 @@ export default function Hero() {
           <div className="inline-flex items-center gap-3 px-5 py-3 rounded-xl bg-white border border-[#EDEAE2] shadow-sm">
             <div className="w-2 h-2 rounded-full bg-[#D9342B]" />
             <span className="text-[#475569] text-sm">
-              Оплата <span className="text-[#0F172A] font-medium">только после завершения объекта</span> — сначала работаете, потом платите
+              Оплата <span className="text-[#0F172A] font-medium">только после того, как клиент заплатил вам</span> — сначала работаете, потом платите
             </span>
           </div>
         </div>

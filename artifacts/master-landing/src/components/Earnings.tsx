@@ -56,7 +56,7 @@ export default function Earnings() {
             <Repeat className="w-6 h-6 text-[#D9342B] mx-auto mb-3" />
             <div className="text-2xl font-bold text-[#0F172A]">от 15%</div>
             <div className="text-[#475569] text-sm mt-1">комиссия с заказа</div>
-            <div className="text-[#94A3B8] text-xs mt-1">оплачивается после завершения</div>
+            <div className="text-[#94A3B8] text-xs mt-1">оплачивается по поступлению оплаты от клиента</div>
           </div>
           <div className="p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm text-center">
             <TrendingUp className="w-6 h-6 text-[#D9342B] mx-auto mb-3" />
