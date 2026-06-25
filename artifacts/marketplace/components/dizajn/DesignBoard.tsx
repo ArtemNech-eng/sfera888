@@ -278,11 +278,11 @@ export function DesignBoard({
         }));
 
   const heroView = views[0];
-  // 5-й view (если есть) — 3D-isometric план. Показываем отдельно
-  // в plan-секции рядом с SVG-планом, чтобы не дублировать в hero-сетке.
-  const isometricView = views.find((v) => v.position === 5) ?? null;
-  // Thumbs в hero — 3 ракурса (кровать-акцент, шкаф, окно), без isometric.
-  const otherViews = views.slice(1).filter((v) => v.position !== 5);
+  // Isometric — последний view (position 6 или 7) с лейблом "3D-планировка".
+  // Показываем отдельно в plan-секции рядом с SVG top-down планом.
+  const isometricView = views.find((v) => v.label === "3D-планировка" || v.position >= 6) ?? null;
+  // Thumbs в hero-grid справа — 3 ракурса (positions 2,3,4), без isometric и без 5+6.
+  const otherViews = views.slice(1).filter((v) => v !== isometricView).slice(0, 3);
   const beforeUrl = design.inputImageUrl ?? design.images.find((img) => img.type === "input")?.url ?? null;
   const detailCrops = design.detailCrops ?? [];
 
