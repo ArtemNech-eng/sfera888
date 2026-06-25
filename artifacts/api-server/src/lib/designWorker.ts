@@ -7,10 +7,11 @@
  *   • 1 «Было» (input_image_url) — text2img «типовая комната до ремонта»
  *     генерируется сервером для seed-проектов; для user-upload — это фото
  *     пользователя, оставляем как есть.
- *   • 6 ракурсов (views[]) — 1 панорамный Hero (1536×1024 text-to-image)
- *     + 5 кропов из Hero через sharp. Идеальная identity preservation —
- *     все ракурсы из одной картинки. Без отдельных AI-вызовов для ракурсов.
- *   • 6 кропов деталей (detail_crops[]) — sharp нарезает из 6 ракурсов
+ *   • 4 ракурса (views[]) — 1 коллаж 2×2 (1024×1024 text-to-image)
+ *     + sharp нарезка на 4 квадранта → resize 1024×1024 каждый.
+ *     Идеальная identity preservation — все ракурсы из одного коллажа,
+ *     одна палитра, одна мебель, разные углы камеры.
+ *   • 6 кропов деталей (detail_crops[]) — sharp нарезает из 4 ракурсов
  *     стандартные квадраты 768×768. Без отдельной AI-генерации.
  *   • Текстовый пакет (designContent) — h1/seoTitle/seoDescription/
  *     description/materials/estimate/solutions через AI-шлюз (тот же что
@@ -23,8 +24,8 @@
  *   • Idempotent на restart — если падаем, watchdog или следующий tick
  *     перезаберут.
  *
- * Pipeline v2 cost: 2 вызова Fal (Hero + Isometric) ≈ 2000+340 = ~2340
- * копеек (high) вместо 7 вызовов ≈ 3550 копеек. Экономия ~34%.
+ * Pipeline v2.1 cost: 2 вызова Fal (Collage 2×2 + Isometric) ≈ 2000+340
+ * = ~2340 копеек (high) вместо 7 вызовов ≈ 3550 копеек. Экономия ~34%.
  */
 
 import {
@@ -173,14 +174,10 @@ const ROOM_BEFORE_PROMPTS: Record<string, string> = {
 const RENDER_SUFFIX = "interior design moodboard, AD Architectural Digest magazine quality, professional interior design rendering, polished design concept presentation, real Russian apartment, achievable affordable budget renovation, not luxury, warm soft lighting, natural wood textures, light walls, ultra realistic, 4K, photorealistic, no people, no text labels, no captions, no watermark, no graphics overlay";
 
 /**
- * Описания 4 ракурсов одной комнаты для коллажа 2×2. Один gpt-image-1.5
- * вызов генерит весь коллаж — модель умеет multi-panel с identity
- * preservation (это та модель что ChatGPT использует), и все 4 ракурса
- * показывают ОДНУ И ТУ ЖЕ комнату с одинаковой палитрой/материалами.
- * Sharp потом разрезает на 4 view'а.
- *
- * Структура: [top-left общий, top-right акцент, bottom-left хранение,
- *            bottom-right окно].
+ * [LEGACY] Описания 4 ракурсов одной комнаты — сохранены для обратной
+ * совместимости и возможного будущего user-upload режима. В pipeline v2.1
+ * (collage 2×2) не используются напрямую — промпт строится в
+ * `buildHeroCollagePrompt`.
  */
 const ROOM_VIEW_SUBJECTS: Record<string, [string, string, string, string]> = {
   bedroom: [
@@ -258,13 +255,21 @@ function buildIsometricPrompt(room: string, style: string, area: number | null):
 }
 
 /**
- * Промпт для photo 1 (общий вид от двери) — text-to-image вызов hero
- * фото. Строится из **Layout_JSON** чтобы результат соответствовал плану:
- * конкретная мебель, размеры, позиции. Ракурс — от двери вглубь комнаты.
+ * Промпт для коллажа 2×2 (4 ракурса одной комнаты в одном изображении 1024×1024).
+ * GPT-Image-1.5 генерирует квадратный кадр с сеткой 2×2 — после чего sharp
+ * режет его на 4 отдельных 512×512 картинки и ресайзит до 1024×1024.
+ * Результат: 4 реально разных ракурса одной комнаты с идеальной identity
+ * (одна палитра, одна мебель, один стиль).
+ *
+ * Строится из **Layout_JSON** чтобы мебель в кадре соответствовала плану.
  */
-function buildHeroPhotoPrompt(room: string, style: string, area: number | null, layout?: LayoutJson | null): string {
+function buildHeroCollagePrompt(room: string, style: string, area: number | null, layout?: LayoutJson | null): string {
   const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
   const areaPart = area ? `, площадь ${area} м²` : "";
+  const roomNoun = roomLabel(room);
+
+  // Подписи к 4 квадрантам зависят от типа комнаты
+  const quadrantDescriptions = COLLAGE_QUADRANT_DESCRIPTIONS[room] ?? COLLAGE_QUADRANT_DESCRIPTIONS.bedroom!;
 
   // Если есть Layout_JSON — строим промпт из конкретной мебели
   if (layout && layout.furniture.length > 0) {
@@ -272,18 +277,8 @@ function buildHeroPhotoPrompt(room: string, style: string, area: number | null, 
     const roomL = layout.room.lengthCm;
     const doorWall = layout.door.wall;
 
-    // Описываем каждый предмет мебели с позицией словами
+    // Описываем каждый предмет мебели кратко
     const furnitureDescriptions = layout.furniture.map((f) => {
-      const posX = f.xCm / roomW; // 0=left, 1=right
-      const posY = f.yCm / roomL; // 0=top(north), 1=bottom(south)
-      let posWord: string;
-      if (posX < 0.33) posWord = "у левой стены";
-      else if (posX > 0.66) posWord = "у правой стены";
-      else posWord = "по центру";
-
-      if (posY < 0.25) posWord += ", у дальней стены";
-      else if (posY > 0.75) posWord += ", ближе к входу";
-
       const typeLabels: Record<string, string> = {
         bed: "двуспальная кровать",
         wardrobe: "встроенный шкаф",
@@ -297,38 +292,93 @@ function buildHeroPhotoPrompt(room: string, style: string, area: number | null, 
         armchair: "кресло",
       };
       const label = typeLabels[f.type] ?? f.type;
-      return `${label} ${f.widthCm}×${f.depthCm} см ${posWord}`;
+      return `${label} ${f.widthCm}×${f.depthCm} см`;
     });
 
     const windowDesc = layout.window
-      ? `окно на ${wallLabel(layout.window.wall)} стене`
+      ? `Окно на ${wallLabel(layout.window.wall)} стене.`
       : "";
-    const doorDesc = `дверь на ${wallLabel(doorWall)} стене`;
-
-    const roomShape = roomW === roomL ? "квадратная" : (roomW > roomL ? "вытянутая вдоль" : "вытянутая вглубь");
+    const doorDesc = `Дверь на ${wallLabel(doorWall)} стене.`;
 
     return [
-      `Реалистичная интерьерная фотография ${roomLabel(room)}${areaPart} в стиле «${styleClause}».`,
-      `Комната ${roomW}×${roomL} см, ${roomShape}. ${doorDesc}, ${windowDesc}.`,
-      `Ракурс: общий вид от двери вглубь комнаты, широкоугольный кадр на уровне глаз.`,
-      `В кадре видна вся мебель: ${furnitureDescriptions.join("; ")}.`,
-      `Светлые стены, натуральное дерево, тёплое мягкое освещение, точечные светильники.`,
-      `Реалистичная интерьерная съёмка, без людей, без подписей, без водяных знаков, фотореализм 4K.`,
-    ].join(" ");
+      `Коллаж-сетка 2×2 из четырёх интерьерных фотографий ОДНОЙ И ТОЙ ЖЕ ${roomNoun}${areaPart} в стиле «${styleClause}».`,
+      `Все 4 кадра — одна комната с одинаковой отделкой, одной цветовой палитрой и одной мебелью.`,
+      `Комната ${roomW}×${roomL} см. ${doorDesc} ${windowDesc}`,
+      `Мебель в комнате: ${furnitureDescriptions.join(", ")}.`,
+      ``,
+      `Верхний-левый кадр: ${quadrantDescriptions[0]}.`,
+      `Верхний-правый кадр: ${quadrantDescriptions[1]}.`,
+      `Нижний-левый кадр: ${quadrantDescriptions[2]}.`,
+      `Нижний-правый кадр: ${quadrantDescriptions[3]}.`,
+      ``,
+      `Стиль: фотореализм, интерьерная съёмка, тёплое мягкое освещение, натуральное дерево, светлые стены, без людей, без текста, без водяных знаков.`,
+      `Между кадрами тонкий белый разделитель 2-3 пикселя.`,
+    ].join("\n");
   }
 
-  // Fallback: без layout (если Layout_Planner не отработал)
-  if (room === "bedroom") {
-    return [
-      `Реалистичная интерьерная фотография спальни${areaPart} в стиле «${styleClause}» в обычной квартире в России.`,
-      `Ракурс: общий вид от входа в комнату, широкоугольный кадр на уровне глаз, видна вся планировка.`,
-      `В кадре: двуспальная кровать с мягким изголовьем по центру, прикроватные тумбы по бокам, встроенный шкаф вдоль одной стены, рабочее место со столом и стулом у окна, мягкий ковёр под кроватью.`,
-      `Светлые стены, натуральное дерево, тёплое мягкое освещение, точечные светильники, бра у кровати.`,
-      `Реалистичная интерьерная съёмка для каталога, без людей, без подписей, без водяных знаков, фотореализм 4K, Architectural Digest quality.`,
-    ].join(" ");
-  }
-  return `Реалистичная интерьерная фотография ${room} в стиле «${styleClause}»${areaPart}, общий вид от входа, фотореализм 4K, без людей, без текста.`;
+  // Fallback: без layout (generic prompt без мебели)
+  return [
+    `Коллаж-сетка 2×2 из четырёх интерьерных фотографий ОДНОЙ И ТОЙ ЖЕ ${roomNoun}${areaPart} в стиле «${styleClause}».`,
+    `Все 4 кадра — одна комната с одинаковой отделкой, одной цветовой палитрой и одной мебелью.`,
+    ``,
+    `Верхний-левый кадр: ${quadrantDescriptions[0]}.`,
+    `Верхний-правый кадр: ${quadrantDescriptions[1]}.`,
+    `Нижний-левый кадр: ${quadrantDescriptions[2]}.`,
+    `Нижний-правый кадр: ${quadrantDescriptions[3]}.`,
+    ``,
+    `Стиль: фотореализм, интерьерная съёмка, тёплое мягкое освещение, натуральное дерево, светлые стены, без людей, без текста, без водяных знаков.`,
+    `Между кадрами тонкий белый разделитель 2-3 пикселя.`,
+  ].join("\n");
 }
+
+/**
+ * Описания 4 квадрантов коллажа для каждого типа комнаты.
+ * [top-left, top-right, bottom-left, bottom-right]
+ */
+const COLLAGE_QUADRANT_DESCRIPTIONS: Record<string, [string, string, string, string]> = {
+  bedroom: [
+    "общий вид от двери вглубь комнаты, широкоугольный, видна вся планировка",
+    "вид на кровать и изголовье крупным планом, камера напротив кровати, декоративные подушки, бра по бокам",
+    "вид на шкаф и систему хранения, камера развёрнута к стене со шкафом, видны двери и полки",
+    "зона у окна — рабочий стол и кресло, естественный свет из окна, шторы",
+  ],
+  kitchen: [
+    "общий вид от двери, видна вся кухня — гарнитур, обеденная зона, вытяжка",
+    "вид на столешницу и фартук крупным планом, плита, смеситель, декор",
+    "вид на высокий шкаф-пенал с техникой и хранением",
+    "обеденная зона у окна — стол, стулья, подвесной светильник, дневной свет",
+  ],
+  bathroom: [
+    "общий вид от двери — душ, раковина, унитаз, плитка",
+    "вид на раковину с зеркалом крупным планом, бра по бокам, полотенца",
+    "вид на шкаф-колонну для хранения полотенец и банных принадлежностей",
+    "душевая зона — стеклянная перегородка, тропический душ, ниша с флаконами",
+  ],
+  living_room: [
+    "общий вид от двери — диван, журнальный столик, ТВ-зона, ковёр",
+    "вид на диванную группу крупным планом — подушки, плед, столик, настольная лампа",
+    "медиа-стена — ТВ на стене, тумба с декором, полки, растение",
+    "зона у окна — кресло для чтения, торшер, приставной столик, дневной свет",
+  ],
+  hallway: [
+    "общий вид от входной двери — шкаф, консоль, зеркало, дорожка",
+    "вид на консоль с зеркалом крупным планом — ваза, ключница, бра",
+    "вид на встроенный шкаф — двери из натурального дерева, обувница внизу",
+    "конец прихожей — скамья с подушкой, крючки для одежды, картина",
+  ],
+  nursery: [
+    "общий вид от двери — кровать, стол, шкаф для игрушек, ковёр",
+    "вид на кровать крупным планом — постельное бельё с рисунком, подушки, ночник",
+    "зона игр и хранения — низкие шкафы с закруглёнными краями, полки с игрушками",
+    "рабочий стол у окна — детский стол, стул, лампа, пинборд на стене, дневной свет",
+  ],
+  apartment: [
+    "общий вид от входа — гостиная с диваном, обеденная зона, кухня на фоне",
+    "гостиная крупным планом — диван, подушки, ковёр, полки с декором",
+    "кухня и столовая — остров с барными стульями, обеденный стол, подвесы",
+    "спальная зона у окна — кровать за перегородкой, шторы, кресло, дневной свет",
+  ],
+};
 
 function wallLabel(wall: string): string {
   const labels: Record<string, string> = { north: "северной", south: "южной", east: "восточной", west: "западной" };
@@ -449,41 +499,11 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-// ─── Panoramic crop helpers ─────────────────────────────────────────────────
+// ─── Panoramic crop helpers (LEGACY — retained for reference) ────────────────
 //
-// Вычисляют регион (left, top, width, height) для sharp.extract() из
-// панорамного Hero (1536×1024). Каждый crop фокусируется на логической
-// зоне комнаты, давая иллюзию разных ракурсов из одной генерации.
-
-/** Центральная 50% × 70% — фокус на кровати/изголовье. */
-function centerCrop(w: number, h: number): { left: number; top: number; width: number; height: number } {
-  const cw = Math.round(w * 0.5);
-  const ch = Math.round(h * 0.7);
-  return { left: Math.round((w - cw) / 2), top: Math.round((h - ch) / 2), width: cw, height: ch };
-}
-
-/** Левые 40% — шкаф/хранение. */
-function leftThird(w: number, h: number): { left: number; top: number; width: number; height: number } {
-  return { left: 0, top: 0, width: Math.round(w * 0.4), height: h };
-}
-
-/** Правые 40% — зона у окна/стол. */
-function rightThird(w: number, h: number): { left: number; top: number; width: number; height: number } {
-  const cw = Math.round(w * 0.4);
-  return { left: w - cw, top: 0, width: cw, height: h };
-}
-
-/** Верхние 45% — акцентная стена/потолок. */
-function topStrip(w: number, h: number): { left: number; top: number; width: number; height: number } {
-  return { left: 0, top: 0, width: w, height: Math.round(h * 0.45) };
-}
-
-/** Нижняя левая четверть — деталь мебели/текстура пола. */
-function bottomLeftQuarter(w: number, h: number): { left: number; top: number; width: number; height: number } {
-  const cw = Math.round(w * 0.5);
-  const ch = Math.round(h * 0.5);
-  return { left: 0, top: h - ch, width: cw, height: ch };
-}
+// Previously used for 5 crops from a panoramic 1536×1024 Hero. Now replaced
+// by 2×2 collage slicing. Kept commented for potential future use.
+// centerCrop, leftThird, rightThird, topStrip, bottomLeftQuarter — removed.
 
 /**
  * Ping IndexNow с URL'ами свеже-опубликованного дизайна. Fire-and-forget.
@@ -510,8 +530,8 @@ async function pingForDesign(slug: string, room: string, style: string): Promise
 //
 // Эти константы и вспомогательные функции — отдельный детерминированный
 // конечный автомат, описанный в `.kiro/specs/ai-design-product/design.md`
-// секция «Generation_Pipeline и его прогресс». Pipeline v2 использует
-// панорамный Hero (1536×1024) + 5 sharp-кропов вместо 5 AI edit-image
+// секция «Generation_Pipeline и его прогресс». Pipeline v2.1 использует
+// коллаж 2×2 (1024×1024) + 4 sharp-квадранта вместо 5 AI edit-image
 // вызовов. `ANGLE_PROMPTS_BEDROOM_5` сохранены для обратной совместимости
 // PBT-тестов и возможного будущего user-upload режима.
 // ROOM_VIEW_SUBJECTS сохранены для будущего user-upload режима.
@@ -540,20 +560,18 @@ const ANGLE_PROMPTS_BEDROOM_5: readonly [string, string, string, string, string]
 ];
 
 /**
- * RU-подписи для 6 ракурсов AI_Design_Product. Используются как `label`
- * в `designs.views[]` и в инфографике. Порядок: позиции 1..6.
+ * RU-подписи для 4 ракурсов AI_Design_Product (коллаж 2×2). Используются
+ * как `label` в `designs.views[]` и в инфографике. Порядок: позиции 1..4.
  */
-const VIEW_LABELS_6: readonly [string, string, string, string, string, string] = [
+const VIEW_LABELS_4: readonly [string, string, string, string] = [
   "Общий вид от входа",
   "Вид на кровать и изголовье",
   "Шкаф и хранение",
   "Зона у окна",
-  "Акцентная стена",
-  "Потолок и освещение",
 ];
 
-/** Позиция изометрического ракурса в `designs.views[]` (после 6 фото). */
-const ISOMETRIC_VIEW_POSITION = 7;
+/** Позиция изометрического ракурса в `designs.views[]` (после 4 фото). */
+const ISOMETRIC_VIEW_POSITION = 5;
 const ISOMETRIC_VIEW_LABEL = "3D-планировка";
 
 // ─── Step name constants (наблюдаемые через designs.current_step) ───────────
@@ -800,8 +818,8 @@ async function withCostGuard<T extends { costKopeks: number }>(
  * `runStepRequired/runStepOptional`). Реализация дословно следует ему:
  *
  *   1. Layout_JSON   (required)            progress=5,  current_step=layout_json
- *   2. Hero_Render   (required, 1536×1024) progress=25, current_step=hero_render
- *   3. Panoramic Crops (optional, sharp)   progress=50, current_step=angle_renders
+ *   2. Hero_Render   (required, 1024×1024) progress=25, current_step=hero_render
+ *   3. Collage 2×2 Slice (optional, sharp) progress=50, current_step=angle_renders
  *   4. Top_Down_Plan (optional, bedroom)   progress=60, current_step=top_down_plan
  *   5. Isometric_Render (optional)         progress=70, current_step=isometric_render
  *   6. detail crops  (optional)            progress=75, current_step=detail_crops
@@ -812,9 +830,9 @@ async function withCostGuard<T extends { costKopeks: number }>(
  *  11. Infographic   (optional)            progress=96, current_step=infographic
  *  →  designs.status=completed, progress=100
  *
- * Pipeline v2 (panoramic crops): одна AI-генерация Hero в максимальном
- * landscape (1536×1024) + 5 кропов через sharp = 6 views. Плюс отдельная
- * Isometric генерация. Итого: 2 вызова Fal вместо 7.
+ * Pipeline v2.1 (collage 2×2): одна AI-генерация коллажа 1024×1024 с
+ * сеткой 2×2 (4 ракурса одной комнаты) + sharp нарезка на 4 views.
+ * Плюс отдельная Isometric генерация. Итого: 2 вызова Fal вместо 7.
  *
  * Обязательные шаги (1, 2, 8, 10) — их сбой переводит запись в `failed` с
  * соответствующим `error_message`. Остальные шаги при сбое логируются и
@@ -944,15 +962,15 @@ async function processDesign(designId: number): Promise<void> {
     await setProgress(designId, STEP_LAYOUT_JSON, PROGRESS_LAYOUT_JSON);
     await enforceCostCeiling(designId);
 
-    // ── 2. Panoramic Hero_Render (required, 1 повтор). ─────────────────
+    // ── 2. Collage 2×2 Hero_Render (required, 1024×1024, 1 повтор). ───
     //
-    // Одна широкоугольная генерация максимального landscape размера
-    // (1536×1024) через `falGenerateGptImage`. Из неё далее нарезаются
-    // 6 кропов (Step 3) — это даёт идеальную identity preservation
-    // (все ракурсы из одной картинки), 1 вызов Fal вместо 6, и дешевле.
+    // Одна генерация квадратного коллажа 2×2 (1024×1024) через
+    // `falGenerateGptImage`. Содержит 4 ракурса одной комнаты. Далее
+    // sharp разрезает на 4 квадранта 512×512 → resize 1024×1024 каждый.
+    // Идеальная identity preservation (одна палитра, одна мебель).
     // Hero также источник для `Color_Palette` (Requirement 12.1).
     {
-      const heroPrompt = buildHeroPhotoPrompt(
+      const heroPrompt = buildHeroCollagePrompt(
         design.roomType,
         design.style,
         areaNum,
@@ -966,7 +984,7 @@ async function processDesign(designId: number): Promise<void> {
             () =>
               falGenerateGptImage({
                 prompt: heroPrompt,
-                imageSize: "1536x1024",
+                imageSize: "1024x1024",
                 quality: "high",
               }),
             (r) =>
@@ -978,30 +996,18 @@ async function processDesign(designId: number): Promise<void> {
                 costKopeks: r.costKopeks,
                 providerResponse: {
                   generationMs: r.generationMs,
-                  view: "view_1_hero_panoramic",
-                  mode: "text2img-high-panoramic",
+                  view: "view_collage_2x2",
+                  mode: "text2img-high-collage-2x2",
                   imageSize: `${r.width}x${r.height}`,
                 },
               }),
           );
           heroResult = res;
           heroBuffer = await downloadImage(res.imageUrl);
-          const heroR2Key = `dizajn/results/${designId}_view_1.jpg`;
+          // Сохраняем полный коллаж как view_1 (общий вид = top-left квадрант
+          // будет отдельно нарезан ниже, но коллаж сохраняется для дебага).
+          const heroR2Key = `dizajn/results/${designId}_collage.jpg`;
           heroPublicUrl = await uploadJpegToR2(bucketId, heroR2Key, heroBuffer);
-          await db.insert(designImagesTable).values({
-            designId,
-            type: "view_1",
-            url: heroPublicUrl,
-            width: res.width,
-            height: res.height,
-            sortOrder: 0,
-          });
-          views.push({
-            url: heroPublicUrl,
-            label: VIEW_LABELS_6[0]!,
-            position: 1,
-          });
-          viewBuffers[0] = heroBuffer;
           break;
         } catch (e) {
           if (e instanceof BudgetExceededError) throw e;
@@ -1026,34 +1032,34 @@ async function processDesign(designId: number): Promise<void> {
     await setProgress(designId, STEP_HERO_RENDER, PROGRESS_HERO_RENDER);
     await enforceCostCeiling(designId);
 
-    // ── 3. Smart Crops from panoramic Hero (replaces 5 Angle_Render). ───
+    // ── 3. Collage 2×2 → 4 views через sharp (replaces panoramic crops). ─
     //
-    // 5 кропов из панорамного Hero дают ракурсы "изнутри" одной комнаты
-    // с идеальной identity (это всё одна картинка). Никаких AI-вызовов,
-    // только sharp. Результат: 6 views total (full hero + 5 crops).
+    // Разрезаем коллаж 1024×1024 на 4 квадранта (512×512), каждый
+    // ресайзим до 1024×1024. Результат: 4 views (позиции 1..4).
     // При сбое sharp (крайне маловероятно) — логируем и продолжаем
     // с тем что есть (optional step, Requirement 14.2).
     {
       try {
         const heroMeta = await sharp(heroBuffer).metadata();
-        const W = heroMeta.width ?? 1536;
+        const W = heroMeta.width ?? 1024;
         const H = heroMeta.height ?? 1024;
 
-        const PANORAMIC_CROP_SPECS = [
-          { label: VIEW_LABELS_6[1]!, region: centerCrop(W, H) },         // Вид на кровать
-          { label: VIEW_LABELS_6[2]!, region: leftThird(W, H) },          // Шкаф и хранение
-          { label: VIEW_LABELS_6[3]!, region: rightThird(W, H) },         // Зона у окна
-          { label: VIEW_LABELS_6[4]!, region: topStrip(W, H) },           // Акцентная стена
-          { label: VIEW_LABELS_6[5]!, region: bottomLeftQuarter(W, H) },  // Потолок и освещение
+        const halfW = Math.floor(W / 2);
+        const halfH = Math.floor(H / 2);
+        const quadrants = [
+          { left: 0, top: 0, width: halfW, height: halfH },                 // top-left
+          { left: halfW, top: 0, width: W - halfW, height: halfH },         // top-right
+          { left: 0, top: halfH, width: halfW, height: H - halfH },         // bottom-left
+          { left: halfW, top: halfH, width: W - halfW, height: H - halfH }, // bottom-right
         ];
 
-        for (let i = 0; i < PANORAMIC_CROP_SPECS.length; i++) {
-          const spec = PANORAMIC_CROP_SPECS[i]!;
-          const position = i + 2; // позиции 2..6
+        for (let i = 0; i < quadrants.length; i++) {
+          const quadrant = quadrants[i]!;
+          const position = i + 1; // позиции 1..4
           const cropBuffer = await sharp(heroBuffer)
-            .extract(spec.region)
+            .extract(quadrant)
             .resize(1024, 1024, { fit: "cover" })
-            .jpeg({ quality: 85, progressive: true })
+            .jpeg({ quality: 90, progressive: true })
             .toBuffer();
           const key = `dizajn/results/${designId}_view_${position}.jpg`;
           const cropPublicUrl = await uploadJpegToR2(bucketId, key, cropBuffer);
@@ -1065,15 +1071,22 @@ async function processDesign(designId: number): Promise<void> {
             height: 1024,
             sortOrder: position - 1,
           });
-          views.push({ url: cropPublicUrl, label: spec.label, position });
-          viewBuffers[position - 1] = cropBuffer;
+          views.push({ url: cropPublicUrl, label: VIEW_LABELS_4[i]!, position });
+          viewBuffers[i] = cropBuffer;
+        }
+
+        // Обновляем heroPublicUrl на view_1 (общий вид от входа — top-left)
+        if (views.length > 0) {
+          heroPublicUrl = views[0]!.url;
         }
       } catch (e) {
         console.error(
-          `[designWorker] design ${designId}: Panoramic crops failed (non-fatal): `
+          `[designWorker] design ${designId}: Collage 2×2 slicing failed (non-fatal): `
           + `${e instanceof Error ? e.message : String(e)}`,
         );
-        // Views 2..6 просто не будут добавлены — пайплайн идёт дальше
+        // Если нарезка не удалась — используем полный коллаж как единственный view
+        views.push({ url: heroPublicUrl!, label: VIEW_LABELS_4[0]!, position: 1 });
+        viewBuffers[0] = heroBuffer;
       }
     }
     await setProgress(designId, STEP_ANGLE_RENDERS, PROGRESS_ANGLE_RENDERS);
@@ -1371,10 +1384,10 @@ async function processDesign(designId: number): Promise<void> {
             cropBuffers[5]!,
           ],
           viewLabels: [
-            VIEW_LABELS_6[0]!,
-            VIEW_LABELS_6[1]!,
-            VIEW_LABELS_6[2]!,
-            VIEW_LABELS_6[3]!,
+            VIEW_LABELS_4[0]!,
+            VIEW_LABELS_4[1]!,
+            VIEW_LABELS_4[2]!,
+            VIEW_LABELS_4[3]!,
           ],
           cropLabels: pickSixCropLabels(design.roomType),
           topDownPlanPng,
@@ -1651,8 +1664,8 @@ export const __test__ = {
   // Retry policy (Requirements 2.7, 6.5, 7.7, 9.5).
   LAYOUT_GEOMETRIC_RETRIES,
   SINGLE_RETRY,
-  // 6-view composition (Requirements 7.1, 7.3, 7.8 — Property 15).
-  VIEW_LABELS_6,
+  // 4-view composition (Requirements 7.1, 7.3, 7.8 — Property 15).
+  VIEW_LABELS_4,
   ANGLE_PROMPTS_BEDROOM_5,
   ISOMETRIC_VIEW_POSITION,
   ISOMETRIC_VIEW_LABEL,

@@ -1,15 +1,15 @@
 /**
- * Property test for 6-view composition and env-driven edit-image provider.
+ * Property test for 4-view composition (collage 2×2) and env-driven edit-image provider.
  *
- * Property 15: 6-view composition and env-driven edit-image provider.
+ * Property 15: 4-view composition and env-driven edit-image provider.
  *
  * **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 7.7, 7.8**
  *
  * Modules under test:
  *   - `artifacts/api-server/src/lib/designConfig.ts` — `getEditImageProvider()`,
  *     `DEFAULT_EDIT_PROVIDER` (Requirement 7.5).
- *   - `artifacts/api-server/src/lib/designWorker.ts` — `__test__.VIEW_LABELS_6`
- *     (6 RU labels for Hero + 5 angles, Requirement 7.1, 7.8) and
+ *   - `artifacts/api-server/src/lib/designWorker.ts` — `__test__.VIEW_LABELS_4`
+ *     (4 RU labels for collage 2×2 quadrants, Requirement 7.1, 7.8) and
  *     `__test__.ANGLE_PROMPTS_BEDROOM_5` (5 edit-image prompts with
  *     identity-preservation phrasing, Requirement 7.3).
  *
@@ -23,10 +23,11 @@
  *          contract operators rely on when hot-flipping `AI_DESIGN_EDIT_PROVIDER`
  *          in production. Validates Requirement 7.5.
  *
- *   15.2 — `VIEW_LABELS_6` has exactly 6 distinct non-empty Russian labels.
+ *   15.2 — `VIEW_LABELS_4` has exactly 4 distinct non-empty Russian labels.
  *          These are written into `designs.views[].label` and rendered on the
- *          public page in the 6-photo gallery. A length drift would silently
- *          break the gallery layout and the PDF cover. Validates 7.1, 7.8.
+ *          public page in the 4-photo gallery (collage 2×2). A length drift
+ *          would silently break the gallery layout and the PDF cover.
+ *          Validates 7.1, 7.8.
  *
  *   15.3 — `ANGLE_PROMPTS_BEDROOM_5` has exactly 5 prompts, each carrying an
  *          identity-preservation phrase ("Та же спальня…"). Without that
@@ -78,7 +79,7 @@ import {
 const designWorkerModule = await import("../../src/lib/designWorker.ts");
 const { __test__ } = designWorkerModule;
 const {
-  VIEW_LABELS_6,
+  VIEW_LABELS_4,
   ANGLE_PROMPTS_BEDROOM_5,
   ISOMETRIC_VIEW_POSITION,
   ISOMETRIC_VIEW_LABEL,
@@ -260,66 +261,66 @@ describe("Property 15.1 — getEditImageProvider env-string normalisation", () =
 });
 
 // =========================================================================
-// Property 15.2 — VIEW_LABELS_6 has exactly 6 distinct Russian labels
+// Property 15.2 — VIEW_LABELS_4 has exactly 4 distinct Russian labels
 // =========================================================================
 //
 // Validates: Requirements 7.1, 7.8
 //
-// 7.1 mandates exactly 6 ракурсов (Hero + 5 Angle). 7.8 mandates that every
+// Pipeline v2.1 uses a 2×2 collage → 4 views. 7.8 mandates that every
 // successful render is recorded in `designs.views[]` in stable order. The
-// `VIEW_LABELS_6` constant is the public-facing label for each of those 6
+// `VIEW_LABELS_4` constant is the public-facing label for each of those 4
 // positions; if its length drifted, the gallery layout and the PDF cover
 // would both break silently.
 
-describe("Property 15.2 — VIEW_LABELS_6 has exactly 6 distinct Russian labels", () => {
-  it("VIEW_LABELS_6 has length 6 (Hero + 5 Angle)", () => {
-    assert.equal(VIEW_LABELS_6.length, 6);
+describe("Property 15.2 — VIEW_LABELS_4 has exactly 4 distinct Russian labels", () => {
+  it("VIEW_LABELS_4 has length 4 (collage 2×2 quadrants)", () => {
+    assert.equal(VIEW_LABELS_4.length, 4);
   });
 
   it("every label is a non-empty trimmed string", () => {
-    for (let i = 0; i < VIEW_LABELS_6.length; i++) {
-      const label = VIEW_LABELS_6[i];
-      assert.equal(typeof label, "string", `VIEW_LABELS_6[${i}] must be a string`);
-      assert.ok(label!.length > 0, `VIEW_LABELS_6[${i}] must be non-empty`);
+    for (let i = 0; i < VIEW_LABELS_4.length; i++) {
+      const label = VIEW_LABELS_4[i];
+      assert.equal(typeof label, "string", `VIEW_LABELS_4[${i}] must be a string`);
+      assert.ok(label!.length > 0, `VIEW_LABELS_4[${i}] must be non-empty`);
       assert.equal(
         label,
         label!.trim(),
-        `VIEW_LABELS_6[${i}]=${JSON.stringify(label)} must not have leading/trailing whitespace`,
+        `VIEW_LABELS_4[${i}]=${JSON.stringify(label)} must not have leading/trailing whitespace`,
       );
     }
   });
 
   it("every label is unique", () => {
     const seen = new Set<string>();
-    for (let i = 0; i < VIEW_LABELS_6.length; i++) {
-      const label = VIEW_LABELS_6[i]!;
+    for (let i = 0; i < VIEW_LABELS_4.length; i++) {
+      const label = VIEW_LABELS_4[i]!;
       assert.equal(
         seen.has(label),
         false,
-        `VIEW_LABELS_6[${i}]=${JSON.stringify(label)} duplicates an earlier label`,
+        `VIEW_LABELS_4[${i}]=${JSON.stringify(label)} duplicates an earlier label`,
       );
       seen.add(label);
     }
-    assert.equal(seen.size, 6);
+    assert.equal(seen.size, 4);
   });
 
   it("every label contains at least one Cyrillic character (sanity: it's Russian)", () => {
-    for (let i = 0; i < VIEW_LABELS_6.length; i++) {
-      const label = VIEW_LABELS_6[i]!;
+    for (let i = 0; i < VIEW_LABELS_4.length; i++) {
+      const label = VIEW_LABELS_4[i]!;
       assert.match(
         label,
         CYRILLIC_RE,
-        `VIEW_LABELS_6[${i}]=${JSON.stringify(label)} must contain Russian (Cyrillic) text`,
+        `VIEW_LABELS_4[${i}]=${JSON.stringify(label)} must contain Russian (Cyrillic) text`,
       );
     }
   });
 
-  // Statistical confirmation: any element of VIEW_LABELS_6, randomly picked,
+  // Statistical confirmation: any element of VIEW_LABELS_4, randomly picked,
   // satisfies the same constraints. Uniform sampling lands on the offending
   // entry within tens of runs if anything regresses.
-  it("any randomly picked element of VIEW_LABELS_6 is non-empty Cyrillic-bearing string", () => {
+  it("any randomly picked element of VIEW_LABELS_4 is non-empty Cyrillic-bearing string", () => {
     fc.assert(
-      fc.property(fc.constantFrom(...VIEW_LABELS_6), (label) => {
+      fc.property(fc.constantFrom(...VIEW_LABELS_4), (label) => {
         assert.equal(typeof label, "string");
         assert.ok(label.length > 0);
         assert.match(label, CYRILLIC_RE);
@@ -328,13 +329,13 @@ describe("Property 15.2 — VIEW_LABELS_6 has exactly 6 distinct Russian labels"
     );
   });
 
-  it("ISOMETRIC_VIEW_POSITION sits after the 6 photo positions (= 7) and ISOMETRIC_VIEW_LABEL is non-empty", () => {
-    assert.equal(ISOMETRIC_VIEW_POSITION, 7);
+  it("ISOMETRIC_VIEW_POSITION sits after the 4 photo positions (= 5) and ISOMETRIC_VIEW_LABEL is non-empty", () => {
+    assert.equal(ISOMETRIC_VIEW_POSITION, 5);
     assert.equal(typeof ISOMETRIC_VIEW_LABEL, "string");
     assert.ok((ISOMETRIC_VIEW_LABEL as string).length > 0);
-    // The isometric label must not collide with any of the 6 photo labels —
+    // The isometric label must not collide with any of the 4 photo labels —
     // it shows up as a distinct slot in `designs.views[]`.
-    for (const photoLabel of VIEW_LABELS_6) {
+    for (const photoLabel of VIEW_LABELS_4) {
       assert.notEqual(
         ISOMETRIC_VIEW_LABEL,
         photoLabel,
@@ -355,7 +356,7 @@ describe("Property 15.2 — VIEW_LABELS_6 has exactly 6 distinct Russian labels"
 // with reference=Hero_Render, *and* that the description of the requested
 // angle reinforces "the same room". Without an explicit identity-preservation
 // phrase ("Та же спальня…") the edit-image model can drift on palette and
-// materials, defeating the entire 6-view-composition purpose. The check below
+// materials, defeating the entire view-composition purpose. The check below
 // pins the phrase as part of the prompt contract.
 
 describe("Property 15.3 — ANGLE_PROMPTS_BEDROOM_5 has exactly 5 identity-preserving prompts", () => {

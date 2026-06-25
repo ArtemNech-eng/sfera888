@@ -192,9 +192,9 @@ export function DesignBoard({
           position: idx + 1,
         }));
 
-  // Isometric — последний view (position >= 6) с лейблом "3D-планировка"
+  // Isometric — последний view (position >= 5) с лейблом "3D-планировка"
   const isometricView = views.find(
-    (v) => v.label === "3D-планировка" || v.position >= 6,
+    (v) => v.label === "3D-планировка" || v.position >= 5,
   ) ?? null;
 
   // 4 основных ракурса (positions 1-4, без isometric)
