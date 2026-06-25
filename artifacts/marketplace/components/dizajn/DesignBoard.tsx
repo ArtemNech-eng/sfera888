@@ -8,54 +8,17 @@ import { DesignLeadForm } from "./DesignLeadForm";
 import { ShareButton } from "./ShareButton";
 
 /**
- * Подобранная под Layout_JSON позиция мебели — одна строка
- * `designs.picked_furniture[]`. Чистый DTO, повторяющий
- * `PickedFurnitureRow` из `lib/db/src/types/furniture.ts`
- * (Requirement 10.6, 10.7); marketplace-пакет не зависит от
- * `@workspace/db`, поэтому тип дублируется здесь для UI-слоя.
+ * Подобранная под Layout_JSON позиция мебели — одна строка.
  */
 export interface DesignPickedFurnitureDTO {
   layoutId: string;
   type: string;
-  /** SKU из `furniture_products`; `null` — позиция «уточняется». */
   sku: string | null;
   name: string | null;
-  /** Фактическая цена в копейках; `0`, если sku=null. */
   pricePaidKopeks: number;
   partnerUrl: string | null;
   imageUrl: string | null;
 }
-
-/**
- * AI-design page v2 (магазин-ная разворотка под seed-проекты).
- *
- * Layout (сверху вниз):
- *   1. Header — H1 (+ owner-badge) + breadcrumbs + параметры-chip + 2 CTAs (+ PDF)
- *   2. Прогресс генерации — шкала + текущий шаг (только при status=generating)
- *   3. Hero  — 4 ракурса (1 большой + 3 thumbnails)
- *   4. До / После — `inputImageUrl` рядом с views[0] (helper-toggle)
- *   5. План + параметры + палитра — three-column grid (top-down + 3D + params + palette)
- *   6. Детали проекта — 6 кропов через sharp
- *   7. Материалы + Смета — таблицы side-by-side
- *   8. Подобранная мебель — карточки SKU с partner-ссылками
- *   9. Решения — bullets с нумерацией
- *  10. Описание — narrative text
- *  11. Похожие проекты — 3×3 (room+style / style / budget)
- *  12. О стиле / о районе — extra SEO text sections
- *  13. CTA «Узнать стоимость» — secondary, scroll to lead-form
- *  14. Lead form — primary CTA «Хочу такой же»
- *  15. UGC place — «Сделали так же? Покажите свой результат»
- *
- * SEO: JSON-LD (Article + BreadcrumbList + ImageObject) выводится из
- * page.tsx (вне компонента — там есть доступ к metadata-helper).
- *
- * Client-only behaviour (Requirements 4.4, 5.4, 5.5, 5.6, 13.1, 13.6):
- *   • polling `GET /:slug/status` каждые 3 секунды, пока status=generating;
- *   • остановка polling при переходе в completed/failed;
- *   • кнопка «Скачать PDF» при completed; при 503 (`pdf_temporarily_unavailable`)
- *     прячется и заменяется пометкой;
- *   • бейдж «ваш проект» при совпадении `designAnonId` с cookie `kiro_anon_id`.
- */
 
 const ROOM_LABELS_GENITIVE: Record<string, string> = {
   bathroom: "ванной",
@@ -88,47 +51,18 @@ const STYLE_LABELS: Record<string, string> = {
 };
 
 interface SimilarBuckets {
-  /** Та же комната + стиль (другие проекты этой комбинации). */
   sameRoomStyle: DesignFeedItemDTO[];
-  /** Тот же стиль (любая комната). */
   sameStyle: DesignFeedItemDTO[];
-  /** Близкий бюджет (любая комната, любой стиль). */
   similarBudget: DesignFeedItemDTO[];
 }
 
 interface Props {
   design: DesignFullDTO;
   similar?: SimilarBuckets;
-  /**
-   * Base public URL (e.g. `https://chestnye-mastera.ru`) passed from the
-   * server component. Avoids importing `lib/env` (server-only) in this
-   * client component.
-   */
   baseUrl: string;
-  /**
-   * Программно отрисованный 2D-план комнаты (Requirement 8). `null`, если
-   * шаблонная отрисовка не выполнена для типа помещения; в этом случае
-   * блок «Вид сверху» показывает placeholder вместо изображения
-   * (Requirement 8.7).
-   */
   topDownPlanUrl?: string | null;
-  /**
-   * Подобранные SKU мебели в порядке `Layout_JSON.furniture[]`
-   * (Requirement 10.6). `null` — секция скрыта целиком; пустой массив
-   * трактуется как «ничего не подобрано» и тоже скрывается.
-   */
   pickedFurniture?: DesignPickedFurnitureDTO[] | null;
-  /**
-   * Имя текущего шага пайплайна (Requirement 5.2, 5.4) для подписи под
-   * прогресс-шкалой. Если не передано — берётся initial-значение
-   * `null`, на UI рисуется только числовой процент.
-   */
   currentStep?: string | null;
-  /**
-   * `Anon_Id` владельца записи (`designs.anon_id`). Используется
-   * только для бейджа «ваш проект» (Requirement 4.4): сравнивается на
-   * клиенте с cookie `kiro_anon_id`. Не отображается пользователю.
-   */
   designAnonId?: string | null;
 }
 
@@ -157,25 +91,17 @@ export function DesignBoard({
   currentStep: initialCurrentStep = null,
   designAnonId = null,
 }: Props) {
-  // ── Live status / polling state (Requirements 5.3, 5.4, 5.5, 5.6) ─────────
-  // Polling запускается только когда status='generating'. На completed/failed
-  // setInterval останавливается через cleanup в useEffect.
+  // ── Live status / polling state ────────────────────────────────────────────
   const [status, setStatus] = useState<DesignStatus>(design.status);
   const [progress, setProgress] = useState<number>(design.progress);
   const [currentStep, setCurrentStep] = useState<string | null>(initialCurrentStep);
   const [errorMessage, setErrorMessage] = useState<string | null>(design.errorMessage);
 
-  // ── PDF download state (Requirement 13.1, 13.6) ──────────────────────────
-  // `pdfError=true` — последняя попытка получить PDF вернула 503
-  // `pdf_temporarily_unavailable`; кнопка скрывается, на её месте — пометка.
-  // `pdfBusy` — в процессе скачивания (Requirement 13.1: «скрыта во время
-  // повторного рендера»).
+  // ── PDF download state ─────────────────────────────────────────────────────
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState(false);
 
-  // ── Owner badge state (Requirement 4.4) ──────────────────────────────────
-  // Cookie читается на клиенте после mount. На сервере значение всегда false,
-  // чтобы не было SSR/CSR mismatch.
+  // ── Owner badge state ──────────────────────────────────────────────────────
   const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
@@ -212,7 +138,7 @@ export function DesignBoard({
         if (data.currentStep !== undefined) setCurrentStep(data.currentStep ?? null);
         if (data.errorMessage !== undefined) setErrorMessage(data.errorMessage ?? null);
       } catch {
-        // Сетевые/JSON ошибки игнорируем — следующий тик повторит запрос.
+        // Network errors silently ignored — next tick retries.
       }
     };
 
@@ -234,14 +160,8 @@ export function DesignBoard({
         `/api/dizajn/${encodeURIComponent(design.slug)}/pdf`,
         { credentials: "include" },
       );
-      if (res.status === 503) {
-        setPdfError(true);
-        return;
-      }
-      if (!res.ok) {
-        setPdfError(true);
-        return;
-      }
+      if (res.status === 503) { setPdfError(true); return; }
+      if (!res.ok) { setPdfError(true); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -250,8 +170,6 @@ export function DesignBoard({
       document.body.appendChild(a);
       a.click();
       a.remove();
-      // Освобождаем blob через event-loop, чтобы браузер успел инициировать
-      // скачивание до revoke.
       setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch {
       setPdfError(true);
@@ -260,12 +178,9 @@ export function DesignBoard({
     }
   };
 
-  // Кнопка «Скачать PDF» показывается только при completed AND нет недавней
-  // 503-ошибки рендера AND не идёт активная загрузка PDF (последнее = «во
-  // время повторного рендера», Requirement 13.1).
   const showPdfButton = status === "completed" && !pdfError && !pdfBusy;
 
-  // Используем новые `views`; fallback на legacy `images.type=view_*`.
+  // ── Derived data ───────────────────────────────────────────────────────────
   const views = (design.views && design.views.length > 0)
     ? design.views.slice().sort((a, b) => a.position - b.position)
     : design.images
@@ -277,19 +192,18 @@ export function DesignBoard({
           position: idx + 1,
         }));
 
-  const heroView = views[0];
-  // Isometric — последний view (position 6 или 7) с лейблом "3D-планировка".
-  // Показываем отдельно в plan-секции рядом с SVG top-down планом.
-  const isometricView = views.find((v) => v.label === "3D-планировка" || v.position >= 6) ?? null;
-  // Thumbs в hero-grid справа — 3 ракурса (positions 2,3,4), без isometric и без 5+6.
-  const otherViews = views.slice(1).filter((v) => v !== isometricView).slice(0, 3);
-  const beforeUrl = design.inputImageUrl ?? design.images.find((img) => img.type === "input")?.url ?? null;
+  // Isometric — последний view (position >= 6) с лейблом "3D-планировка"
+  const isometricView = views.find(
+    (v) => v.label === "3D-планировка" || v.position >= 6,
+  ) ?? null;
+
+  // 4 основных ракурса (positions 1-4, без isometric)
+  const mainViews = views.filter((v) => v !== isometricView).slice(0, 4);
+
   const detailCrops = design.detailCrops ?? [];
 
-  // Нормализуем picked_furniture: пустой массив трактуется так же, как `null`,
-  // т.е. секция скрывается целиком (Requirement 14.4 — пустые секции
-  // не отображаются).
-  const pickedFurnitureItems = pickedFurniture && pickedFurniture.length > 0 ? pickedFurniture : null;
+  const pickedFurnitureItems =
+    pickedFurniture && pickedFurniture.length > 0 ? pickedFurniture : null;
 
   const styleLabel = STYLE_LABELS[design.style] ?? design.style;
   const roomGen = ROOM_LABELS_GENITIVE[design.roomType] ?? design.roomType;
@@ -304,9 +218,9 @@ export function DesignBoard({
 
   return (
     <article className="bg-[var(--color-background)]">
-      {/* ── 1. Header ───────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────── */}
       <header className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-6xl px-4 pb-8 pt-10 sm:px-6 sm:pt-14">
+        <div className="mx-auto max-w-7xl px-4 pb-6 pt-8 sm:px-6 sm:pt-10">
           <nav aria-label="Хлебные крошки" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
             <Link href="/" className="hover:text-[var(--color-text)]">Главная</Link>
             <span aria-hidden>/</span>
@@ -322,443 +236,248 @@ export function DesignBoard({
             <span className="text-[var(--color-text)]">№{design.id}</span>
           </nav>
 
-          <p className="font-eyebrow mt-7">AI-концепт интерьера</p>
-          <div className="mt-3 flex flex-wrap items-start gap-3">
-            <h1 className="font-display max-w-4xl text-3xl text-[var(--color-text)] sm:text-4xl lg:text-[2.75rem]">
+          <div className="mt-4 flex flex-wrap items-start gap-3">
+            <h1 className="font-display max-w-4xl text-2xl text-[var(--color-text)] sm:text-3xl">
               {design.h1 ?? `Дизайн ${roomGen} в стиле ${styleLabel}`}
             </h1>
-            {/* Owner-badge (Requirement 4.4): показывается только когда
-                cookie `kiro_anon_id` совпала с `designAnonId` владельца. */}
-            {isOwner ? (
-              <span
-                className="mt-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-[var(--color-primary-ring)] bg-[var(--color-primary-soft)] px-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-primary-strong)]"
-                aria-label="Это ваш проект"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+            {isOwner && (
+              <span className="mt-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-[var(--color-primary-ring)] bg-[var(--color-primary-soft)] px-2.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-primary-strong)]" aria-label="Это ваш проект">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="20 6 9 17 4 12" /></svg>
                 ваш проект
               </span>
-            ) : null}
+            )}
           </div>
 
-          {/* Quick-params chip row */}
-          <ul className="mt-5 flex flex-wrap gap-2 text-sm">
-            {design.area ? <Chip>{design.area} м²</Chip> : null}
-            <Chip>{styleLabel}</Chip>
-            {design.budget ? <Chip>до {formatRub(design.budget)} ₽</Chip> : null}
-            {design.cityName ? (
-              <Chip>{design.cityName}{design.district ? `, ${design.district}` : ""}</Chip>
-            ) : null}
-            {design.durationWeeks ? (
-              <Chip>{design.durationWeeks} {pluralWeeks(design.durationWeeks)}</Chip>
-            ) : null}
-          </ul>
-
-          <div className="mt-7 flex flex-wrap items-center gap-3">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <a
               href="#design-lead"
-              className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex h-10 items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
             >
               Хочу такой же
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M5 12h14" />
-                <path d="m12 5 7 7-7 7" />
-              </svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
             </a>
-            <SaveButton
-              slug={design.slug}
-              initialSaved={design.isSavedByCurrentUser}
-              initialCount={design.saveCount}
-              variant="pill"
-            />
-            <ShareButton
-              shareUrl={designUrl}
-              shareTitle={shareTitle}
-              shareText={`Создал AI-дизайн-проект: ${shareTitle}. Посмотри.`}
-            />
-            {/* PDF-download (Requirement 13.1, 13.6): показывается только при
-                completed AND нет недавней 503-ошибки рендера AND не идёт
-                активная загрузка. На 503 от `/:slug/pdf` button скрывается
-                и заменяется пометкой «PDF временно недоступен». */}
-            {showPdfButton ? (
-              <button
-                type="button"
-                onClick={handlePdfDownload}
-                disabled={pdfBusy}
-                className="inline-flex h-12 items-center gap-2 rounded-full border border-[var(--color-text)] px-6 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white disabled:opacity-60"
-                aria-label="Скачать дизайн-проект в PDF"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 3v12" />
-                  <path d="m7 10 5 5 5-5" />
-                  <path d="M5 21h14" />
-                </svg>
-                Скачать PDF
+            <SaveButton slug={design.slug} initialSaved={design.isSavedByCurrentUser} initialCount={design.saveCount} variant="pill" />
+            <ShareButton shareUrl={designUrl} shareTitle={shareTitle} shareText={`Создал AI-дизайн-проект: ${shareTitle}. Посмотри.`} />
+            {showPdfButton && (
+              <button type="button" onClick={handlePdfDownload} disabled={pdfBusy} className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--color-text)] px-5 text-xs font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white disabled:opacity-60" aria-label="Скачать дизайн-проект в PDF">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+                PDF
               </button>
-            ) : null}
-            {pdfError ? (
-              <span
-                role="status"
-                className="inline-flex h-12 items-center rounded-full border border-[var(--color-border)] bg-[var(--color-cream-deep)] px-5 text-sm text-[var(--color-muted)]"
-              >
-                PDF временно недоступен, вся информация есть на странице
+            )}
+            {pdfError && (
+              <span role="status" className="inline-flex h-10 items-center rounded-full border border-[var(--color-border)] bg-[var(--color-cream-deep)] px-4 text-xs text-[var(--color-muted)]">
+                PDF временно недоступен
               </span>
-            ) : null}
+            )}
           </div>
         </div>
       </header>
 
-      {/* ── 1b. Прогресс генерации (Requirements 5.4–5.6) ─────────────────── */}
-      {/* Шкала + подпись текущего шага рисуются только когда status='generating'.
-          Polling каждые 3 секунды (см. useEffect выше) обновляет progress/step,
-          по переходу в completed/failed setInterval останавливается. */}
-      {status === "generating" ? (
-        <section
-          className="bg-[var(--color-cream-deep)]"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
+      {/* ── Progress bar (generating) ─────────────────────── */}
+      {status === "generating" && (
+        <section className="bg-[var(--color-cream-deep)]" aria-live="polite" aria-busy="true">
+          <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
             <p className="font-eyebrow">Готовим дизайн</p>
-            <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
+            <h2 className="font-display mt-1 text-lg text-[var(--color-text)] sm:text-xl">
               {pipelineStepLabel(currentStep)}
             </h2>
-            <div className="mt-5 flex items-center justify-between text-xs text-[var(--color-muted)]">
+            <div className="mt-3 flex items-center justify-between text-xs text-[var(--color-muted)]">
               <span>Прогресс</span>
-              <span className="font-semibold text-[var(--color-text)]">
-                {Math.min(100, Math.max(0, Math.round(progress)))}%
-              </span>
+              <span className="font-semibold text-[var(--color-text)]">{Math.min(100, Math.max(0, Math.round(progress)))}%</span>
             </div>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
-              <div
-                className="h-full rounded-full bg-[var(--color-primary)] transition-all duration-1000"
-                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-              />
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
+              <div className="h-full rounded-full bg-[var(--color-primary)] transition-all duration-1000" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
             </div>
-            <p className="mt-3 text-xs text-[var(--color-faint)]">
-              Страница обновится автоматически, как только проект будет готов.
-            </p>
+            <p className="mt-2 text-[11px] text-[var(--color-faint)]">Страница обновится автоматически.</p>
           </div>
         </section>
-      ) : null}
+      )}
 
-      {/* ── 1c. Failed-banner (Requirement 5.6) ───────────────────────────── */}
-      {status === "failed" ? (
+      {/* ── Failed banner ──────────────────────────────────── */}
+      {status === "failed" && (
         <section className="bg-[var(--color-cream-deep)]" role="alert">
-          <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
+          <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
             <p className="font-eyebrow">Ошибка генерации</p>
-            <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
+            <h2 className="font-display mt-1 text-lg text-[var(--color-text)]">
               {errorMessage ?? "Не удалось завершить генерацию проекта."}
             </h2>
-            <p className="mt-3 text-sm text-[var(--color-muted)]">
-              Попробуйте создать новый проект — обычно повторная попытка проходит без проблем.
-            </p>
+            <p className="mt-2 text-sm text-[var(--color-muted)]">Попробуйте создать новый проект.</p>
           </div>
         </section>
-      ) : null}
+      )}
 
-      {/* ── 2. Hero (1 large + 3 thumbnails; isometric idёт в план-секцию) ── */}
-      {heroView ? (
+      {/* ══════════════════════════════════════════════════════════════════════
+          ИНФОГРАФИКА — compact one-screen layout (референс)
+          ══════════════════════════════════════════════════════════════════════ */}
+      {status === "completed" && (
         <section className="bg-[var(--color-background)]">
-          <div className="mx-auto max-w-6xl px-4 pb-12 sm:px-6 sm:pb-16">
-            <div className="grid gap-3 sm:gap-4 lg:grid-cols-[2fr_1fr]">
-              <figure className="relative overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy">
-                <div className="relative aspect-[3/2] w-full">
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+
+            {/* ROW 1: 4 ракурса в ряд */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+              {mainViews.map((v, i) => (
+                <figure key={v.url} className="relative overflow-hidden rounded-xl">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={heroView.url}
-                    alt={`${heroView.label} — ${shareTitle}`}
-                    loading="eager"
-                    className="block h-full w-full object-cover"
+                    src={v.url}
+                    alt={`${v.label} — ${shareTitle}`}
+                    className="aspect-[4/3] w-full object-cover"
+                    loading={i === 0 ? "eager" : "lazy"}
                   />
-                </div>
-                <figcaption className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
-                  1. {heroView.label}
-                </figcaption>
-              </figure>
-
-              <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-1 lg:grid-rows-3">
-                {otherViews.map((v, idx) => (
-                  <figure key={v.url} className="group relative overflow-hidden rounded-2xl bg-[var(--color-cream-deep)] shadow-cozy">
-                    <div className="relative aspect-[4/3] w-full">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={v.url}
-                        alt={`${v.label} — ${shareTitle}`}
-                        loading="lazy"
-                        className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-                      />
-                    </div>
-                    <figcaption className="absolute bottom-2 left-2 rounded-full bg-black/55 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                      {idx + 2}. {v.label}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {/* ── 3. До / После (если есть «до») ───────────────── */}
-      {beforeUrl && heroView ? (
-        <section className="bg-[var(--color-cream-deep)]">
-          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-14">
-            <div className="max-w-2xl">
-              <p className="font-eyebrow">До и после</p>
-              <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-                Как менялась комната.
-              </h2>
-              <p className="mt-3 text-sm text-[var(--color-muted)]">
-                Слева — типовая {roomNom} в панельном доме. Справа — концепт после ремонта в стиле {styleLabel.toLowerCase()}.
-                Все изображения сгенерированы AI и нужны для вдохновения.
-              </p>
-            </div>
-            <div className="mt-7 grid gap-4 sm:grid-cols-2">
-              <BeforeAfterPair label="Было" labelTone="muted" url={beforeUrl} alt={`Типовая ${roomNom} до ремонта`} />
-              <BeforeAfterPair label="Стало" labelTone="brand" url={heroView.url} alt={`${capitalize(roomNom)} после преображения, ${styleLabel.toLowerCase()}`} />
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {/* ── 4a. Вид сверху (программный 2D-план из Layout_JSON) ─────────────
-           Requirement 8.7: блок отображает `topDownPlanUrl` напрямую и
-           заменяет любой существующий placeholder из infographicComposer.
-           IF поле `null` (тип помещения без шаблонной отрисовки или ошибка
-           генерации) — показываем placeholder, секция остаётся видимой
-           (но без визуала). */}
-      <section className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-6xl px-4 pt-12 sm:px-6 sm:pt-16">
-          <div className="max-w-2xl">
-            <p className="font-eyebrow">Вид сверху</p>
-            <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-              План помещения.
-            </h2>
-            <p className="mt-3 text-sm text-[var(--color-muted)]">
-              Точные размеры стен, дверей, окон и габариты мебели — отрисовка
-              без AI, прямо из планировочного JSON.
-            </p>
-          </div>
-          <figure className="mt-7 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
-            <div className="relative aspect-[16/10] w-full bg-[var(--color-cream-deep)]">
-              {topDownPlanUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={topDownPlanUrl}
-                  alt={`Вид сверху — план ${roomGen}`}
-                  loading="lazy"
-                  className="block h-full w-full object-contain"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center px-6 text-center text-sm text-[var(--color-faint)]">
-                  План вида сверху для этого типа помещения скоро появится — пока показаны фотореалистичные ракурсы и аксонометрия.
-                </div>
-              )}
-            </div>
-          </figure>
-        </div>
-      </section>
-
-      {/* ── 4. План + параметры + палитра ────────────────── */}
-      <section className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <div className="grid gap-8 lg:grid-cols-[1fr_1fr_1fr] lg:gap-10">
-            {/* 3D-isometric ракурс (если есть) — отделён от «Вид сверху»,
-                который теперь рендерит программный 2D-план (см. секцию 4a). */}
-            {isometricView ? (
-              <div>
-                <p className="font-eyebrow">Аксонометрия</p>
-                <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
-                  Объёмная схема.
-                </h2>
-                <figure className="mt-5 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
-                  <div className="relative aspect-[4/3] w-full bg-[var(--color-cream-deep)]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={isometricView.url}
-                      alt={`${isometricView.label} — ${shareTitle}`}
-                      loading="lazy"
-                      className="block h-full w-full object-cover"
-                    />
-                  </div>
-                  <figcaption className="px-4 py-3 text-sm text-[var(--color-text)]">
-                    5. {isometricView.label}
+                  <figcaption className="absolute bottom-1.5 left-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                    {i + 1}. {v.label}
                   </figcaption>
                 </figure>
-              </div>
-            ) : (
-              <div className="hidden lg:block" aria-hidden />
-            )}
-
-            {/* Параметры проекта */}
-            <div>
-              <p className="font-eyebrow">Параметры проекта</p>
-              <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
-                Что входит.
-              </h2>
-              <dl className="mt-5 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy text-sm">
-                <ParamRow label="Помещение" value={capitalize(roomNom)} />
-                <ParamRow label="Площадь" value={design.area ? `${design.area} м²` : "—"} />
-                <ParamRow label="Стиль" value={styleLabel} />
-                {design.budget ? (
-                  <ParamRow label="Бюджет" value={`до ${formatRub(design.budget)} ₽`} />
-                ) : null}
-                {design.durationWeeks ? (
-                  <ParamRow label="Срок реализации" value={`${design.durationWeeks} ${pluralWeeks(design.durationWeeks)}`} />
-                ) : null}
-                {design.cityName ? <ParamRow label="Город" value={design.cityName} /> : null}
-                {design.district ? <ParamRow label="Район" value={design.district} /> : null}
-              </dl>
+              ))}
             </div>
 
-            {/* Цветовая палитра */}
-            <div>
-              <p className="font-eyebrow">Цветовая палитра</p>
-              <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
-                Тона проекта.
-              </h2>
-              {design.colorPalette && design.colorPalette.length > 0 ? (
-                <div className="mt-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy">
-                  <ul className="grid grid-cols-5 gap-2">
-                    {design.colorPalette.slice(0, 5).map((swatch, idx) => (
-                      <li key={idx}>
-                        <div
-                          className="aspect-square w-full rounded-lg border border-[var(--color-border)]"
-                          style={{ backgroundColor: swatch.hex }}
-                          title={swatch.hex}
-                        />
-                        <p className="mt-2 text-center text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
-                          {swatch.hex}
-                        </p>
+            {/* ROW 2: Изометрия + Параметры/Материалы/Смета + Палитра */}
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_2fr_auto]">
+
+              {/* LEFT: Isometric + Top-down plan */}
+              <div className="space-y-3">
+                {isometricView && (
+                  <figure className="overflow-hidden rounded-xl">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={isometricView.url} alt="3D-планировка" className="w-full rounded-xl" loading="lazy" />
+                    <figcaption className="mt-1 text-[10px] text-center text-[var(--color-muted)]">3D-планировка</figcaption>
+                  </figure>
+                )}
+                {topDownPlanUrl && (
+                  <figure className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={topDownPlanUrl} alt="План помещения" className="w-full" loading="lazy" />
+                    <figcaption className="mt-1 text-[10px] text-center text-[var(--color-muted)]">Вид сверху</figcaption>
+                  </figure>
+                )}
+              </div>
+
+              {/* CENTER: params + materials + estimate */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {/* Параметры проекта */}
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Параметры проекта</h3>
+                  <dl className="mt-2 space-y-1 text-sm">
+                    {design.area != null && (
+                      <div className="flex justify-between"><dt className="text-[var(--color-muted)]">Площадь</dt><dd className="font-semibold">{design.area} м²</dd></div>
+                    )}
+                    <div className="flex justify-between"><dt className="text-[var(--color-muted)]">Стиль</dt><dd className="font-semibold">{styleLabel}</dd></div>
+                    {design.budget != null && (
+                      <div className="flex justify-between"><dt className="text-[var(--color-muted)]">Бюджет</dt><dd className="font-semibold">до {formatRub(design.budget)} ₽</dd></div>
+                    )}
+                    {design.durationWeeks != null && (
+                      <div className="flex justify-between"><dt className="text-[var(--color-muted)]">Срок</dt><dd className="font-semibold">{design.durationWeeks} {pluralWeeks(design.durationWeeks)}</dd></div>
+                    )}
+                    {design.cityName && (
+                      <div className="flex justify-between"><dt className="text-[var(--color-muted)]">Город</dt><dd className="font-semibold">{design.cityName}</dd></div>
+                    )}
+                  </dl>
+                </div>
+
+                {/* Рекомендуемые материалы */}
+                {design.materials && design.materials.length > 0 && (
+                  <div>
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Рекомендуемые материалы</h3>
+                    <table className="mt-2 w-full text-xs">
+                      <tbody>
+                        {design.materials.map((m, i) => (
+                          <tr key={i} className="border-b border-[var(--color-border)]">
+                            <td className="py-1 pr-2 font-semibold text-[var(--color-text)]">{m.category}</td>
+                            <td className="py-1 text-[var(--color-muted)]">{m.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Смета реализации */}
+                {design.estimate && design.estimate.length > 0 && (
+                  <div className="sm:col-span-2">
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Смета реализации</h3>
+                    <table className="mt-2 w-full text-xs">
+                      <tbody>
+                        {design.estimate.map((e, i) => (
+                          <tr key={i} className="border-b border-[var(--color-border)]">
+                            <td className="py-1 text-[var(--color-text)]">{e.category}</td>
+                            <td className="py-1 text-right font-semibold">{formatRub(Math.round(e.amountKopeks / 100))} ₽</td>
+                          </tr>
+                        ))}
+                        {totalEstimateRub != null && (
+                          <tr className="bg-[var(--color-cream-deep)]">
+                            <td className="py-1.5 font-bold text-[var(--color-text)]">Итого</td>
+                            <td className="py-1.5 text-right font-bold text-[var(--color-text)]">{formatRub(totalEstimateRub)} ₽</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* RIGHT: palette */}
+              <div>
+                <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Цветовая палитра</h3>
+                {design.colorPalette && design.colorPalette.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2 lg:flex-col lg:items-start">
+                    {design.colorPalette.slice(0, 5).map((swatch) => (
+                      <div key={swatch.hex} className="text-center">
+                        <div className="h-10 w-10 rounded-full border border-[var(--color-border)]" style={{ backgroundColor: swatch.hex }} title={swatch.name ?? swatch.hex} />
+                        <span className="mt-1 block text-[9px] text-[var(--color-muted)]">{swatch.hex}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-[var(--color-faint)]">Палитра уточняется.</p>
+                )}
+              </div>
+
+            </div>{/* end ROW 2 */}
+
+            {/* ROW 3: Solutions + 6 detail crops */}
+            <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_3fr]">
+              {/* Основные решения */}
+              {design.solutions && design.solutions.length > 0 && (
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Основные решения</h3>
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {design.solutions.map((s, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="text-[var(--color-primary)]">•</span>
+                        <span className="text-[var(--color-text)]">{s.text}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
-              ) : (
-                <p className="mt-5 text-sm text-[var(--color-faint)]">Палитра подбирается из главного ракурса.</p>
               )}
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* ── 5. Детали проекта (6 кропов) ─────────────────── */}
-      {detailCrops.length > 0 ? (
-        <section className="bg-[var(--color-cream-deep)]">
-          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-            <div className="max-w-2xl">
-              <p className="font-eyebrow">Детали проекта</p>
-              <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-                На что обратить внимание.
-              </h2>
-              <p className="mt-3 text-sm text-[var(--color-muted)]">
-                Крупные планы из ракурсов выше — мебель, освещение, фактуры стен.
-              </p>
-            </div>
-            <ul className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-              {detailCrops.map((crop, idx) => (
-                <li key={crop.url} className="group">
-                  <figure className="overflow-hidden rounded-2xl bg-[var(--color-surface)] shadow-cozy">
-                    <div className="relative aspect-square w-full">
+              {/* 6 detail crops in a row */}
+              {detailCrops.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {detailCrops.slice(0, 6).map((crop) => (
+                    <figure key={crop.url} className="text-center">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={crop.url}
-                        alt={`${crop.label} — ${shareTitle}`}
-                        loading={idx < 3 ? "eager" : "lazy"}
-                        className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-                      />
-                    </div>
-                    <figcaption className="px-4 py-3 text-sm text-[var(--color-text)]">{crop.label}</figcaption>
-                  </figure>
-                </li>
-              ))}
-            </ul>
+                      <img src={crop.url} alt={crop.label} className="aspect-square w-full rounded-lg object-cover" loading="lazy" />
+                      <figcaption className="mt-1 text-[10px] leading-tight text-[var(--color-muted)]">{crop.label}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              )}
+            </div>{/* end ROW 3 */}
+
           </div>
         </section>
-      ) : null}
+      )}
 
-      {/* ── 6. Материалы + Смета ────────────────────────── */}
-      <section className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <div className="grid gap-8 lg:grid-cols-2 lg:gap-10">
-            {/* Materials */}
-            {design.materials && design.materials.length > 0 ? (
-              <div>
-                <p className="font-eyebrow">Рекомендуемые материалы</p>
-                <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-                  Материалы.
-                </h2>
-                <table className="mt-5 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy text-sm overflow-hidden">
-                  <tbody className="divide-y divide-[var(--color-border)]">
-                    {design.materials.map((m, idx) => (
-                      <tr key={idx}>
-                        <th className="w-1/3 px-5 py-3 text-left font-semibold text-[var(--color-text)] align-top">
-                          {m.category}
-                        </th>
-                        <td className="px-5 py-3 text-[var(--color-muted)] align-top">{m.description}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-
-            {/* Estimate */}
-            {design.estimate && design.estimate.length > 0 ? (
-              <div>
-                <p className="font-eyebrow">Смета реализации</p>
-                <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-                  Смета{design.budget ? ` (до ${formatRub(design.budget)} ₽)` : ""}.
-                </h2>
-                <table className="mt-5 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy text-sm overflow-hidden">
-                  <tbody className="divide-y divide-[var(--color-border)]">
-                    {design.estimate.map((e, idx) => (
-                      <tr key={idx}>
-                        <th className="px-5 py-3 text-left font-semibold text-[var(--color-text)] align-top">
-                          {e.category}
-                        </th>
-                        <td className="w-32 whitespace-nowrap px-5 py-3 text-right font-semibold text-[var(--color-text)] align-top">
-                          {formatRub(Math.round(e.amountKopeks / 100))} ₽
-                        </td>
-                      </tr>
-                    ))}
-                    {totalEstimateRub != null ? (
-                      <tr className="bg-[var(--color-cream-deep)]">
-                        <th className="px-5 py-3 text-left font-bold text-[var(--color-text)]">Итого ориентировочно</th>
-                        <td className="w-32 whitespace-nowrap px-5 py-3 text-right font-bold text-[var(--color-text)]">
-                          {formatRub(totalEstimateRub)} ₽
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      {/* ── 6b. Подобранная мебель (Requirement 10.7) ─────────────────────
-           Карточки SKU из `pickedFurniture[]`. Для позиций `sku=null`
-           (не нашлось подходящего варианта в каталоге, Requirement 10.5)
-           показываем заглушку «уточняется» вместо ссылки.
-           Секция полностью скрыта при `null`/пустом массиве (Requirement 14.4). */}
-      {pickedFurnitureItems ? (
+      {/* ── Подобранная мебель (под инфографикой) ──────────── */}
+      {pickedFurnitureItems && (
         <section className="bg-[var(--color-background)]">
-          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-            <div className="max-w-2xl">
-              <p className="font-eyebrow">Подобранная мебель</p>
-              <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-                Что купить под проект.
-              </h2>
-              <p className="mt-3 text-sm text-[var(--color-muted)]">
-                SKU из каталога партнёра, подходящие по габаритам и стилю.
-                Цены — на момент генерации проекта, могут отличаться в магазине.
-              </p>
-            </div>
-            <ul className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+          <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+            <p className="font-eyebrow">Подобранная мебель</p>
+            <h2 className="font-display mt-1 text-xl text-[var(--color-text)] sm:text-2xl">
+              Что купить под проект.
+            </h2>
+            <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {pickedFurnitureItems.map((item, idx) => (
                 <li key={`${item.layoutId}-${idx}`}>
                   <PickedFurnitureCard item={item} />
@@ -767,61 +486,14 @@ export function DesignBoard({
             </ul>
           </div>
         </section>
-      ) : null}
+      )}
 
-      {/* ── 7. Решения ──────────────────────────────────── */}
-      {design.solutions && design.solutions.length > 0 ? (
+      {/* ── Похожие проекты ──────────────────────────────── */}
+      {similar && (
         <section className="bg-[var(--color-cream-deep)]">
-          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-            <div className="max-w-3xl">
-              <p className="font-eyebrow">Основные решения</p>
-              <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-                Что главное в проекте.
-              </h2>
-            </div>
-            <ul className="mt-8 grid gap-3 sm:grid-cols-2 sm:gap-4">
-              {design.solutions.map((s, idx) => (
-                <li
-                  key={idx}
-                  className="flex items-start gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-cozy"
-                >
-                  <span className="mt-0.5 text-[var(--color-primary)] font-display text-base">
-                    {String(idx + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-base text-[var(--color-text)]">{s.text}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-      ) : null}
-
-      {/* ── 8. Описание ─────────────────────────────────── */}
-      {design.description ? (
-        <section className="bg-[var(--color-background)]">
-          <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
-            <p className="font-eyebrow">О проекте</p>
-            <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-              Идея и подача.
-            </h2>
-            <div className="mt-5 space-y-4 text-base leading-relaxed text-[var(--color-muted)] whitespace-pre-line sm:text-lg sm:leading-[1.7]">
-              {design.description}
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {/* ── 9. Похожие проекты (3×3) ──────────────────── */}
-      {similar ? (
-        <section className="bg-[var(--color-cream-deep)]">
-          <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-            <div className="max-w-3xl">
-              <p className="font-eyebrow">Если понравилось</p>
-              <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-                Похожие проекты.
-              </h2>
-            </div>
-            <div className="mt-8 space-y-10">
+          <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+            <p className="font-eyebrow">Похожие проекты</p>
+            <div className="mt-5 space-y-8">
               <SimilarRow
                 title={`Ещё ${roomGen} в стиле ${styleLabel.toLowerCase()}`}
                 seeAllHref={`/dizajn/${design.roomType.replace(/_/g, "-")}-${design.style}`}
@@ -835,106 +507,52 @@ export function DesignBoard({
               {design.budget ? (
                 <SimilarRow
                   title={`Проекты с похожим бюджетом — около ${formatRub(design.budget)} ₽`}
-                  seeAllHref={`/dizajn`}
-                  designs={similar.similarBudget}
-                />
-              ) : (
-                <SimilarRow
-                  title="Свежие AI-дизайны"
                   seeAllHref="/dizajn"
                   designs={similar.similarBudget}
                 />
+              ) : (
+                <SimilarRow title="Свежие AI-дизайны" seeAllHref="/dizajn" designs={similar.similarBudget} />
               )}
             </div>
           </div>
         </section>
-      ) : null}
+      )}
 
-      {/* ── 10. Доп SEO-секция: о стиле ───────────────── */}
+      {/* ── CTA: «Узнать стоимость» ──────────────────────── */}
       <section className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
-          <p className="font-eyebrow">О стиле</p>
-          <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-            {styleLabel} — кратко о направлении.
-          </h2>
-          <div className="mt-5 space-y-3 text-base leading-relaxed text-[var(--color-muted)] sm:text-lg sm:leading-[1.7]">
-            {STYLE_BRIEF[design.style] ?? `Стиль ${styleLabel.toLowerCase()} — самостоятельное направление в дизайне интерьеров. На странице показано как его базовые приёмы применяются к ${roomGen}.`}
-          </div>
-        </div>
-      </section>
-
-      {design.cityName ? (
-        <section className="bg-[var(--color-cream-deep)]">
-          <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
-            <p className="font-eyebrow">О городе</p>
-            <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-              Реализация {cityIn ?? `в городе ${design.cityName}`}.
-            </h2>
-            <div className="mt-5 text-base leading-relaxed text-[var(--color-muted)] sm:text-lg sm:leading-[1.7]">
-              В каталоге проверенных мастеров {cityIn ?? design.cityName} есть специалисты, которые работают
-              со стилем {styleLabel.toLowerCase()} и могут повторить этот концепт{design.district ? ` в районе ${design.district}` : ""}.
-              Бюджет и состав работ согласовываются после замера и уточнения списка материалов.
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+          <div className="flex flex-col items-start gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy sm:flex-row sm:items-center sm:justify-between sm:p-8">
+            <div className="max-w-xl">
+              <h3 className="font-display text-lg text-[var(--color-text)] sm:text-xl">Узнайте стоимость под вашу комнату.</h3>
+              <p className="mt-1 text-sm text-[var(--color-muted)]">Смета на странице — ориентир. Под конкретный объект мастер пересчитает после замера.</p>
             </div>
-          </div>
-        </section>
-      ) : null}
-
-      {/* ── 11. Secondary CTA: «Узнать стоимость» ─────── */}
-      <section className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-14">
-          <div className="flex flex-col items-start gap-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-7 shadow-cozy sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:p-9">
-            <div className="max-w-2xl">
-              <p className="font-eyebrow">Реализация проекта</p>
-              <h3 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
-                Узнайте стоимость точно под вашу комнату.
-              </h3>
-              <p className="mt-2 text-sm text-[var(--color-muted)]">
-                Смета на странице — ориентир по средним ценам {cityIn ?? ""}.
-                Под конкретный объект мастер пересчитает после замера.
-              </p>
-            </div>
-            <a
-              href="#design-lead"
-              className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full border border-[var(--color-text)] px-7 text-base font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white"
-            >
+            <a href="#design-lead" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-[var(--color-text)] px-6 text-sm font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white">
               Узнать стоимость
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M5 12h14" />
-                <path d="m12 5 7 7-7 7" />
-              </svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
             </a>
           </div>
         </div>
       </section>
 
-      {/* ── 12. Lead form (primary CTA «Хочу такой же») ── */}
+      {/* ── Lead form (primary CTA «Хочу такой же») ──────── */}
       <section id="design-lead" className="scroll-mt-20 bg-[var(--color-text)]">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-          <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:gap-16">
-            {/* Pitch */}
+        <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
+          <div className="grid gap-8 lg:grid-cols-2 lg:gap-14">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-primary-ring)]">
-                Хочу такой же
-              </p>
-              <h2 className="font-display mt-4 max-w-3xl text-3xl text-white sm:text-4xl lg:text-5xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-primary-ring)]">Хочу такой же</p>
+              <h2 className="font-display mt-3 max-w-3xl text-2xl text-white sm:text-3xl lg:text-4xl">
                 Подберём мастера, который сделает похоже.
               </h2>
-              <p className="mt-5 max-w-xl text-base leading-relaxed text-white/70 sm:text-lg">
-                Оставьте контакт — мы найдём проверенного мастера{cityIn ? ` ${cityIn}` : ""},
-                который работает в стиле {styleLabel.toLowerCase()} и сможет повторить
-                этот проект.
+              <p className="mt-4 max-w-xl text-sm leading-relaxed text-white/70 sm:text-base">
+                Оставьте контакт — мы найдём проверенного мастера{cityIn ? ` ${cityIn}` : ""}, который работает в стиле {styleLabel.toLowerCase()}.
               </p>
-              <ul className="mt-7 space-y-2 text-sm text-white/85">
-                <li className="flex items-center gap-2"><Tick /> Без авансов и блокировок счёта</li>
+              <ul className="mt-5 space-y-1.5 text-sm text-white/85">
+                <li className="flex items-center gap-2"><Tick /> Без авансов и блокировок</li>
                 <li className="flex items-center gap-2"><Tick /> Договор на каждом заказе</li>
                 <li className="flex items-center gap-2"><Tick /> Оплата после выполнения</li>
-                {design.budget ? (
-                  <li className="flex items-center gap-2"><Tick /> Учтём ваш бюджет до {formatRub(design.budget)} ₽</li>
-                ) : null}
+                {design.budget && <li className="flex items-center gap-2"><Tick /> Бюджет до {formatRub(design.budget)} ₽</li>}
               </ul>
             </div>
-
-            {/* Form */}
             <div>
               <div className="rounded-2xl border border-white/15 bg-[var(--color-surface)] p-6 shadow-cozy-md sm:p-8">
                 <DesignLeadForm slug={design.slug} />
@@ -944,106 +562,78 @@ export function DesignBoard({
         </div>
       </section>
 
-      {/* ── 13. UGC place (placeholder) ─────────────────── */}
+      {/* ── SEO: О стиле ──────────────────────────────────── */}
+      {design.description && (
+        <section className="bg-[var(--color-background)]">
+          <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+            <p className="font-eyebrow">О проекте</p>
+            <div className="mt-3 space-y-3 text-sm leading-relaxed text-[var(--color-muted)] whitespace-pre-line sm:text-base">
+              {design.description}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-3xl px-4 py-12 text-center sm:px-6 sm:py-16">
-          <p className="font-eyebrow">Реальные результаты</p>
-          <h2 className="font-display mt-2 text-2xl text-[var(--color-text)] sm:text-3xl">
-            Сделали так же? Покажите свой результат.
+        <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+          <p className="font-eyebrow">О стиле</p>
+          <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
+            {styleLabel} — кратко о направлении.
           </h2>
-          <p className="mt-4 text-sm text-[var(--color-muted)]">
-            Скоро мы добавим возможность присылать фото готовых ремонтов и публиковать их рядом с AI-концептом.
-            Подпишитесь на рассылку, чтобы первым узнать.
-          </p>
+          <div className="mt-3 text-sm leading-relaxed text-[var(--color-muted)] sm:text-base">
+            {STYLE_BRIEF[design.style] ?? `Стиль ${styleLabel.toLowerCase()} — самостоятельное направление в дизайне интерьеров.`}
+          </div>
         </div>
       </section>
+
+      {design.cityName && (
+        <section className="bg-[var(--color-cream-deep)]">
+          <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+            <p className="font-eyebrow">О городе</p>
+            <h2 className="font-display mt-2 text-xl text-[var(--color-text)] sm:text-2xl">
+              Реализация {cityIn ?? `в городе ${design.cityName}`}.
+            </h2>
+            <div className="mt-3 text-sm leading-relaxed text-[var(--color-muted)] sm:text-base">
+              В каталоге проверенных мастеров {cityIn ?? design.cityName} есть специалисты, которые работают
+              со стилем {styleLabel.toLowerCase()} и могут повторить этот концепт{design.district ? ` в районе ${design.district}` : ""}.
+            </div>
+          </div>
+        </section>
+      )}
     </article>
   );
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function Chip({ children }: { children: React.ReactNode }) {
+function Tick() {
   return (
-    <li className="inline-flex h-8 items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-text)] shadow-cozy/40">
-      {children}
-    </li>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-primary-ring)]" aria-hidden>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
   );
 }
 
-function ParamRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-[var(--color-muted)]">{label}</dt>
-      <dd className="font-semibold text-[var(--color-text)] text-right">{value}</dd>
-    </div>
-  );
-}
-
-function BeforeAfterPair({
-  label,
-  labelTone,
-  url,
-  alt,
-}: {
-  label: string;
-  labelTone: "muted" | "brand";
-  url: string;
-  alt: string;
-}) {
-  const labelClass = labelTone === "brand"
-    ? "bg-[var(--color-primary)] text-white"
-    : "bg-[var(--color-text)] text-white";
-  return (
-    <figure className="relative overflow-hidden rounded-2xl bg-[var(--color-surface)] shadow-cozy">
-      <div className="relative aspect-[4/3] w-full">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt={alt} loading="lazy" className="block h-full w-full object-cover" />
-      </div>
-      <figcaption className={`absolute top-3 left-3 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${labelClass}`}>
-        {label}
-      </figcaption>
-    </figure>
-  );
-}
-
-function SimilarRow({
-  title,
-  seeAllHref,
-  designs,
-}: {
-  title: string;
-  seeAllHref: string;
-  designs: DesignFeedItemDTO[];
-}) {
+function SimilarRow({ title, seeAllHref, designs }: { title: string; seeAllHref: string; designs: DesignFeedItemDTO[] }) {
   if (!designs || designs.length === 0) return null;
   return (
     <div>
       <div className="flex items-end justify-between gap-3">
-        <h3 className="font-display text-lg text-[var(--color-text)] sm:text-xl">{title}</h3>
-        <Link href={seeAllHref} className="shrink-0 text-sm font-semibold text-[var(--color-primary)] hover:underline">
-          Смотреть все →
-        </Link>
+        <h3 className="font-display text-base text-[var(--color-text)] sm:text-lg">{title}</h3>
+        <Link href={seeAllHref} className="shrink-0 text-xs font-semibold text-[var(--color-primary)] hover:underline">Смотреть все →</Link>
       </div>
-      <ul className="mt-4 grid gap-3 sm:grid-cols-3 sm:gap-4">
+      <ul className="mt-3 grid gap-3 sm:grid-cols-3">
         {designs.slice(0, 3).map((d) => (
           <li key={d.id}>
             <Link href={`/dizajn/${d.slug}`} className="group block">
-              <figure className="overflow-hidden rounded-2xl bg-[var(--color-surface)] shadow-cozy">
+              <figure className="overflow-hidden rounded-xl bg-[var(--color-surface)] shadow-cozy">
                 <div className="relative aspect-[4/3] w-full bg-[var(--color-cream-deep)]">
-                  {d.resultImageUrl ? (
+                  {d.resultImageUrl && (
                     /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={d.resultImageUrl}
-                      alt={d.h1 ?? "AI-дизайн"}
-                      loading="lazy"
-                      className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-                    />
-                  ) : null}
+                    <img src={d.resultImageUrl} alt={d.h1 ?? "AI-дизайн"} loading="lazy" className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" />
+                  )}
                 </div>
-                <figcaption className="px-4 py-3 text-sm text-[var(--color-text)] line-clamp-2">
-                  {d.h1 ?? `Дизайн ${d.roomType} в стиле ${d.style}`}
-                </figcaption>
+                <figcaption className="px-3 py-2 text-xs text-[var(--color-text)] line-clamp-2">{d.h1 ?? `Дизайн ${d.roomType} в стиле ${d.style}`}</figcaption>
               </figure>
             </Link>
           </li>
@@ -1053,23 +643,89 @@ function SimilarRow({
   );
 }
 
-function Tick() {
+function BeforeAfterPair({ label, labelTone, url, alt }: { label: string; labelTone: "muted" | "brand"; url: string; alt: string }) {
+  const labelClass = labelTone === "brand" ? "bg-[var(--color-primary)] text-white" : "bg-[var(--color-text)] text-white";
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="text-[var(--color-primary-ring)]"
-      aria-hidden
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
+    <figure className="relative overflow-hidden rounded-xl bg-[var(--color-surface)] shadow-cozy">
+      <div className="relative aspect-[4/3] w-full">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={alt} loading="lazy" className="block h-full w-full object-cover" />
+      </div>
+      <figcaption className={`absolute top-2 left-2 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${labelClass}`}>{label}</figcaption>
+    </figure>
   );
+}
+
+// Keep BeforeAfterPair exported for potential reuse
+export { BeforeAfterPair };
+
+const FURNITURE_TYPE_LABELS: Record<string, string> = {
+  bed: "Кровать",
+  wardrobe: "Шкаф",
+  desk: "Рабочий стол",
+  chair: "Кресло",
+  nightstand: "Прикроватная тумба",
+  rug: "Ковёр",
+  sofa: "Диван",
+  dining_table: "Обеденный стол",
+  bookshelf: "Стеллаж",
+  tv_unit: "ТВ-тумба",
+};
+
+function furnitureTypeLabel(type: string): string {
+  return FURNITURE_TYPE_LABELS[type] ?? capitalize(type.replace(/_/g, " "));
+}
+
+function PickedFurnitureCard({ item }: { item: DesignPickedFurnitureDTO }) {
+  const typeLabel = furnitureTypeLabel(item.type);
+
+  if (item.sku === null) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center shadow-cozy/40">
+        <div className="flex flex-1 items-center justify-center rounded-lg bg-[var(--color-cream-deep)] py-6 text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
+          Нет фото
+        </div>
+        <p className="mt-3 text-sm font-semibold text-[var(--color-text)]">{typeLabel}</p>
+        <p className="mt-0.5 text-xs text-[var(--color-muted)]">уточняется</p>
+      </div>
+    );
+  }
+
+  const priceRub = Math.round(item.pricePaidKopeks / 100);
+  const cardBody = (
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
+      <div className="relative aspect-[4/3] w-full bg-[var(--color-cream-deep)]">
+        {item.imageUrl && (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={item.imageUrl} alt={item.name ?? typeLabel} loading="lazy" className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+        )}
+      </div>
+      <div className="flex flex-1 flex-col justify-between gap-2 p-3">
+        <div>
+          <p className="text-[9px] uppercase tracking-wide text-[var(--color-faint)]">{typeLabel}</p>
+          <p className="mt-0.5 line-clamp-2 text-xs font-semibold text-[var(--color-text)]">{item.name ?? typeLabel}</p>
+        </div>
+        <div className="flex items-end justify-between gap-2">
+          <span className="text-sm font-semibold text-[var(--color-text)]">{priceRub > 0 ? `${formatRub(priceRub)} ₽` : "—"}</span>
+          {item.partnerUrl && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[var(--color-primary)]">
+              В магазин
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (item.partnerUrl) {
+    return (
+      <a href={item.partnerUrl} target="_blank" rel="noopener noreferrer nofollow" className="group block h-full" aria-label={`${typeLabel}: ${item.name ?? "перейти в магазин"}`}>
+        {cardBody}
+      </a>
+    );
+  }
+  return cardBody;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1086,20 +742,13 @@ const LEGACY_VIEW_LABELS: Record<string, string> = {
 };
 
 const STYLE_BRIEF: Record<string, string> = {
-  modern:
-    "Современный стиль про чистые линии, нейтральную палитру и приоритет функции. Здесь нет лишнего декора — каждая поверхность работает.",
-  scandinavian:
-    "Скандинавский стиль вырос из северного холода: побольше света, светлый дуб, шерсть и хлопок. В нём всегда тепло, даже когда за окном минус двадцать.",
-  loft:
-    "Лофт берёт корни из переоборудованных промышленных пространств. Кирпич, бетон, металл — материалы, которые не пытаются казаться чем-то другим.",
-  minimalism:
-    "Минимализм — отказ от всего, что не несёт смысла. Цветов мало, линий мало, акценты — только там, где это работает.",
-  neoclassic:
-    "Неоклассика смягчает строгую классику и добавляет современный комфорт. Лепнина, симметрия, бархат — но в дозированном, не парадном масштабе.",
-  japandi:
-    "Японди — встреча японского минимализма и скандинавской теплоты. Тихая палитра, природные материалы, ничего лишнего, но уютно.",
-  classic:
-    "Классика — это про устойчивые пропорции, симметрию и натуральные материалы. Спокойствие и узнаваемость, которая не выйдет из моды через сезон.",
+  modern: "Современный стиль про чистые линии, нейтральную палитру и приоритет функции. Здесь нет лишнего декора — каждая поверхность работает.",
+  scandinavian: "Скандинавский стиль вырос из северного холода: побольше света, светлый дуб, шерсть и хлопок. В нём всегда тепло, даже когда за окном минус двадцать.",
+  loft: "Лофт берёт корни из переоборудованных промышленных пространств. Кирпич, бетон, металл — материалы, которые не пытаются казаться чем-то другим.",
+  minimalism: "Минимализм — отказ от всего, что не несёт смысла. Цветов мало, линий мало, акценты — только там, где это работает.",
+  neoclassic: "Неоклассика смягчает строгую классику и добавляет современный комфорт. Лепнина, симметрия, бархат — но в дозированном, не парадном масштабе.",
+  japandi: "Японди — встреча японского минимализма и скандинавской теплоты. Тихая палитра, природные материалы, ничего лишнего, но уютно.",
+  classic: "Классика — это про устойчивые пропорции, симметрию и натуральные материалы. Спокойствие и узнаваемость, которая не выйдет из моды через сезон.",
 };
 
 function formatRub(rub: number): string {
@@ -1120,10 +769,6 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/**
- * Безопасно читает значение cookie по имени. Возвращает `null`, если
- * cookie не найдена или код выполняется на сервере (нет `document`).
- */
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const target = name + "=";
@@ -1137,113 +782,7 @@ function readCookie(name: string): string | null {
   return null;
 }
 
-/**
- * Подпись текущего шага пайплайна. Если шаг неизвестен или `null`,
- * возвращаем нейтральное «Собираем проект…», чтобы UI всегда имел
- * человеко-читаемую строку.
- */
 function pipelineStepLabel(step: string | null): string {
   if (!step) return "Собираем проект…";
   return PIPELINE_STEP_LABELS[step] ?? "Собираем проект…";
-}
-
-/**
- * Локализованный человеко-читаемый ярлык для типа предмета мебели.
- * Используется как подпись для заглушки «уточняется» (Requirement 10.7).
- */
-const FURNITURE_TYPE_LABELS: Record<string, string> = {
-  bed: "Кровать",
-  wardrobe: "Шкаф",
-  desk: "Рабочий стол",
-  chair: "Кресло",
-  nightstand: "Прикроватная тумба",
-  rug: "Ковёр",
-  sofa: "Диван",
-  dining_table: "Обеденный стол",
-  bookshelf: "Стеллаж",
-  tv_unit: "ТВ-тумба",
-};
-
-function furnitureTypeLabel(type: string): string {
-  return FURNITURE_TYPE_LABELS[type] ?? capitalize(type.replace(/_/g, " "));
-}
-
-/**
- * Карточка одной позиции `picked_furniture[]`. Для `sku=null` рисует
- * заглушку «уточняется» с подписью типа мебели, без ссылки на партнёра
- * (Requirement 10.7).
- */
-function PickedFurnitureCard({ item }: { item: DesignPickedFurnitureDTO }) {
-  const typeLabel = furnitureTypeLabel(item.type);
-
-  if (item.sku === null) {
-    return (
-      <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-center shadow-cozy/40">
-        <div className="flex flex-1 items-center justify-center rounded-xl bg-[var(--color-cream-deep)] py-8 text-xs uppercase tracking-wide text-[var(--color-faint)]">
-          Изображение отсутствует
-        </div>
-        <p className="mt-4 text-sm font-semibold text-[var(--color-text)]">
-          {typeLabel}
-        </p>
-        <p className="mt-1 text-xs text-[var(--color-muted)]">уточняется</p>
-      </div>
-    );
-  }
-
-  const priceRub = Math.round(item.pricePaidKopeks / 100);
-  const cardBody = (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-cozy">
-      <div className="relative aspect-[4/3] w-full bg-[var(--color-cream-deep)]">
-        {item.imageUrl ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={item.imageUrl}
-            alt={item.name ?? typeLabel}
-            loading="lazy"
-            className="block h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
-          />
-        ) : null}
-      </div>
-      <div className="flex flex-1 flex-col justify-between gap-2 p-4">
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-[var(--color-faint)]">
-            {typeLabel}
-          </p>
-          <p className="mt-1 line-clamp-2 text-sm font-semibold text-[var(--color-text)]">
-            {item.name ?? typeLabel}
-          </p>
-        </div>
-        <div className="flex items-end justify-between gap-2">
-          <span className="text-base font-semibold text-[var(--color-text)]">
-            {priceRub > 0 ? `${formatRub(priceRub)} ₽` : "—"}
-          </span>
-          {item.partnerUrl ? (
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)]">
-              В магазин
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M5 12h14" />
-                <path d="m12 5 7 7-7 7" />
-              </svg>
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-
-  if (item.partnerUrl) {
-    return (
-      <a
-        href={item.partnerUrl}
-        target="_blank"
-        rel="noopener noreferrer nofollow"
-        className="group block h-full"
-        aria-label={`${typeLabel}: ${item.name ?? "перейти в магазин"}`}
-      >
-        {cardBody}
-      </a>
-    );
-  }
-
-  return cardBody;
 }
