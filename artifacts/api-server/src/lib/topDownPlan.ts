@@ -172,8 +172,11 @@ export async function uploadTopDownPlan(
     .bucket(bucketId)
     .file(key)
     .save(png, { contentType: "image/png" });
-  // Тот же паттерн прокси-URL, что и `uploadJpegToR2` в designWorker.ts:
-  // ключ `dizajn/plans/{id}.png` → URL `/api/marketplace/dizajn/img/plans/{id}.png`.
+  // Return absolute R2 CDN URL (same logic as uploadJpegToR2 in designWorker).
+  const r2PublicBase = (process.env["R2_PUBLIC_URL"] ?? "").replace(/\/+$/, "");
+  if (r2PublicBase) {
+    return `${r2PublicBase}/${key}`;
+  }
   return "/api/marketplace/dizajn/img/" + key.replace(/^dizajn\//, "");
 }
 

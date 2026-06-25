@@ -349,9 +349,14 @@ async function uploadJpegToR2(
     .bucket(bucketId)
     .file(pathInBucket)
     .save(buffer, { contentType: "image/jpeg" });
-  // Public URL routing pattern (см. routes/dizajn-images.ts)
-  // pathInBucket = "dizajn/results/123_view_1.jpg"
-  // public URL    = "/api/marketplace/dizajn/img/results/123_view_1.jpg"
+  // Return absolute R2 CDN URL so images work from any domain (marketplace
+  // lives on chestnye-mastera.ru, api on sfera-master.ru). R2_PUBLIC_URL is
+  // the Cloudflare R2 public bucket URL (e.g. https://pub-xxx.r2.dev).
+  const r2PublicBase = (process.env.R2_PUBLIC_URL ?? "").replace(/\/+$/, "");
+  if (r2PublicBase) {
+    return `${r2PublicBase}/${pathInBucket}`;
+  }
+  // Fallback: relative path through api-server image proxy
   return "/api/marketplace/dizajn/img/" + pathInBucket.replace(/^dizajn\//, "");
 }
 

@@ -1,0 +1,19 @@
+feat(api): payment-state guard for dashboard no_estimate task (T16)
+
+buildItems() in dashboard-action-items.ts now consults
+isPaymentStateEngineEnabled() and switches the no_estimate task condition:
+
+* flag off (default): unchanged — uses the legacy hasEstimate composite
+  check (proposedAmount, receipts, transactions, partial payments).
+
+* flag on: uses paymentState === "no_amount" instead, computed via
+  computePaymentStateBatch over the same orders+receipts already loaded.
+  This silences the no_estimate task for orders where the operator fixed
+  the amount via Agreement_Path or marked commission paid manually.
+
+Also added orders.commissionPaid to the buildItems select so the pure
+computePaymentState function gets the field it needs.
+
+Tests: 14/14 green. Diagnostics: clean.
+
+Refs: .kiro/specs/estimate-optional-flow
