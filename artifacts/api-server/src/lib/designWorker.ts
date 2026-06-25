@@ -7,10 +7,10 @@
  *   • 1 «Было» (input_image_url) — text2img «типовая комната до ремонта»
  *     генерируется сервером для seed-проектов; для user-upload — это фото
  *     пользователя, оставляем как есть.
- *   • 4 ракурса (views[]) — общий вид / акцент / хранение / окно. Для seed
- *     генерируется img2img от «Было» (одна геометрия, разные ракурсы и
- *     фокус); для user-upload — img2img от загруженного фото.
- *   • 6 кропов деталей (detail_crops[]) — sharp нарезает из 4 ракурсов
+ *   • 6 ракурсов (views[]) — 1 панорамный Hero (1536×1024 text-to-image)
+ *     + 5 кропов из Hero через sharp. Идеальная identity preservation —
+ *     все ракурсы из одной картинки. Без отдельных AI-вызовов для ракурсов.
+ *   • 6 кропов деталей (detail_crops[]) — sharp нарезает из 6 ракурсов
  *     стандартные квадраты 768×768. Без отдельной AI-генерации.
  *   • Текстовый пакет (designContent) — h1/seoTitle/seoDescription/
  *     description/materials/estimate/solutions через AI-шлюз (тот же что
@@ -22,6 +22,9 @@
  *     `failed` на jobs > 10 минут в `generating`.
  *   • Idempotent на restart — если падаем, watchdog или следующий tick
  *     перезаберут.
+ *
+ * Pipeline v2 cost: 2 вызова Fal (Hero + Isometric) ≈ 2000+340 = ~2340
+ * копеек (high) вместо 7 вызовов ≈ 3550 копеек. Экономия ~34%.
  */
 
 import {
@@ -37,13 +40,9 @@ import {
 } from "@workspace/db";
 import { and, eq, lt } from "drizzle-orm";
 import sharp from "sharp";
-import { objectStorageClient, signObjectURL } from "./objectStorage.js";
+import { objectStorageClient } from "./objectStorage.js";
 import {
-  falGenerate,
-  falGenerateText,
   falGenerateGptImage,
-  falGenerateGptImageEdit,
-  falGenerateFluxKontextPro,
   downloadImage,
   type FalGenerationResult,
 } from "./falAi.js";
@@ -57,7 +56,6 @@ import {
   roomDimsFromLayout,
   type ValidationViolation,
 } from "./geometricValidator.js";
-import { getEditImageProvider } from "./designConfig.js";
 import { enforceCostCeiling, BudgetExceededError } from "./designCostGuard.js";
 import { renderTopDownPlanPng, uploadTopDownPlan } from "./topDownPlan.js";
 import { composeIsometricWithCallouts } from "./isometricCallouts.js";
@@ -280,8 +278,8 @@ function buildHeroPhotoPrompt(room: string, style: string, area: number | null):
   return `Реалистичная интерьерная фотография ${room} в стиле «${styleClause}»${areaPart}, общий вид от входа, фотореализм 4K, без людей, без текста.`;
 }
 
-// (legacy 3-prompt array and buildAnglePrompt removed — current pipeline uses
-// ANGLE_PROMPTS_BEDROOM_5 with dispatchEditImage for 5 angle renders)
+// (legacy 3-prompt array and buildAnglePrompt removed — pipeline v2 uses
+// panoramic Hero + sharp crops instead of per-angle AI generation)
 
 /** RU описания стилей для подстановки в промпт. */
 const STYLE_RU_CLAUSES: Record<string, string> = {
@@ -358,18 +356,6 @@ async function uploadJpegToR2(
 }
 
 /**
- * Генерирует подпись и URL для подписанного R2-объекта (для передачи в Fal.ai).
- */
-async function signR2(bucketId: string, key: string, ttlSec = 600): Promise<string> {
-  return signObjectURL({
-    bucketName: bucketId,
-    objectName: key,
-    method: "GET",
-    ttlSec,
-  });
-}
-
-/**
  * Вырезает квадратный crop 768×768 из view-buffer'а по относительным
  * координатам (cx, cy, size). Используется для 6 detail-кропов из
  * конкретных views (1024×1024).
@@ -394,6 +380,42 @@ async function cropDetailFromView(
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+// ─── Panoramic crop helpers ─────────────────────────────────────────────────
+//
+// Вычисляют регион (left, top, width, height) для sharp.extract() из
+// панорамного Hero (1536×1024). Каждый crop фокусируется на логической
+// зоне комнаты, давая иллюзию разных ракурсов из одной генерации.
+
+/** Центральная 50% × 70% — фокус на кровати/изголовье. */
+function centerCrop(w: number, h: number): { left: number; top: number; width: number; height: number } {
+  const cw = Math.round(w * 0.5);
+  const ch = Math.round(h * 0.7);
+  return { left: Math.round((w - cw) / 2), top: Math.round((h - ch) / 2), width: cw, height: ch };
+}
+
+/** Левые 40% — шкаф/хранение. */
+function leftThird(w: number, h: number): { left: number; top: number; width: number; height: number } {
+  return { left: 0, top: 0, width: Math.round(w * 0.4), height: h };
+}
+
+/** Правые 40% — зона у окна/стол. */
+function rightThird(w: number, h: number): { left: number; top: number; width: number; height: number } {
+  const cw = Math.round(w * 0.4);
+  return { left: w - cw, top: 0, width: cw, height: h };
+}
+
+/** Верхние 45% — акцентная стена/потолок. */
+function topStrip(w: number, h: number): { left: number; top: number; width: number; height: number } {
+  return { left: 0, top: 0, width: w, height: Math.round(h * 0.45) };
+}
+
+/** Нижняя левая четверть — деталь мебели/текстура пола. */
+function bottomLeftQuarter(w: number, h: number): { left: number; top: number; width: number; height: number } {
+  const cw = Math.round(w * 0.5);
+  const ch = Math.round(h * 0.5);
+  return { left: 0, top: h - ch, width: cw, height: ch };
 }
 
 /**
@@ -421,16 +443,17 @@ async function pingForDesign(slug: string, room: string, style: string): Promise
 //
 // Эти константы и вспомогательные функции — отдельный детерминированный
 // конечный автомат, описанный в `.kiro/specs/ai-design-product/design.md`
-// секция «Generation_Pipeline и его прогресс». Продуктовый FSM использует
-// 5 angle-промптов через edit-image (Hero + 5 Angle = 6 ракурсов,
-// Requirement 7.1). ROOM_VIEW_SUBJECTS сохранены для будущего user-upload режима.
+// секция «Generation_Pipeline и его прогресс». Pipeline v2 использует
+// панорамный Hero (1536×1024) + 5 sharp-кропов вместо 5 AI edit-image
+// вызовов. `ANGLE_PROMPTS_BEDROOM_5` сохранены для обратной совместимости
+// PBT-тестов и возможного будущего user-upload режима.
+// ROOM_VIEW_SUBJECTS сохранены для будущего user-upload режима.
 
 /**
- * 5 промптов для Angle_Render через edit-image c reference=Hero_Render
- * (Requirement 7.1). Все требуют от модели сохранения той же палитры,
- * материалов и мебели — Identity_Preservation обеспечивается на уровне
- * провайдера (`getEditImageProvider()` → `falGenerateGptImageEdit` или
- * `falGenerateFluxKontextPro`, см. Requirement 7.5).
+ * [LEGACY] 5 промптов для Angle_Render — сохранены для обратной совместимости
+ * с PBT тестами (Property 15.3) и для будущего user-upload режима, где
+ * edit-image может быть снова актуален. В текущем pipeline v2 НЕ используются
+ * — ракурсы 2..6 получаются crop'ами из панорамного Hero через sharp.
  *
  * Порядок: 1) главная мебель, 2) хранение, 3) у окна, 4) акцентная стена,
  * 5) потолок и освещение. Этот порядок задан Requirement 7.1 и используется
@@ -644,29 +667,6 @@ function assertCompletionInvariant(state: {
 }
 
 /**
- * Диспетчер edit-image-провайдера для шага Angle_Render (Requirement 7.5).
- *
- * Контракт обоих провайдеров идентичен (`FalGenerationResult`), поэтому
- * вызывающий код пишется один раз и переключается env-переменной без
- * пересборки. Property 15 проверяет, что для `AI_DESIGN_EDIT_PROVIDER ∈
- * {"gpt_image_1_5_edit", "flux_kontext_pro"}` вызывается ровно
- * соответствующая обёртка.
- */
-async function dispatchEditImage(input: {
-  prompt: string;
-  imageUrls: string[];
-  imageSize?: "auto" | "1024x1024" | "1536x1024" | "1024x1536";
-  quality?: "auto" | "low" | "medium" | "high";
-  inputFidelity?: "low" | "high";
-}): Promise<FalGenerationResult> {
-  const provider = getEditImageProvider();
-  if (provider === "flux_kontext_pro") {
-    return falGenerateFluxKontextPro(input);
-  }
-  return falGenerateGptImageEdit(input);
-}
-
-/**
  * Запись успешного AI-вызова в `design_generations` для:
  *   • аудита (provider/model/prompt/cost)
  *   • Cost_Guard'а — `enforceCostCeiling` суммирует `cost_kopeks` по designId.
@@ -733,8 +733,8 @@ async function withCostGuard<T extends { costKopeks: number }>(
  * `runStepRequired/runStepOptional`). Реализация дословно следует ему:
  *
  *   1. Layout_JSON   (required)            progress=5,  current_step=layout_json
- *   2. Hero_Render   (required)            progress=25, current_step=hero_render
- *   3. 5×Angle_Render (per-item optional)  progress=50, current_step=angle_renders
+ *   2. Hero_Render   (required, 1536×1024) progress=25, current_step=hero_render
+ *   3. Panoramic Crops (optional, sharp)   progress=50, current_step=angle_renders
  *   4. Top_Down_Plan (optional, bedroom)   progress=60, current_step=top_down_plan
  *   5. Isometric_Render (optional)         progress=70, current_step=isometric_render
  *   6. detail crops  (optional)            progress=75, current_step=detail_crops
@@ -744,6 +744,10 @@ async function withCostGuard<T extends { costKopeks: number }>(
  *  10. AI-текст      (required)            progress=92, current_step=ai_text
  *  11. Infographic   (optional)            progress=96, current_step=infographic
  *  →  designs.status=completed, progress=100
+ *
+ * Pipeline v2 (panoramic crops): одна AI-генерация Hero в максимальном
+ * landscape (1536×1024) + 5 кропов через sharp = 6 views. Плюс отдельная
+ * Isometric генерация. Итого: 2 вызова Fal вместо 7.
  *
  * Обязательные шаги (1, 2, 8, 10) — их сбой переводит запись в `failed` с
  * соответствующим `error_message`. Остальные шаги при сбое логируются и
@@ -873,12 +877,13 @@ async function processDesign(designId: number): Promise<void> {
     await setProgress(designId, STEP_LAYOUT_JSON, PROGRESS_LAYOUT_JSON);
     await enforceCostCeiling(designId);
 
-    // ── 2. Hero_Render (required, 1 повтор). ────────────────────────────
+    // ── 2. Panoramic Hero_Render (required, 1 повтор). ─────────────────
     //
-    // text-to-image через `falGenerateGptImage`. Hero ВАЖЕН не только сам
-    // по себе, но и как reference для 5 Angle_Render (Requirement 7.3) и
-    // как источник `Color_Palette` (Requirement 12.1). Поэтому сбой Hero —
-    // обязательный fail (Requirement 14.1).
+    // Одна широкоугольная генерация максимального landscape размера
+    // (1536×1024) через `falGenerateGptImage`. Из неё далее нарезаются
+    // 6 кропов (Step 3) — это даёт идеальную identity preservation
+    // (все ракурсы из одной картинки), 1 вызов Fal вместо 6, и дешевле.
+    // Hero также источник для `Color_Palette` (Requirement 12.1).
     {
       const heroPrompt = buildHeroPhotoPrompt(
         design.roomType,
@@ -893,7 +898,7 @@ async function processDesign(designId: number): Promise<void> {
             () =>
               falGenerateGptImage({
                 prompt: heroPrompt,
-                imageSize: "1024x1024",
+                imageSize: "1536x1024",
                 quality: "high",
               }),
             (r) =>
@@ -905,8 +910,8 @@ async function processDesign(designId: number): Promise<void> {
                 costKopeks: r.costKopeks,
                 providerResponse: {
                   generationMs: r.generationMs,
-                  view: "view_1_hero",
-                  mode: "text2img-high",
+                  view: "view_1_hero_panoramic",
+                  mode: "text2img-high-panoramic",
                   imageSize: `${r.width}x${r.height}`,
                 },
               }),
@@ -953,56 +958,54 @@ async function processDesign(designId: number): Promise<void> {
     await setProgress(designId, STEP_HERO_RENDER, PROGRESS_HERO_RENDER);
     await enforceCostCeiling(designId);
 
-    // ── 3. 5 Angle_Render параллельно через getEditImageProvider() (each optional). ──
+    // ── 3. Smart Crops from panoramic Hero (replaces 5 Angle_Render). ───
     //
-    // Property 15 требует ровно 5 вызовов `dispatchEditImage` с
-    // `image_urls=[Hero_Render.imageUrl]`. Используем `Promise.allSettled`,
-    // чтобы один упавший ракурс не валил остальные. После сборки ловим
-    // BudgetExceededError из любого rejected — он перебрасывается, чтобы
-    // внешний `catch` перевёл проект в `failed` (Requirement 14.5).
+    // 5 кропов из панорамного Hero дают ракурсы "изнутри" одной комнаты
+    // с идеальной identity (это всё одна картинка). Никаких AI-вызовов,
+    // только sharp. Результат: 6 views total (full hero + 5 crops).
+    // При сбое sharp (крайне маловероятно) — логируем и продолжаем
+    // с тем что есть (optional step, Requirement 14.2).
     {
-      const heroSourceUrl = heroResult.imageUrl;
-      const provider = getEditImageProvider();
-      const editModel =
-        provider === "flux_kontext_pro"
-          ? process.env.FAL_MODEL_FLUX_KONTEXT_PRO ?? "fal-ai/flux-pro/kontext"
-          : `${process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5"}/edit`;
+      try {
+        const heroMeta = await sharp(heroBuffer).metadata();
+        const W = heroMeta.width ?? 1536;
+        const H = heroMeta.height ?? 1024;
 
-      const angleResults = await Promise.allSettled(
-        ANGLE_PROMPTS_BEDROOM_5.map((prompt, idx) =>
-          renderSingleAngle({
+        const PANORAMIC_CROP_SPECS = [
+          { label: VIEW_LABELS_6[1]!, region: centerCrop(W, H) },         // Вид на кровать
+          { label: VIEW_LABELS_6[2]!, region: leftThird(W, H) },          // Шкаф и хранение
+          { label: VIEW_LABELS_6[3]!, region: rightThird(W, H) },         // Зона у окна
+          { label: VIEW_LABELS_6[4]!, region: topStrip(W, H) },           // Акцентная стена
+          { label: VIEW_LABELS_6[5]!, region: bottomLeftQuarter(W, H) },  // Потолок и освещение
+        ];
+
+        for (let i = 0; i < PANORAMIC_CROP_SPECS.length; i++) {
+          const spec = PANORAMIC_CROP_SPECS[i]!;
+          const position = i + 2; // позиции 2..6
+          const cropBuffer = await sharp(heroBuffer)
+            .extract(spec.region)
+            .resize(1024, 1024, { fit: "cover" })
+            .jpeg({ quality: 85, progressive: true })
+            .toBuffer();
+          const key = `dizajn/results/${designId}_view_${position}.jpg`;
+          const cropPublicUrl = await uploadJpegToR2(bucketId, key, cropBuffer);
+          await db.insert(designImagesTable).values({
             designId,
-            roomType: design.roomType,
-            style: design.style,
-            position: idx + 2, // позиции 2..6
-            prompt,
-            heroSourceUrl,
-            bucketId,
-            editModel,
-          }),
-        ),
-      );
-
-      // Detect a budget breach inside the parallel batch and re-throw —
-      // оставшиеся ракурсы уже не добавятся в views, статус станет failed.
-      for (const r of angleResults) {
-        if (r.status === "rejected" && r.reason instanceof BudgetExceededError) {
-          throw r.reason;
+            type: `view_${position}`,
+            url: cropPublicUrl,
+            width: 1024,
+            height: 1024,
+            sortOrder: position - 1,
+          });
+          views.push({ url: cropPublicUrl, label: spec.label, position });
+          viewBuffers[position - 1] = cropBuffer;
         }
-      }
-
-      for (let i = 0; i < angleResults.length; i++) {
-        const r = angleResults[i]!;
-        if (r.status === "fulfilled" && r.value) {
-          const { publicUrl, buffer, position, label } = r.value;
-          views.push({ url: publicUrl, label, position });
-          viewBuffers[position - 1] = buffer;
-        } else if (r.status === "rejected") {
-          console.warn(
-            `[designWorker] design ${designId}: Angle_Render position ${i + 2} failed: `
-            + `${r.reason instanceof Error ? r.reason.message : String(r.reason)} — excluded from views`,
-          );
-        }
+      } catch (e) {
+        console.error(
+          `[designWorker] design ${designId}: Panoramic crops failed (non-fatal): `
+          + `${e instanceof Error ? e.message : String(e)}`,
+        );
+        // Views 2..6 просто не будут добавлены — пайплайн идёт дальше
       }
     }
     await setProgress(designId, STEP_ANGLE_RENDERS, PROGRESS_ANGLE_RENDERS);
@@ -1015,11 +1018,23 @@ async function processDesign(designId: number): Promise<void> {
     if (design.roomType === "bedroom") {
       try {
         topDownPlanPng = await renderTopDownPlanPng(layout);
-        topDownPlanUrl = await uploadTopDownPlan(designId, topDownPlanPng);
-        await db
-          .update(designsTable)
-          .set({ topDownPlanUrl, updatedAt: new Date() })
-          .where(eq(designsTable.id, designId));
+        // Defensive: if sharp produced an empty or near-empty buffer (e.g.,
+        // librsvg missing on the platform), don't upload — the image proxy
+        // would serve a blank/broken file (white block bug).
+        if (topDownPlanPng.length < 1000) {
+          console.warn(
+            `[designWorker] design ${designId}: Top_Down_Plan PNG too small `
+            + `(${topDownPlanPng.length} bytes) — likely broken render, skipping upload`,
+          );
+          topDownPlanPng = null;
+          topDownPlanUrl = null;
+        } else {
+          topDownPlanUrl = await uploadTopDownPlan(designId, topDownPlanPng);
+          await db
+            .update(designsTable)
+            .set({ topDownPlanUrl, updatedAt: new Date() })
+            .where(eq(designsTable.id, designId));
+        }
       } catch (e) {
         console.error(
           `[designWorker] design ${designId}: Top_Down_Plan render failed (non-fatal): `
@@ -1439,87 +1454,6 @@ function layoutDim(
   if (!Number.isFinite(areaSqm) || areaSqm <= 0) return fallback;
   const side = Math.round(Math.sqrt(areaSqm * 10_000));
   return Math.max(200, Math.min(800, side));
-}
-
-/**
- * Один Angle_Render с 1 повтором. Возвращает `{ publicUrl, buffer, position,
- * label }` при успехе и пробрасывает последнюю ошибку при двойном сбое
- * (Requirement 7.7) — Promise.allSettled на уровне выше превращает её в
- * `{status: "rejected"}` без блокировки соседей.
- *
- * `BudgetExceededError` пробрасывается без повторов: бюджет — терминальный
- * сбой пайплайна (Requirement 14.5).
- */
-async function renderSingleAngle(args: {
-  designId: number;
-  roomType: string;
-  style: string;
-  position: number; // 2..6
-  prompt: string;
-  heroSourceUrl: string;
-  bucketId: string;
-  editModel: string;
-}): Promise<{
-  publicUrl: string;
-  buffer: Buffer;
-  position: number;
-  label: string;
-} | null> {
-  const label = VIEW_LABELS_6[args.position - 1] ?? `Ракурс ${args.position}`;
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt <= SINGLE_RETRY; attempt++) {
-    try {
-      const res = await withCostGuard(
-        args.designId,
-        () =>
-          dispatchEditImage({
-            prompt: args.prompt,
-            imageUrls: [args.heroSourceUrl],
-            imageSize: "1024x1024",
-            quality: "medium",
-            inputFidelity: "high",
-          }),
-        (r) =>
-          recordGenerationSuccess(args.designId, {
-            model: args.editModel,
-            prompt: args.prompt,
-            roomType: args.roomType,
-            style: args.style,
-            costKopeks: r.costKopeks,
-            providerResponse: {
-              generationMs: r.generationMs,
-              view: `view_${args.position}`,
-              mode: "edit-image-medium",
-              imageSize: `${r.width}x${r.height}`,
-            },
-          }),
-      );
-      const buffer = await downloadImage(res.imageUrl);
-      const r2Key = `dizajn/results/${args.designId}_view_${args.position}.jpg`;
-      const publicUrl = await uploadJpegToR2(args.bucketId, r2Key, buffer);
-      await db.insert(designImagesTable).values({
-        designId: args.designId,
-        type: `view_${args.position}`,
-        url: publicUrl,
-        width: res.width,
-        height: res.height,
-        sortOrder: args.position - 1,
-      });
-      return { publicUrl, buffer, position: args.position, label };
-    } catch (e) {
-      if (e instanceof BudgetExceededError) throw e;
-      lastError = e;
-      if (attempt < SINGLE_RETRY) {
-        console.warn(
-          `[designWorker] design ${args.designId}: Angle_Render position ${args.position} `
-          + `attempt ${attempt + 1} failed: ${e instanceof Error ? e.message : String(e)} — retrying`,
-        );
-      }
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(String(lastError ?? "Angle_Render failed"));
 }
 
 /**
