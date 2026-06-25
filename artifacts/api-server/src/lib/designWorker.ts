@@ -259,12 +259,65 @@ function buildIsometricPrompt(room: string, style: string, area: number | null):
 
 /**
  * Промпт для photo 1 (общий вид от двери) — text-to-image вызов hero
- * фото. Высокое качество, базовый стиль и материалы определяются здесь —
- * остальные ракурсы edit-image на основе этого фото.
+ * фото. Строится из **Layout_JSON** чтобы результат соответствовал плану:
+ * конкретная мебель, размеры, позиции. Ракурс — от двери вглубь комнаты.
  */
-function buildHeroPhotoPrompt(room: string, style: string, area: number | null): string {
+function buildHeroPhotoPrompt(room: string, style: string, area: number | null, layout?: LayoutJson | null): string {
   const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
   const areaPart = area ? `, площадь ${area} м²` : "";
+
+  // Если есть Layout_JSON — строим промпт из конкретной мебели
+  if (layout && layout.furniture.length > 0) {
+    const roomW = layout.room.widthCm;
+    const roomL = layout.room.lengthCm;
+    const doorWall = layout.door.wall;
+
+    // Описываем каждый предмет мебели с позицией словами
+    const furnitureDescriptions = layout.furniture.map((f) => {
+      const posX = f.xCm / roomW; // 0=left, 1=right
+      const posY = f.yCm / roomL; // 0=top(north), 1=bottom(south)
+      let posWord: string;
+      if (posX < 0.33) posWord = "у левой стены";
+      else if (posX > 0.66) posWord = "у правой стены";
+      else posWord = "по центру";
+
+      if (posY < 0.25) posWord += ", у дальней стены";
+      else if (posY > 0.75) posWord += ", ближе к входу";
+
+      const typeLabels: Record<string, string> = {
+        bed: "двуспальная кровать",
+        wardrobe: "встроенный шкаф",
+        nightstand: "прикроватная тумба",
+        desk: "рабочий стол",
+        chair: "стул",
+        rug: "ковёр",
+        dresser: "комод",
+        shelf: "полка",
+        sofa: "диван",
+        armchair: "кресло",
+      };
+      const label = typeLabels[f.type] ?? f.type;
+      return `${label} ${f.widthCm}×${f.depthCm} см ${posWord}`;
+    });
+
+    const windowDesc = layout.window
+      ? `окно на ${wallLabel(layout.window.wall)} стене`
+      : "";
+    const doorDesc = `дверь на ${wallLabel(doorWall)} стене`;
+
+    const roomShape = roomW === roomL ? "квадратная" : (roomW > roomL ? "вытянутая вдоль" : "вытянутая вглубь");
+
+    return [
+      `Реалистичная интерьерная фотография ${roomLabel(room)}${areaPart} в стиле «${styleClause}».`,
+      `Комната ${roomW}×${roomL} см, ${roomShape}. ${doorDesc}, ${windowDesc}.`,
+      `Ракурс: общий вид от двери вглубь комнаты, широкоугольный кадр на уровне глаз.`,
+      `В кадре видна вся мебель: ${furnitureDescriptions.join("; ")}.`,
+      `Светлые стены, натуральное дерево, тёплое мягкое освещение, точечные светильники.`,
+      `Реалистичная интерьерная съёмка, без людей, без подписей, без водяных знаков, фотореализм 4K.`,
+    ].join(" ");
+  }
+
+  // Fallback: без layout (если Layout_Planner не отработал)
   if (room === "bedroom") {
     return [
       `Реалистичная интерьерная фотография спальни${areaPart} в стиле «${styleClause}» в обычной квартире в России.`,
@@ -274,8 +327,17 @@ function buildHeroPhotoPrompt(room: string, style: string, area: number | null):
       `Реалистичная интерьерная съёмка для каталога, без людей, без подписей, без водяных знаков, фотореализм 4K, Architectural Digest quality.`,
     ].join(" ");
   }
-  // Generic fallback for other room types
   return `Реалистичная интерьерная фотография ${room} в стиле «${styleClause}»${areaPart}, общий вид от входа, фотореализм 4K, без людей, без текста.`;
+}
+
+function wallLabel(wall: string): string {
+  const labels: Record<string, string> = { north: "северной", south: "южной", east: "восточной", west: "западной" };
+  return labels[wall] ?? wall;
+}
+
+function roomLabel(room: string): string {
+  const labels: Record<string, string> = { bedroom: "спальни", kitchen: "кухни", bathroom: "ванной", living_room: "гостиной", hallway: "прихожей", nursery: "детской" };
+  return labels[room] ?? room;
 }
 
 // (legacy 3-prompt array and buildAnglePrompt removed — pipeline v2 uses
@@ -894,6 +956,7 @@ async function processDesign(designId: number): Promise<void> {
         design.roomType,
         design.style,
         areaNum,
+        layout,
       );
       let lastError: unknown = null;
       for (let attempt = 0; attempt <= SINGLE_RETRY; attempt++) {
