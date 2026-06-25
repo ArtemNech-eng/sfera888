@@ -40,7 +40,7 @@ export const DEFAULT_EDIT_PROVIDER: EditImageProvider = "gpt_image_1_5_edit";
  * Stored as kopeks because that's the unit `design_generations.cost_kopeks`
  * already uses; no conversion at the guard site.
  */
-export const DEFAULT_COST_CEILING_KOPEKS = 3000;
+export const DEFAULT_COST_CEILING_KOPEKS = 10000;
 
 /** Set of valid `EditImageProvider` literals — single source of truth for the
  *  string-union check, avoids drift between the type and the runtime guard. */

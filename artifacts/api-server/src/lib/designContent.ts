@@ -299,9 +299,44 @@ export async function generateDesignContent(input: DesignContentInput): Promise<
   if (!raw) {
     throw new Error("AI returned empty response");
   }
-  const parsed = JSON.parse(raw) as DesignContent;
+  const parsed = extractJsonFromResponse(raw) as DesignContent;
   return parsed;
 }
 
+/**
+ * Извлекает JSON из ответа модели. Пробует:
+ * 1. Прямой JSON.parse (strict json_schema mode)
+ * 2. Извлечение из markdown ```json ... ``` блока
+ * 3. Поиск первого `{` до последнего `}` (greedy extraction)
+ * Бросает Error если ничего не помогло.
+ */
+function extractJsonFromResponse(raw: string): unknown {
+  // 1. Direct parse
+  try {
+    return JSON.parse(raw);
+  } catch { /* fallback */ }
+
+  // 2. Markdown code block
+  const mdMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (mdMatch?.[1]) {
+    try {
+      return JSON.parse(mdMatch[1]);
+    } catch { /* fallback */ }
+  }
+
+  // 3. Greedy brace extraction
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(raw.slice(firstBrace, lastBrace + 1));
+    } catch { /* give up */ }
+  }
+
+  throw new Error(
+    `AI response is not valid JSON (first 200 chars): ${raw.slice(0, 200)}`,
+  );
+}
+
 /** Экспорт для тестов / debug — даёт детерминистичный выбор стиля. */
-export const __test__ = { NARRATIVE_STYLES, pickNarrativeStyle };
+export const __test__ = { NARRATIVE_STYLES, pickNarrativeStyle, extractJsonFromResponse };
