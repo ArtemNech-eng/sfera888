@@ -13,19 +13,37 @@ export default function Earnings() {
 
         {/* Object types */}
         <div className="grid sm:grid-cols-3 gap-4 max-w-4xl mx-auto mb-10">
-          <div className="p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm">
+          <div className="p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm overflow-hidden">
+            <img
+              src="https://images.unsplash.com/photo-1562259949-e8e7689d7828?w=400&h=250&fit=crop&q=80"
+              alt="Покраска стен — мелкий ремонт"
+              className="w-full h-32 object-cover rounded-xl mb-4"
+              loading="lazy"
+            />
             <div className="text-xs font-bold uppercase tracking-wider text-[#94A3B8] mb-3">Мелкие объекты</div>
             <div className="text-2xl font-bold text-[#0F172A]">15 – 50 000 ₽</div>
             <div className="text-[#475569] text-sm mt-2">2–5 дней работы</div>
             <div className="text-[#94A3B8] text-xs mt-1">Обои, покраска, мелкий ремонт</div>
           </div>
-          <div className="p-5 rounded-2xl bg-white border border-[#D9342B]/20 shadow-sm">
+          <div className="p-5 rounded-2xl bg-white border border-[#D9342B]/20 shadow-sm overflow-hidden">
+            <img
+              src="https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=400&h=250&fit=crop&q=80"
+              alt="Ванная комната — средний ремонт"
+              className="w-full h-32 object-cover rounded-xl mb-4"
+              loading="lazy"
+            />
             <div className="text-xs font-bold uppercase tracking-wider text-[#D9342B] mb-3">Средние объекты</div>
             <div className="text-2xl font-bold text-[#0F172A]">50 – 150 000 ₽</div>
             <div className="text-[#475569] text-sm mt-2">7–14 дней работы</div>
             <div className="text-[#94A3B8] text-xs mt-1">Санузел под ключ, комната</div>
           </div>
-          <div className="p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm">
+          <div className="p-5 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm overflow-hidden">
+            <img
+              src="https://images.unsplash.com/photo-1560185893-a55cbc8c57e8?w=400&h=250&fit=crop&q=80"
+              alt="Гостиная — комплексная отделка"
+              className="w-full h-32 object-cover rounded-xl mb-4"
+              loading="lazy"
+            />
             <div className="text-xs font-bold uppercase tracking-wider text-[#94A3B8] mb-3">Крупные объекты</div>
             <div className="text-2xl font-bold text-[#0F172A]">150 – 300 000 ₽</div>
             <div className="text-[#475569] text-sm mt-2">14–30 дней работы</div>

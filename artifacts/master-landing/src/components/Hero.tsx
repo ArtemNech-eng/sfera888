@@ -8,6 +8,7 @@ export default function Hero() {
   return (
     <section className="relative min-h-screen flex items-center overflow-hidden bg-[#FAFAF7]">
       <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 py-20 sm:py-32 w-full">
+        <div className="grid lg:grid-cols-2 gap-10 items-center">
         <div className="max-w-3xl">
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-[#0F172A] leading-tight mb-6">
             Заказы для мастеров.
@@ -75,6 +76,14 @@ export default function Hero() {
               Оплата <span className="text-[#0F172A] font-medium">только после того, как клиент заплатил вам</span> — сначала работаете, потом платите
             </span>
           </div>
+        </div>
+        <div className="hidden lg:block">
+          <img
+            src="https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1200&h=600&fit=crop&q=80"
+            alt="Квартира после ремонта — светлая комната"
+            className="rounded-2xl shadow-lg w-full"
+          />
+        </div>
         </div>
       </div>
     </section>

@@ -68,15 +68,24 @@ export default function Marketplace() {
             </div>
           </div>
           <div className="grid grid-cols-3 gap-2 rounded-lg overflow-hidden">
-            <div className="aspect-square bg-[#F1EEE7] flex items-center justify-center text-[#94A3B8] text-xs">
-              Фото 1
-            </div>
-            <div className="aspect-square bg-[#F1EEE7] flex items-center justify-center text-[#94A3B8] text-xs">
-              Фото 2
-            </div>
-            <div className="aspect-square bg-[#F1EEE7] flex items-center justify-center text-[#94A3B8] text-xs">
-              Фото 3
-            </div>
+            <img
+              src="https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=400&h=300&fit=crop&q=80"
+              alt="Ванная комната после ремонта"
+              className="aspect-square object-cover w-full"
+              loading="lazy"
+            />
+            <img
+              src="https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&h=300&fit=crop&q=80"
+              alt="Кухня после ремонта"
+              className="aspect-square object-cover w-full"
+              loading="lazy"
+            />
+            <img
+              src="https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400&h=300&fit=crop&q=80"
+              alt="Спальня после ремонта"
+              className="aspect-square object-cover w-full"
+              loading="lazy"
+            />
           </div>
           <p className="text-[#94A3B8] text-xs text-center mt-3">Пример карточки мастера на маркетплейсе</p>
         </div>
