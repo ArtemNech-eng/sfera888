@@ -52,13 +52,42 @@ async function runRuntimeFixes() {
     END $$
   `);
 
-  // Re-sync sequence after legacy data import (prevents duplicate-key errors).
+  // Re-sync ALL serial sequences to MAX(id) of their owned column.
+  //
+  // Why: legacy data imports inserted rows with explicit ids without bumping
+  // the backing sequence (`*_id_seq`). A desynced sequence then hands out LOW,
+  // already-used ids on the next INSERT — causing either PK-conflict errors OR
+  // (after the original row was deleted) silent id REUSE, where a freshly
+  // registered master inherits a deleted master's orders/dispatches/debt.
+  // See the Виталий/Краснодар incident: masters_id_seq sat at 23 while
+  // max(masters.id) was 85.
+  //
+  // This block is idempotent and never moves a sequence backwards
+  // (GREATEST(max_id, current last_value)). Runs on every startup as a guard.
   await db.execute(sql`
-    SELECT setval(
-      'fomo_events_id_seq',
-      COALESCE((SELECT MAX(id) FROM fomo_events), 0) + 1,
-      false
-    )
+    DO $$
+    DECLARE
+      r RECORD;
+      maxid BIGINT;
+    BEGIN
+      FOR r IN
+        SELECT s.relname AS seq, t.relname AS tbl, a.attname AS col
+        FROM pg_class s
+        JOIN pg_depend d ON d.objid = s.oid AND d.deptype = 'a'
+        JOIN pg_class t ON t.oid = d.refobjid
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+        JOIN pg_namespace n ON n.oid = s.relnamespace
+        WHERE s.relkind = 'S' AND n.nspname = 'public'
+      LOOP
+        EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM public.%I', r.col, r.tbl) INTO maxid;
+        IF maxid > 0 THEN
+          EXECUTE format(
+            'SELECT setval(%L, GREATEST(%s, (SELECT last_value FROM public.%I)), true)',
+            r.seq, maxid, r.seq
+          );
+        END IF;
+      END LOOP;
+    END $$
   `);
 
   // Seed partner system settings (idempotent via ON CONFLICT).
