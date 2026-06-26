@@ -1425,6 +1425,28 @@ router.patch("/profile", requireMasterPwa, async (req, res) => {
     ? servicePrices.filter((p: any) => p.service && typeof p.priceFrom === "number" && p.priceFrom > 0)
     : null;
 
+  // ── City change: reject open dispatches from orders in the OLD city ──────
+  // When master moves cities, pending dispatches for orders in the old city
+  // should be auto-rejected so they don't show in the feed anymore.
+  if (city?.trim()) {
+    const newCity = city.trim();
+    const masterRow = await db.select({ city: mastersTable.city }).from(mastersTable).where(eq(mastersTable.id, masterId)).limit(1);
+    const oldCity = masterRow[0]?.city;
+    if (oldCity && oldCity !== newCity) {
+      // Reject all 'sent' dispatches for orders NOT in the new city
+      await db.execute(sql`
+        UPDATE order_dispatches od
+        SET status = 'rejected', updated_at = NOW()
+        FROM orders o
+        WHERE od.order_id = o.id
+          AND od.master_id = ${masterId}
+          AND od.status = 'sent'
+          AND o.city != ${newCity}
+      `);
+      console.log(`[profile] master ${masterId} city changed ${oldCity} → ${newCity}: rejected stale dispatches`);
+    }
+  }
+
   // ── Marketplace draft fields ────────────────────────────────────────────
   // For published masters: re-run automoderation on each change to public text.
   // For unpublished masters: only enforce max-length so partial drafts are OK.
