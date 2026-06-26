@@ -334,7 +334,7 @@ function MaxBotCard({ maxChatId, maxBotLink }: { maxChatId: string | null; maxBo
             href={maxBotLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-9 flex-shrink-0 items-center gap-1 rounded-xl bg-[var(--color-cta)] px-4 text-xs font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-cta-hover)]"
+            className="inline-flex h-9 flex-shrink-0 items-center gap-1 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-4 text-xs font-semibold text-[var(--color-text)] shadow-sm transition hover:border-[var(--color-text)]"
           >
             Подключить
             <ArrowRightIcon />

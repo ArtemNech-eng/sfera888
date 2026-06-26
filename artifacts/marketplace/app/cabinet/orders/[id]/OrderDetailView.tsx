@@ -521,7 +521,7 @@ function AvailableActions(props: {
             type="button"
             onClick={props.onRespond}
             disabled={props.busy}
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-4 py-2 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-4 py-2 text-sm font-semibold text-[var(--color-text)] shadow-sm hover:border-[var(--color-text)] disabled:opacity-60"
           >
             Отправить отклик
           </button>

@@ -435,7 +435,7 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
                   && !assistChallenges.trim()
                   && !assistOther.trim())
               }
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-cta)] text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)] disabled:opacity-50"
             >
               {assistantBusy ? <Spinner /> : <Icon name="wand" />}
               Собрать абзац

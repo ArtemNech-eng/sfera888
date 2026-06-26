@@ -139,7 +139,7 @@ export function DesignsAggregate({ designs, room, style }: Props) {
             <div className="mt-8">
               <Link
                 href={seedLink}
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-cta)] px-7 text-base font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)]"
+                className="inline-flex h-12 items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-7 text-base font-semibold text-[var(--color-text)] shadow-cozy transition hover:border-[var(--color-text)]"
               >
                 Создать первый дизайн
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
