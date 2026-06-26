@@ -167,7 +167,7 @@ export function CabinetNav({ variant }: Props) {
                 href={item.href}
                 className={`flex items-center gap-3 rounded-xl px-3 py-2 font-medium transition-colors ${
                   active
-                    ? "bg-[var(--color-primary)] text-white"
+                    ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]"
                     : "text-[var(--color-text)] hover:bg-[var(--color-surface,#f5f5f7)]"
                 }`}
               >
@@ -193,7 +193,7 @@ export function CabinetNav({ variant }: Props) {
                   href={item.href}
                   className={`block rounded-xl px-3 py-2 font-medium transition-colors ${
                     active
-                      ? "bg-[var(--color-primary)] text-white"
+                      ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]"
                       : "text-[var(--color-text)] hover:bg-[var(--color-surface,#f5f5f7)]"
                   }`}
                 >

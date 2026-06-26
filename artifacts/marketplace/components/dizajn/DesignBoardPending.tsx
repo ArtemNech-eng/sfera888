@@ -59,7 +59,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
           </p>
           <a
             href="/dizajn"
-            className="mt-8 inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-6 text-sm font-semibold text-white shadow-cozy transition hover:bg-[var(--color-primary-hover)]"
+            className="mt-8 inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-cta)] px-6 text-sm font-semibold text-[var(--color-on-cta)] shadow-cozy transition hover:bg-[var(--color-cta-hover)]"
           >
             Попробовать ещё раз
           </a>
@@ -140,7 +140,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
                     done
                       ? "bg-[var(--color-text)] text-white"
                       : active
-                        ? "bg-[var(--color-primary)] text-white"
+                        ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]"
                         : "border border-[var(--color-border)] text-[var(--color-faint)]"
                   }`}
                 >

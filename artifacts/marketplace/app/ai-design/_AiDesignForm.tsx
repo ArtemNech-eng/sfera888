@@ -447,7 +447,7 @@ export function AiDesignForm({ turnstileSiteKey }: Props) {
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[var(--color-cta)] px-7 text-base font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Запускаем генерацию…" : "Создать дизайн-проект"}
           </button>

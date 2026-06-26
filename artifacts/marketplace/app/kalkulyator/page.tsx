@@ -278,7 +278,7 @@ function Result({ estimate }: { estimate: CalculatorEstimate }) {
         </p>
         <Link
           href="/uslugi"
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+          className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--color-cta)] px-5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-cta-hover)]"
         >
           Получить точную смету
           <svg

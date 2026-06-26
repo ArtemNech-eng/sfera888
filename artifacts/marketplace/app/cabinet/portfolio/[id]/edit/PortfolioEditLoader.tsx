@@ -84,7 +84,7 @@ export function PortfolioEditLoader({ id, masterCity }: Props) {
         </p>
         <Link
           href="/cabinet/portfolio"
-          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--color-primary-strong)]"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-4 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm hover:bg-[var(--color-primary-strong)]"
         >
           К списку кейсов
         </Link>

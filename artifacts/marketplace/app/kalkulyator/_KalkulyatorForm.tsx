@@ -182,7 +182,7 @@ export function KalkulyatorForm({ cities, services, initial }: Props) {
       <button
         type="submit"
         disabled={pending}
-        className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
+        className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-cta)] text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-cta-hover)] disabled:opacity-60"
       >
         {pending ? (
           <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />

@@ -144,7 +144,7 @@ export function HomeCalculator({ cities }: Props) {
 
             <button
               type="submit"
-              className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+              className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-cta)] text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-cta-hover)]"
             >
               Рассчитать бюджет
               <svg

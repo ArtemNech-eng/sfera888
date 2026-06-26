@@ -12,29 +12,43 @@
    focus ring; НЕ на ссылках/иконках/чипах (там нейтральный graphite).
    ─────────────────────────────────────────────────────────────── */
 @theme {
-  /* Text — true graphite. */
-  --color-text: #0F172A;
-  --color-muted: #475569;
-  --color-faint: #94A3B8;
+  /* ─── MBK-Agent palette (master-landing-restyle parity) ──────────
+     Тёплый кремовый фон + персиковые градиенты + жёлтый CTA + оранжевые
+     текстовые акценты/цифры. Жёлтый — ТОЛЬКО для заливки кнопок и
+     маркер-подсветки слов (тёмный текст сверху). Оранжевый — для
+     ссылок, активной навигации, цифр, прогресс-баров, focus ring.
+     ─────────────────────────────────────────────────────────────── */
 
-  /* Surfaces — warm milky-cream paper, not cool grey. */
-  --color-background: #FAFAF7;       /* page bg, тёплый off-white */
-  --color-cream-deep: #F1EEE7;       /* alt section accent, warm */
+  /* Text — near-black graphite + warm stone greys. */
+  --color-text: #1A1A1A;
+  --color-muted: #57534E;
+  --color-faint: #A8A29E;
+
+  /* Surfaces — warm cream paper. */
+  --color-background: #F5F0E8;       /* page bg, тёплый кремовый */
+  --color-cream-deep: #EFE7DA;       /* alt section accent, warm */
   --color-surface: #FFFFFF;
   --color-surface-elevated: #FFFFFF;
-  --color-border: #EDEAE2;           /* warm hairline */
-  --color-border-strong: #D8D3C4;
+  --color-border: #E7E0D4;           /* warm hairline */
+  --color-border-strong: #D8CFBC;
 
-  /* Primary — magazine warm-red. Pinterest-DNA, not neon. */
-  --color-primary: #D9342B;
-  --color-primary-hover: #B8281F;
-  --color-primary-strong: #B8281F;
-  --color-primary-soft: #FCE9E7;
-  --color-primary-ring: #F5BEB8;
+  /* Primary — warm orange. Используется для ТЕКСТА/ссылок/иконок/цифр/
+     прогресс-баров/focus (читается на креме, в отличие от жёлтого). */
+  --color-primary: #E8590C;
+  --color-primary-hover: #C2410C;
+  --color-primary-strong: #C2410C;
+  --color-primary-soft: #FDEBD8;     /* peach soft */
+  --color-primary-ring: #FBD9B5;
 
-  /* Money / "ok" — neutral graphite numerals, not green. */
-  --color-money: #0F172A;
-  --color-money-soft: #F1EEE7;
+  /* CTA — signature yellow. ТОЛЬКО заливка кнопок/бейджей + маркер-
+     подсветка. Текст сверху всегда тёмный (`--color-on-cta`). */
+  --color-cta: #FACC15;
+  --color-cta-hover: #EAB308;
+  --color-on-cta: #1A1A1A;
+
+  /* Money / "ok" — neutral graphite numerals, soft yellow tint. */
+  --color-money: #1A1A1A;
+  --color-money-soft: #FEF3C7;
 
   /* Status — gentle but readable. */
   --color-ok: #0E7C5E;
@@ -45,13 +59,13 @@
   --color-danger-soft: #FEE2E2;
 
   /* Legacy aliases — keep callsites that import `--color-accent` /
-     `--color-secondary` working. Now alias to brand red. */
-  --color-accent: #D9342B;
-  --color-accent-hover: #B8281F;
-  --color-accent-soft: #FCE9E7;
-  --color-secondary: #D9342B;
-  --color-secondary-hover: #B8281F;
-  --color-secondary-soft: #FCE9E7;
+     `--color-secondary` working. Now alias to brand orange. */
+  --color-accent: #E8590C;
+  --color-accent-hover: #C2410C;
+  --color-accent-soft: #FDEBD8;
+  --color-secondary: #E8590C;
+  --color-secondary-hover: #C2410C;
+  --color-secondary-soft: #FDEBD8;
 
   /* Geometry — softer journal radii. */
   --radius-card: 16px;
@@ -110,18 +124,27 @@ body {
   line-height: 1.1;
 }
 
-/* Eyebrow label — magazine italic small-serif. Used as section
-   prefix («AI-дизайн», «Описание», «Каталог формируется»). Заменён
-   с caps-tracking-sans на Lora italic — более редакторский тон,
-   меньше «корп-портал». */
+/* Eyebrow label — MBK-style mono caps with tracking. Used as section
+   prefix («AI-дизайн», «Описание», «Каталог формируется»). Моноширинный
+   капс + оранжевый акцент вместо прежнего serif-italic — точное
+   соответствие стилю MBK-Agent и лендингу мастеров. */
 .font-eyebrow {
-  font-family: var(--font-display-stack);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 0.8125rem;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--color-muted);
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", "Menlo",
+    "Consolas", monospace);
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+
+/* Yellow marker-highlight — подсветка ключевых слов в заголовках.
+   Используется как <span class="hl">слово</span>: жёлтая «маркерная»
+   полоса под текстом. */
+.hl {
+  background-image: linear-gradient(transparent 60%, var(--color-cta) 60%);
+  padding: 0 0.12em;
 }
 
 .shadow-cozy {

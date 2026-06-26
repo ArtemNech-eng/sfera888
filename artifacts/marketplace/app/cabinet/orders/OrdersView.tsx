@@ -100,7 +100,7 @@ export function OrdersView() {
               onClick={() => setTab(t)}
               className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 tab === t
-                  ? "bg-[var(--color-primary)] text-white shadow-sm"
+                  ? "bg-[var(--color-cta)] text-[var(--color-on-cta)] shadow-sm"
                   : "text-[var(--color-muted)] hover:bg-[var(--color-background)] hover:text-[var(--color-text)]"
               }`}
             >

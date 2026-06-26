@@ -33,7 +33,7 @@ export function PlaceholderPage({ title, subtitle, ctaHref = "https://sfera-mast
             </p>
             <Link
               href={ctaHref}
-              className="inline-flex h-10 items-center rounded-xl bg-[var(--color-primary)] px-4 text-sm font-medium text-white hover:opacity-90"
+              className="inline-flex h-10 items-center rounded-xl bg-[var(--color-cta)] px-4 text-sm font-medium text-[var(--color-on-cta)] hover:opacity-90"
               prefetch={false}
             >
               {ctaLabel}

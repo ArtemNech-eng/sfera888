@@ -85,7 +85,7 @@ export function CaseCard({
           <span
             className={`absolute left-3 top-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${
               badge.tone === "featured"
-                ? "bg-[var(--color-primary)] text-white"
+                ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]"
                 : "bg-[var(--color-surface)]/95 text-[var(--color-faint)]"
             }`}
           >
@@ -112,7 +112,7 @@ export function CaseCard({
             Real action happens on the detail page (lead form). */}
         <span
           aria-hidden
-          className="pointer-events-none absolute bottom-3 right-3 inline-flex translate-y-1 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 py-2 text-xs font-semibold text-white opacity-0 shadow-cozy-md transition group-hover:translate-y-0 group-hover:opacity-100"
+          className="pointer-events-none absolute bottom-3 right-3 inline-flex translate-y-1 items-center gap-1.5 rounded-full bg-[var(--color-cta)] px-4 py-2 text-xs font-semibold text-[var(--color-on-cta)] opacity-0 shadow-cozy-md transition group-hover:translate-y-0 group-hover:opacity-100"
         >
           Хочу такой же
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">

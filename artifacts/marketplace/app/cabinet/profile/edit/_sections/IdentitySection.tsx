@@ -162,7 +162,7 @@ export function SaveButton({
       type="button"
       onClick={onClick}
       disabled={disabled || busy}
-      className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
+      className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-4 py-2 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
     >
       {busy ? (
         <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden />

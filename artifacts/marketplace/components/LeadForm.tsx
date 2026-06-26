@@ -340,7 +340,7 @@ export function LeadForm({
       <button
         type="submit"
         disabled={submitting}
-        className="inline-flex items-center justify-center rounded-xl bg-[var(--color-primary)] px-5 py-3 text-base font-medium text-white transition hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
+        className="inline-flex items-center justify-center rounded-xl bg-[var(--color-cta)] px-5 py-3 text-base font-medium text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] disabled:opacity-60"
       >
         {submitting ? "Отправляем…" : "Получить мастера"}
       </button>

@@ -31,7 +31,7 @@ export default function NotFoundPage() {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/"
-          className="inline-flex items-center justify-center rounded-xl bg-[var(--color-primary)] px-5 py-3 text-base font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
+          className="inline-flex items-center justify-center rounded-xl bg-[var(--color-cta)] px-5 py-3 text-base font-medium text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)]"
         >
           На главную
         </Link>

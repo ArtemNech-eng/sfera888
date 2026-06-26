@@ -176,7 +176,7 @@ export default async function ServiceCityPage(
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="#lead-form"
-              className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-6 text-sm font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-cta)] px-6 text-sm font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)]"
             >
               Оставить заявку
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

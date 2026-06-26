@@ -299,7 +299,7 @@ export function UploadForm({ cities }: Props) {
         <button
           type="submit"
           disabled={submitting || !file}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[var(--color-cta)] px-7 text-base font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
         >
           {submitting ? "Запускаем генерацию…" : "Создать дизайн-проект"}
           {!submitting ? (

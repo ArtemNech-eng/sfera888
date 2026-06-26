@@ -90,7 +90,7 @@ export function PushNotificationCard({ compact }: { compact?: boolean }) {
             type="button"
             onClick={handleEnable}
             disabled={busy}
-            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
+            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-[var(--color-cta)] px-3 py-1.5 text-xs font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
           >
             {busy ? <Spinner /> : null}
             Включить
@@ -136,7 +136,7 @@ export function PushNotificationCard({ compact }: { compact?: boolean }) {
                 type="button"
                 onClick={handleEnable}
                 disabled={busy}
-                className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-4 py-2 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
               >
                 {busy ? <Spinner /> : <BellSmallIcon />}
                 Включить уведомления

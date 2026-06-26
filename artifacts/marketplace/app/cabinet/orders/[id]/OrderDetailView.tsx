@@ -259,7 +259,7 @@ export function OrderDetailView({ id }: Props) {
         </p>
         <Link
           href="/cabinet/orders"
-          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--color-primary-strong)]"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-4 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm hover:bg-[var(--color-primary-strong)]"
         >
           К списку заказов
         </Link>
@@ -484,7 +484,7 @@ function AvailableActions(props: {
           type="button"
           onClick={props.onAccept}
           disabled={props.busy}
-          className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-5 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
         >
           <CheckIcon />
           Принять заявку
@@ -521,7 +521,7 @@ function AvailableActions(props: {
             type="button"
             onClick={props.onRespond}
             disabled={props.busy}
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-4 py-2 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
           >
             Отправить отклик
           </button>
@@ -591,7 +591,7 @@ function ActiveActions(props: {
               disabled={props.busy || active}
               className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
                 active
-                  ? "bg-[var(--color-primary)] text-white shadow-sm"
+                  ? "bg-[var(--color-cta)] text-[var(--color-on-cta)] shadow-sm"
                   : "border border-[var(--color-border)] bg-white text-[var(--color-text)] hover:border-[var(--color-primary)]"
               } disabled:opacity-${active ? "100" : "60"}`}
             >

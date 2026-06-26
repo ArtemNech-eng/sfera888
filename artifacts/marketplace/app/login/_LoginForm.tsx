@@ -116,7 +116,7 @@ export function LoginForm({ next, registered }: Props) {
       <button
         type="submit"
         disabled={loading}
-        className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-[var(--color-primary)] text-base font-semibold text-white transition-opacity disabled:opacity-50"
+        className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-[var(--color-cta)] text-base font-semibold text-[var(--color-on-cta)] transition-opacity disabled:opacity-50"
       >
         {loading ? (
           <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />

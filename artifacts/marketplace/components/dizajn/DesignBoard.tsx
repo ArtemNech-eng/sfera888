@@ -251,7 +251,7 @@ export function DesignBoard({
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <a
               href="#design-lead"
-              className="inline-flex h-10 items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex h-10 items-center gap-2 rounded-full bg-[var(--color-cta)] px-5 text-sm font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)]"
             >
               Хочу такой же
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
@@ -644,7 +644,7 @@ function SimilarRow({ title, seeAllHref, designs }: { title: string; seeAllHref:
 }
 
 function BeforeAfterPair({ label, labelTone, url, alt }: { label: string; labelTone: "muted" | "brand"; url: string; alt: string }) {
-  const labelClass = labelTone === "brand" ? "bg-[var(--color-primary)] text-white" : "bg-[var(--color-text)] text-white";
+  const labelClass = labelTone === "brand" ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]" : "bg-[var(--color-text)] text-white";
   return (
     <figure className="relative overflow-hidden rounded-xl bg-[var(--color-surface)] shadow-cozy">
       <div className="relative aspect-[4/3] w-full">

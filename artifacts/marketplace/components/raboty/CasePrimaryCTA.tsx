@@ -53,7 +53,7 @@ export function CasePrimaryCTA({
           <a
             href="#lead-form"
             onClick={onCTAClick}
-            className="inline-flex h-14 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-6 text-base font-bold text-white shadow-cozy transition hover:bg-[var(--color-primary-hover)] hover:shadow-cozy-md sm:h-16 sm:text-lg"
+            className="inline-flex h-14 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--color-cta)] px-6 text-base font-bold text-[var(--color-on-cta)] shadow-cozy transition hover:bg-[var(--color-cta-hover)] hover:shadow-cozy-md sm:h-16 sm:text-lg"
           >
             Хочу такой же
             <svg

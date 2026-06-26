@@ -20,7 +20,7 @@ export default function ThankYouPage() {
       </p>
       <Link
         href="/"
-        className="mt-8 inline-flex items-center rounded-xl bg-[var(--color-primary)] px-6 py-3 text-base font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
+        className="mt-8 inline-flex items-center rounded-xl bg-[var(--color-cta)] px-6 py-3 text-base font-medium text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)]"
       >
         На главную
       </Link>

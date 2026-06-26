@@ -50,7 +50,7 @@ export default function VoprosyPage() {
         <div className="mt-10 flex flex-wrap items-center gap-4">
           <Link
             href="/raboty"
-            className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
+            className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-cta)] px-7 text-base font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)]"
           >
             Смотреть ремонты
             <svg

@@ -255,7 +255,7 @@ export function ChatView() {
             onClick={() => void handleSend()}
             disabled={!canSend}
             aria-label="Отправить"
-            className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)] text-white shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
+            className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-cta)] text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
           >
             {sending ? <Spinner /> : <SendIcon />}
           </button>
@@ -274,7 +274,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       <div
         className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
           isMine
-            ? "rounded-br-sm bg-[var(--color-primary)] text-white"
+            ? "rounded-br-sm bg-[var(--color-cta)] text-[var(--color-on-cta)]"
             : "rounded-bl-sm bg-white text-[var(--color-text)] border border-[var(--color-border)]"
         }`}
       >

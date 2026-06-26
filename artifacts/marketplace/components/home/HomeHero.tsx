@@ -23,8 +23,20 @@ export function HomeHero() {
   const bottom = ROOM_CATEGORIES.find((r) => r.slug === "gostinaya")!;
 
   return (
-    <section className="bg-[var(--color-background)]">
-      <div className="mx-auto max-w-6xl px-4 pb-16 pt-10 sm:px-6 sm:pb-24 sm:pt-16">
+    <section className="relative overflow-hidden bg-[var(--color-background)]">
+      {/* Персиковый градиент — MBK-feel */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(135deg, #FDEBD8 0%, #FBF1E4 45%, transparent 100%)",
+        }}
+      />
+      <div
+        className="pointer-events-none absolute -top-24 right-0 h-[420px] w-[420px] rounded-full opacity-50 blur-3xl"
+        style={{ background: "radial-gradient(circle, #FBD9B5 0%, transparent 70%)" }}
+      />
+      <div className="relative mx-auto max-w-6xl px-4 pb-16 pt-10 sm:px-6 sm:pb-24 sm:pt-16">
         <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,_1fr)_minmax(0,_1.05fr)] lg:gap-14">
           {/* ── Headline column ─────────────────────────────── */}
           <div>
@@ -33,7 +45,7 @@ export function HomeHero() {
               <br />
               который хотите
               <br />
-              повторить.
+              <span className="hl">повторить.</span>
             </h1>
             <p className="mt-5 max-w-md text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
               Тысячи реальных ремонтов и AI-дизайнов с ценами, сроками и
@@ -42,7 +54,7 @@ export function HomeHero() {
             <div className="mt-7">
               <Link
                 href="/raboty"
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-[var(--color-primary-hover)]"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-cta)] px-7 text-base font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)]"
               >
                 Смотреть ремонты
                 <svg

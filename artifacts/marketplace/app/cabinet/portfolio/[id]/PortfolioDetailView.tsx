@@ -189,7 +189,7 @@ export function PortfolioDetailView({ id }: Props) {
         </p>
         <Link
           href={`/cabinet/portfolio/${item.id}/edit`}
-          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--color-primary-strong)]"
+          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-4 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm hover:bg-[var(--color-primary-strong)]"
         >
           Редактировать кейс
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -299,7 +299,7 @@ function NotFound() {
       </p>
       <Link
         href="/cabinet/portfolio"
-        className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--color-primary-strong)]"
+        className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-4 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm hover:bg-[var(--color-primary-strong)]"
       >
         К списку кейсов
       </Link>

@@ -325,7 +325,7 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
           type="button"
           onClick={handleSave}
           disabled={busy}
-          className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-5 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
         >
           {busy ? <Spinner /> : <Icon name="check" />}
           Сохранить
@@ -435,7 +435,7 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
                   && !assistChallenges.trim()
                   && !assistOther.trim())
               }
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] text-sm font-semibold text-white transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-cta)] text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
             >
               {assistantBusy ? <Spinner /> : <Icon name="wand" />}
               Собрать абзац
@@ -670,7 +670,7 @@ export function PortfolioEditor({ existingItem, masterCity }: Props) {
           type="button"
           onClick={handleSave}
           disabled={busy}
-          className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-5 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
         >
           {busy ? <Spinner /> : <Icon name="check" />}
           {willPublish ? "Сохранить и опубликовать" : "Сохранить черновик"}

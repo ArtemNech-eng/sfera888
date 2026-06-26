@@ -93,7 +93,7 @@ export function ProfileView() {
           </div>
           <Link
             href="/cabinet/profile/edit"
-            className="inline-flex h-10 flex-shrink-0 items-center gap-1 rounded-xl bg-[var(--color-primary)] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+            className="inline-flex h-10 flex-shrink-0 items-center gap-1 rounded-xl bg-[var(--color-cta)] px-4 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-cta-hover)]"
           >
             Редактировать
             <ArrowRightIcon />
@@ -334,7 +334,7 @@ function MaxBotCard({ maxChatId, maxBotLink }: { maxChatId: string | null; maxBo
             href={maxBotLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-9 flex-shrink-0 items-center gap-1 rounded-xl bg-[var(--color-primary)] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-hover)]"
+            className="inline-flex h-9 flex-shrink-0 items-center gap-1 rounded-xl bg-[var(--color-cta)] px-4 text-xs font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-cta-hover)]"
           >
             Подключить
             <ArrowRightIcon />

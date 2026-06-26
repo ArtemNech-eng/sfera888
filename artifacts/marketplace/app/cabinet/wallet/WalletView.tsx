@@ -174,7 +174,7 @@ export function WalletView() {
             type="button"
             onClick={handleSubmit}
             disabled={submitting}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-cta)] px-5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-50"
           >
             {submitting ? <Spinner /> : null}
             Отправить

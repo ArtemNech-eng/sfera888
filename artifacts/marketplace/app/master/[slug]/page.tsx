@@ -525,7 +525,7 @@ function MasterHero({
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="#lead-form"
-                className="inline-flex h-11 items-center gap-2 rounded-md bg-[var(--color-primary)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
+                className="inline-flex h-11 items-center gap-2 rounded-md bg-[var(--color-cta)] px-5 text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)]"
               >
                 Получить смету
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

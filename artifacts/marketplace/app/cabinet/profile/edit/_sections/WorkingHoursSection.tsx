@@ -96,7 +96,7 @@ export function WorkingHoursSection({ data, onPatch }: Props) {
               onClick={() => toggleDay(d)}
               className={`inline-flex h-10 w-12 items-center justify-center rounded-xl text-sm font-semibold transition ${
                 days.includes(d)
-                  ? "bg-[var(--color-primary)] text-white shadow-sm"
+                  ? "bg-[var(--color-cta)] text-[var(--color-on-cta)] shadow-sm"
                   : "border border-[var(--color-border)] bg-white text-[var(--color-text)] hover:border-[var(--color-primary)]"
               }`}
             >

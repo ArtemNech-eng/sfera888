@@ -66,7 +66,7 @@ export function SaveButton({ slug, initialSaved, initialCount, variant = "pill" 
         aria-label={saved ? "Убрать из избранного" : "Сохранить в избранное"}
         className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold shadow-cozy transition ${
           saved
-            ? "bg-[var(--color-primary)] text-white"
+            ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]"
             : "bg-[var(--color-surface)]/95 text-[var(--color-text)] hover:bg-[var(--color-surface)]"
         }`}
       >

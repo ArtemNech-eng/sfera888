@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -73,7 +73,7 @@ export function CookieBanner() {
           <button
             type="button"
             onClick={accept}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-[var(--color-cta)] px-4 text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)]"
           >
             Понятно
           </button>

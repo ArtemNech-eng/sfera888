@@ -120,7 +120,7 @@ export function Header() {
 
           <Link
             href="/login"
-            className="hidden h-10 items-center rounded-md bg-[var(--color-primary)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)] sm:inline-flex"
+            className="hidden h-10 items-center rounded-md bg-[var(--color-cta)] px-4 text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] sm:inline-flex"
           >
             Войти
           </Link>
@@ -181,7 +181,7 @@ export function Header() {
               <li>
                 <Link
                   href="/login"
-                  className="my-3 inline-flex w-full items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-3 text-base font-semibold text-white"
+                  className="my-3 inline-flex w-full items-center justify-center rounded-md bg-[var(--color-cta)] px-4 py-3 text-base font-semibold text-[var(--color-on-cta)]"
                 >
                   Войти в кабинет
                 </Link>

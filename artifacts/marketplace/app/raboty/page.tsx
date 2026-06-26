@@ -255,7 +255,7 @@ function ChipRail({
                 href={buildHref(item.slug)}
                 className={`inline-flex items-center rounded-full border px-3.5 py-1.5 text-xs font-medium transition sm:text-sm ${
                   isActive
-                    ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                    ? "border-[var(--color-primary)] bg-[var(--color-cta)] text-[var(--color-on-cta)]"
                     : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
                 }`}
               >
@@ -314,7 +314,7 @@ function Pagination({
         <Link
           href={buildHref(next)}
           rel="next"
-          className="inline-flex items-center gap-2 rounded-md bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
+          className="inline-flex items-center gap-2 rounded-md bg-[var(--color-cta)] px-4 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)]"
         >
           Далее →
         </Link>

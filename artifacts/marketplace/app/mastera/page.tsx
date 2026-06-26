@@ -176,7 +176,7 @@ export default async function MasteraPage(
                     href={buildUrl({ city: c.slug, page: 1 })}
                     className={`rounded-full border px-3 py-1 text-xs ${
                       cityFilter?.slug === c.slug
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                        ? "border-[var(--color-primary)] bg-[var(--color-cta)] text-[var(--color-on-cta)]"
                         : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]"
                     }`}
                   >
@@ -199,7 +199,7 @@ export default async function MasteraPage(
                     href={buildUrl({ service: s.slug, page: 1 })}
                     className={`rounded-full border px-3 py-1 text-xs ${
                       serviceFilter?.slug === s.slug
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                        ? "border-[var(--color-primary)] bg-[var(--color-cta)] text-[var(--color-on-cta)]"
                         : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]"
                     }`}
                   >
@@ -261,7 +261,7 @@ export default async function MasteraPage(
               <Link
                 href={buildUrl({ page: page + 1 })}
                 rel="next"
-                className="inline-flex h-11 items-center rounded-full bg-[var(--color-primary)] px-5 font-semibold text-white transition hover:bg-[var(--color-primary-hover)]"
+                className="inline-flex h-11 items-center rounded-full bg-[var(--color-cta)] px-5 font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)]"
               >
                 Далее →
               </Link>
@@ -286,7 +286,7 @@ function FilterChip({
     <span
       className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs ${
         active
-          ? "bg-[var(--color-primary)] text-white"
+          ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]"
           : "bg-[var(--color-surface)] text-[var(--color-muted)] border border-[var(--color-border)]"
       }`}
     >
