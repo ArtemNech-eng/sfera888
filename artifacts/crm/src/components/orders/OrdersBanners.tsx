@@ -3,7 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import { AlertCircle, Users, UserCheck, MessageSquare, RefreshCw, XCircle, Loader2, ChevronDown, ChevronRight, Banknote } from "lucide-react";
+import { AlertCircle, Users, UserCheck, MessageSquare, RefreshCw, XCircle, Loader2, ChevronDown, ChevronRight, Banknote, Undo2 } from "lucide-react";
 
 // Persist collapsed-state per banner across page loads.
 function useCollapsed(key: string, initial = false): [boolean, (v: boolean) => void] {
@@ -160,6 +160,29 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
 
   const openMasterChat = (masterId: number) => setLocation(`/master-chat?masterId=${masterId}`);
 
+  // Вернуть заказ тому же мастеру — мастер нажал «Отменить» по ошибке.
+  const revertCancellationMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const r = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ revertCancellation: true }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error ?? "Ошибка");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-board/table"] });
+      toast({ title: "Заказ возвращён мастеру", description: "Запрос на отмену снят, заказ снова в работе" });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   // Collapsed state for each banner — persisted across reloads
   const [cancelCollapsed, setCancelCollapsed] = useCollapsed("cancellation");
   const [pendingCollapsed, setPendingCollapsed] = useCollapsed("commission-pending");
@@ -223,6 +246,18 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
                     <MessageSquare className="w-3 h-3" /> Чат
                   </button>
                 )}
+                <button
+                  onClick={() => {
+                    if (confirm(`Вернуть #${order.id} мастеру? Запрос на отмену будет снят, заказ снова в работе.`)) {
+                      revertCancellationMutation.mutate(order.id);
+                    }
+                  }}
+                  disabled={revertCancellationMutation.isPending}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-50 rounded-md text-xs disabled:opacity-50"
+                >
+                  {revertCancellationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Undo2 className="w-3 h-3" />}
+                  Вернуть
+                </button>
                 <button
                   onClick={() => {
                     if (confirm(`Назначить другого мастера на #${order.id}? Текущий мастер будет откреплён.`)) {

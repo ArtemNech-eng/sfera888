@@ -484,7 +484,7 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
   const body = req.body ?? {};
   const {
     status, orderAmount, commission, commissionPaid, clientRating, proposedAmount,
-    acceptProposed, approveCancellation, rejectCancellation, restoreOrder,
+    acceptProposed, approveCancellation, rejectCancellation, revertCancellation, restoreOrder,
     operatorNote, clientCancelReason, paymentModel, maxMasters,
     // T14 — Phase 2 reconcile / force-paid actions
     acceptReceiptAmount, keepAgreementAmount, force, reason,
@@ -557,6 +557,15 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
         updates.masterId = null;
         updates.cancelReason = null;
         updates.dispatchStatus = "none";
+      }
+      // Вернуть заказ ТОМУ ЖЕ мастеру (мастер нажал «Отменить» по ошибке).
+      // Снимаем запрос на отмену и возвращаем заказ в работу без переназначения.
+      if (revertCancellation && current.status === "cancellation_requested" && current.masterId) {
+        updates.status = "master_assigned"; newStatus = "master_assigned";
+        updates.dispatchStatus = "assigned";
+        updates.cancelReason = null;
+        updates.cancelType = null;
+        updates.assignedAt = (current as any).assignedAt ?? new Date();
       }
       if (restoreOrder && current.status === "cancelled") {
         updates.cancelReason = null;
@@ -976,6 +985,36 @@ router.patch("/:id", allOrderRoles, async (req, res) => {
       if (cancelledMaster.maxChatId) {
         sendMaxMessage(cancelledMaster.maxChatId, cancelNotifyText)
           .catch(e => console.error("[orders] Failed to send Max cancellation message:", e));
+      }
+    }
+  }
+
+  // ── Notify master when operator reverts a cancellation request ────────
+  if (revertCancellation && current.status === "cancellation_requested" && current.masterId) {
+    const revertText =
+      `✅ Заказ #${id} возвращён вам\n\n` +
+      `Оператор отменил запрос на отмену — заказ снова в работе. Если кнопку «Отменить» нажали случайно, просто продолжайте работу.`;
+    const masterRows = await db.select().from(mastersTable).where(eq(mastersTable.id, current.masterId));
+    const revertedMaster = masterRows[0];
+    if (revertedMaster) {
+      await db.insert(masterMessagesTable).values({
+        masterId: revertedMaster.id,
+        telegramChatId: `pwa_${revertedMaster.id}`,
+        text: revertText,
+        fromMaster: false,
+        senderName: "system",
+        isRead: false,
+      }).catch(e => console.error("[orders] Failed to insert revert message:", e));
+      if (revertedMaster.maxChatId) {
+        sendMaxMessage(revertedMaster.maxChatId, revertText)
+          .catch(e => console.error("[orders] Failed to send Max revert message:", e));
+      }
+      if (revertedMaster.pwaLogin) {
+        sendPushToMaster(revertedMaster.id, {
+          title: "Заказ возвращён",
+          body: `Заказ #${id} снова в работе.`,
+          orderId: id,
+        } as any).catch(() => {});
       }
     }
   }
