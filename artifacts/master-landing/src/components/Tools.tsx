@@ -1,4 +1,5 @@
 import { Smartphone, Calculator, Shield, BarChart3, Repeat, Headphones } from 'lucide-react';
+import Eyebrow from './Eyebrow';
 
 const tools = [
   {
@@ -35,12 +36,17 @@ const tools = [
 
 export default function Tools() {
   return (
-    <section className="relative py-14 sm:py-20 bg-[#FAFAF7]">
+    <section className="relative py-14 sm:py-20 bg-[#F5F0E8]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
-          Что получает мастер <span className="text-[#D9342B]">внутри системы</span>
+        <Eyebrow number="04" label="Инструменты" />
+        <h2 className="text-3xl sm:text-4xl font-extrabold text-[#1A1A1A] mb-4 text-center">
+          Что получает мастер{' '}
+          <span className="relative inline-block">
+            <span className="absolute inset-x-0 bottom-1 h-3 sm:h-4 bg-[#FACC15] -z-10 rounded-sm" />
+            внутри системы
+          </span>
         </h2>
-        <p className="text-[#475569] text-center max-w-3xl mx-auto mb-14 text-lg">
+        <p className="text-[#57534E] text-center max-w-3xl mx-auto mb-14 text-lg">
           Инструменты, которые помогают зарабатывать больше и работать спокойнее
         </p>
 
@@ -48,13 +54,14 @@ export default function Tools() {
           {tools.map((tool) => (
             <div
               key={tool.title}
-              className="p-6 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm hover:shadow-md transition-all duration-300"
+              className="p-6 rounded-3xl border border-[#E7E0D4] shadow-sm hover:shadow-md transition-all duration-300"
+              style={{ background: 'linear-gradient(160deg, #FFFFFF 0%, #FBF6EE 100%)' }}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 bg-[#FCE9E7] border border-[#EDEAE2]">
-                <tool.icon className="w-6 h-6 text-[#D9342B]" />
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 bg-[#FEF3C7]">
+                <tool.icon className="w-6 h-6 text-[#E8590C]" />
               </div>
-              <h3 className="text-lg font-bold text-[#0F172A] mb-2">{tool.title}</h3>
-              <p className="text-[#475569] text-sm leading-relaxed">{tool.description}</p>
+              <h3 className="text-lg font-bold text-[#1A1A1A] mb-2">{tool.title}</h3>
+              <p className="text-[#57534E] text-sm leading-relaxed">{tool.description}</p>
             </div>
           ))}
         </div>

@@ -13,8 +13,8 @@ import FinalCTA from './FinalCTA';
 export default function Landing() {
   return (
     <div
-      className="min-h-screen text-[#0F172A]"
-      style={{ backgroundColor: '#FAFAF7' }}
+      className="min-h-screen text-[#1A1A1A]"
+      style={{ backgroundColor: '#F5F0E8' }}
     >
       <Hero />
       <System />
@@ -29,17 +29,17 @@ export default function Landing() {
       <FinalCTA />
 
       {/* Footer */}
-      <footer className="py-10 border-t border-[#EDEAE2] bg-[#FAFAF7]">
+      <footer className="py-10 border-t border-[#E7E0D4] bg-[#F5F0E8]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 text-center">
-          <p className="text-[#0F172A] font-semibold mb-2">
+          <p className="text-[#1A1A1A] font-semibold mb-2">
             Честный Мастер · IT-платформа для мастеров
           </p>
-          <p className="text-[#94A3B8] text-sm mb-4">
+          <p className="text-[#A8A29E] text-sm mb-4">
             © {new Date().getFullYear()} Все права защищены
           </p>
           <a
             href="/master-pwa/login"
-            className="text-[#D9342B] text-sm font-medium hover:underline"
+            className="text-[#E8590C] text-sm font-medium hover:underline"
           >
             Войти в приложение →
           </a>

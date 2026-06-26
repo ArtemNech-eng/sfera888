@@ -1,4 +1,5 @@
 import { ClipboardList, Hammer, CheckCircle2, RotateCcw } from 'lucide-react';
+import Eyebrow from './Eyebrow';
 
 const steps = [
   {
@@ -29,13 +30,17 @@ const steps = [
 
 export default function System() {
   return (
-    <section id="system" className="relative py-14 sm:py-20 bg-[#F1EEE7]">
+    <section id="system" className="relative py-14 sm:py-20 bg-[#FAF6EF]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <h2 className="text-3xl sm:text-4xl font-bold text-[#0F172A] mb-4 text-center">
+        <Eyebrow number="01" label="Как это работает" />
+        <h2 className="text-3xl sm:text-4xl font-extrabold text-[#1A1A1A] mb-4 text-center">
           Принцип конвейера:{' '}
-          <span className="text-[#D9342B]">Взял → Сделал → Взял новый</span>
+          <span className="relative inline-block">
+            <span className="absolute inset-x-0 bottom-1 h-3 sm:h-4 bg-[#FACC15] -z-10 rounded-sm" />
+            Взял → Сделал → Взял новый
+          </span>
         </h2>
-        <p className="text-[#475569] text-center max-w-3xl mx-auto mb-14 text-lg">
+        <p className="text-[#57534E] text-center max-w-3xl mx-auto mb-14 text-lg">
           Мы не даём мастерам хватать по 5 объектов и срывать сроки. По умолчанию: 1 активный заказ.
         </p>
 
@@ -43,18 +48,19 @@ export default function System() {
           {steps.map((step, index) => (
             <div
               key={step.number}
-              className="relative p-6 rounded-2xl bg-white border border-[#EDEAE2] shadow-sm hover:shadow-md transition-all duration-300"
+              className="relative p-6 rounded-3xl border border-[#E7E0D4] shadow-sm hover:shadow-md transition-all duration-300"
+              style={{ background: 'linear-gradient(160deg, #FFFFFF 0%, #FBF6EE 100%)' }}
             >
-              <div className="absolute -top-3 right-6 px-3 py-1 rounded-full text-xs font-bold bg-[#FCE9E7] border border-[#EDEAE2] text-[#D9342B]">
-                Шаг {step.number}
+              <div className="absolute -top-3 right-6 px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#FACC15] text-[#1A1A1A]">
+                {step.number}
               </div>
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 bg-[#FCE9E7] border border-[#EDEAE2]">
-                <step.icon className="w-6 h-6 text-[#D9342B]" />
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 bg-[#FEF3C7]">
+                <step.icon className="w-6 h-6 text-[#E8590C]" />
               </div>
-              <h3 className="text-lg font-bold text-[#0F172A] mb-2">{step.title}</h3>
-              <p className="text-[#475569] text-sm leading-relaxed">{step.description}</p>
+              <h3 className="text-lg font-bold text-[#1A1A1A] mb-2">{step.title}</h3>
+              <p className="text-[#57534E] text-sm leading-relaxed">{step.description}</p>
               {index < steps.length - 1 && (
-                <div className="hidden lg:block absolute top-1/2 -right-3 text-[#D9342B] text-xl font-bold">
+                <div className="hidden lg:block absolute top-1/2 -right-3 text-[#E8590C] text-xl font-bold">
                   →
                 </div>
               )}
@@ -63,10 +69,10 @@ export default function System() {
         </div>
 
         <div className="mt-10 text-center">
-          <div className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white border border-[#EDEAE2] shadow-sm">
-            <span className="text-[#475569] text-sm">
+          <div className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-white border border-[#E7E0D4] shadow-sm">
+            <span className="text-[#57534E] text-sm">
               Для лучших мастеров —{' '}
-              <span className="text-[#0F172A] font-semibold">до 2 объектов одновременно</span>
+              <span className="text-[#1A1A1A] font-semibold">до 2 объектов одновременно</span>
             </span>
           </div>
         </div>
