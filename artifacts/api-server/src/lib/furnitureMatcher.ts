@@ -63,7 +63,13 @@ const STYLE_COMPATIBILITY: Readonly<Record<string, readonly string[]>> = {
  * SKU с точным совпадением.
  */
 export function getCompatibleStyles(style: string): readonly string[] {
-  const explicit = STYLE_COMPATIBILITY[style];
+  // Guard against prototype-chain keys ("constructor", "toString", "valueOf",
+  // "__proto__", …): a plain `STYLE_COMPATIBILITY[style]` lookup would resolve
+  // such keys to inherited Object.prototype members (truthy), bypassing the
+  // `?? [style]` fallback. `Object.hasOwn` restricts to own properties.
+  const explicit = Object.hasOwn(STYLE_COMPATIBILITY, style)
+    ? STYLE_COMPATIBILITY[style]
+    : undefined;
   return explicit ?? [style];
 }
 

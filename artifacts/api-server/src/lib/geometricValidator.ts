@@ -82,7 +82,11 @@ export type ViolationCode =
   | "INTERSECTS"
   | "BLOCKS_DOOR"
   | "PATH_TOO_NARROW"
-  | "NO_PATH_TO_FUNCTIONAL_ITEM";
+  | "NO_PATH_TO_FUNCTIONAL_ITEM"
+  // Plausibility-проверка плана (Requirement 2.7, design.md §E):
+  | "MISSING_FUNCTIONAL_ITEM"
+  | "UNREALISTIC_DIMENSIONS"
+  | "FLOATING_FURNITURE";
 
 export interface ValidationViolation {
   code: ViolationCode;
@@ -134,6 +138,52 @@ const DOOR_CLEARANCE_CM = 60;
 const FUNCTIONAL_TYPES_BY_ROOM: Readonly<Record<string, readonly string[]>> = {
   bedroom: ["bed", "wardrobe"],
 };
+
+// ---------------------------------------------------------------------------
+// Plausibility constants (Requirement 2.7, design.md §E)
+// ---------------------------------------------------------------------------
+
+/**
+ * Ключевая мебель, без которой план помещения функционально неубедителен
+ * (`MISSING_FUNCTIONAL_ITEM`). Для `bedroom` это `bed`; таблица расширяема для
+ * остальных типов помещений по мере добавления их в пайплайн.
+ */
+const REQUIRED_FUNCTIONAL_BY_ROOM: Readonly<Record<string, readonly string[]>> =
+  {
+    bedroom: ["bed"],
+  };
+
+/**
+ * Реалистичные диапазоны габаритов по типу мебели, см. Проверка
+ * orientation-agnostic: предмет правдоподобен, если его (ширина×глубина)
+ * укладывается в диапазон в любой из двух ортогональных ориентаций
+ * (`UNREALISTIC_DIMENSIONS`). На MVP заполнено для `bed`; расширяемо.
+ */
+interface DimRange {
+  minW: number;
+  maxW: number;
+  minD: number;
+  maxD: number;
+}
+const REALISTIC_DIMS_BY_TYPE: Readonly<Record<string, DimRange>> = {
+  bed: { minW: 140, maxW: 200, minD: 190, maxD: 220 },
+};
+
+/**
+ * Типы мебели, которые в реалистичной раскладке примыкают к стене и не должны
+ * «плавать» по центру комнаты (`FLOATING_FURNITURE`).
+ */
+const WALL_ADJACENT_TYPES: ReadonlySet<string> = new Set([
+  "bed",
+  "wardrobe",
+  "sofa",
+]);
+
+/**
+ * Допуск примыкания к стене, см. Если минимальный зазор AABB до ближайшей
+ * стены превышает этот допуск — предмет считается «плавающим».
+ */
+const WALL_ADJACENCY_TOLERANCE_CM = 30;
 
 // ---------------------------------------------------------------------------
 // checkMinArea — pre-flight
@@ -349,7 +399,110 @@ export function validateLayout(
     );
   }
 
+  // 5. Plausibility-проверка плана (Requirement 2.7, design.md §E). Нарушения
+  //    попадают в общий список и далее — в подсказку retry-цикла воркера.
+  violations.push(...validatePlausibility(room, furniture));
+
   return { ok: violations.length === 0, violations };
+}
+
+// ---------------------------------------------------------------------------
+// validatePlausibility — функциональное правдоподобие плана (Requirement 2.7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Чистая проверка функционального правдоподобия `Layout_JSON`, прошедшего
+ * схему и базовую геометрию (design.md §E):
+ *
+ *   (а) наличие ключевой мебели по типу помещения (`MISSING_FUNCTIONAL_ITEM`);
+ *   (б) реалистичные габариты по типу мебели (`UNREALISTIC_DIMENSIONS`);
+ *   (в) ключевая мебель (кровать/шкаф/диван) примыкает к стене и не «плавает»
+ *       по центру (`FLOATING_FURNITURE`).
+ *
+ * Возвращает список нарушений (пустой, если план правдоподобен). Базовую
+ * геометрическую валидацию не дублирует и не изменяет.
+ */
+export function validatePlausibility(
+  room: RoomDims,
+  furniture: FurnitureItem[],
+): ValidationViolation[] {
+  const violations: ValidationViolation[] = [];
+
+  // (а) Наличие ключевой мебели по типу помещения.
+  const required = REQUIRED_FUNCTIONAL_BY_ROOM[room.roomType] ?? [];
+  if (required.length > 0) {
+    const presentTypes = new Set(furniture.map((f) => f.type));
+    for (const reqType of required) {
+      if (!presentTypes.has(reqType)) {
+        violations.push({
+          code: "MISSING_FUNCTIONAL_ITEM",
+          itemIds: [],
+          detailRu:
+            `В помещении «${room.roomType}» отсутствует ключевой предмет ` +
+            `«${reqType}» — план функционально неполон.`,
+        });
+      }
+    }
+  }
+
+  // (б) Реалистичные габариты по типу мебели.
+  for (const item of furniture) {
+    const range = REALISTIC_DIMS_BY_TYPE[item.type];
+    if (!range) continue;
+    if (!isDimensionRealistic(item.widthCm, item.depthCm, range)) {
+      violations.push({
+        code: "UNREALISTIC_DIMENSIONS",
+        itemIds: [item.id],
+        detailRu:
+          `Габариты предмета «${item.id}» (${item.type}) ` +
+          `${item.widthCm}×${item.depthCm} см нереалистичны для своего типа ` +
+          `(ожидается порядка ${range.minW}..${range.maxW} × ` +
+          `${range.minD}..${range.maxD} см).`,
+      });
+    }
+  }
+
+  // (в) Ключевая мебель примыкает к стене (не «плавает» по центру).
+  for (const item of furniture) {
+    if (!WALL_ADJACENT_TYPES.has(item.type)) continue;
+    const a = aabbForItem(item);
+    const wallGap = Math.min(
+      a.x0,
+      room.widthCm - a.x1,
+      a.y0,
+      room.lengthCm - a.y1,
+    );
+    if (wallGap > WALL_ADJACENCY_TOLERANCE_CM) {
+      violations.push({
+        code: "FLOATING_FURNITURE",
+        itemIds: [item.id],
+        detailRu:
+          `Предмет «${item.id}» (${item.type}) «плавает» вне стен ` +
+          `(минимальный отступ ${Math.round(wallGap)} см > допуска ` +
+          `${WALL_ADJACENCY_TOLERANCE_CM} см) — приставьте его к стене.`,
+      });
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Orientation-agnostic проверка габаритов: предмет правдоподобен, если его
+ * (ширина×глубина) укладывается в диапазон в любой из двух ортогональных
+ * ориентаций.
+ */
+function isDimensionRealistic(
+  widthCm: number,
+  depthCm: number,
+  range: DimRange,
+): boolean {
+  const fits = (w: number, d: number) =>
+    w >= range.minW &&
+    w <= range.maxW &&
+    d >= range.minD &&
+    d <= range.maxD;
+  return fits(widthCm, depthCm) || fits(depthCm, widthCm);
 }
 
 // ---------------------------------------------------------------------------

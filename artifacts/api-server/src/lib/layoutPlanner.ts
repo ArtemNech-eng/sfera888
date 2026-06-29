@@ -27,21 +27,20 @@
  * Конфигурация полностью совпадает с `designContent.ts`:
  *   AI_INTEGRATIONS_OPENAI_API_KEY  — обязательный
  *   AI_INTEGRATIONS_OPENAI_BASE_URL — OpenRouter / прокси
- *   AI_INTEGRATIONS_DESIGN_MODEL    → AI_INTEGRATIONS_OPENAI_MODEL → claude-opus-4-7
+ *   AI_INTEGRATIONS_DESIGN_MODEL    → AI_INTEGRATIONS_OPENAI_MODEL →
+ *     надёжный structured-output дефолт (designConfig.getDesignModel,
+ *     read-fresh — см. §D фикса ai-design-quality-fix).
  */
 
 import OpenAI from "openai";
 import type { FurnitureItem, LayoutJson, Wall } from "@workspace/db";
 import type { ValidationViolation } from "./geometricValidator.js";
+import { getDesignModel } from "./designConfig.js";
 
 // ─── OpenAI client (тот же шлюз, что и designContent.ts) ──────────────────────
 
 const apiKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
 const baseURL = process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"];
-const model =
-  process.env["AI_INTEGRATIONS_DESIGN_MODEL"]
-  ?? process.env["AI_INTEGRATIONS_OPENAI_MODEL"]
-  ?? "claude-opus-4-7";
 
 let openai: OpenAI | null = null;
 function client(): OpenAI {
@@ -357,6 +356,12 @@ function buildUserPrompt(input: LayoutPlannerInput): string {
 // ─── Single attempt ──────────────────────────────────────────────────────────
 
 async function generateOnce(input: LayoutPlannerInput): Promise<LayoutJson> {
+  // Read-fresh: модель резолвится на момент вызова (designConfig.getDesignModel),
+  // а не на module-load. Так оператор меняет AI_INTEGRATIONS_DESIGN_MODEL
+  // env-патчем без рестарта очереди, а unset/мусорный env даёт надёжный
+  // structured-output дефолт вместо ненадёжного claude-opus-4-7
+  // (см. ai-design-quality-fix/design.md §D, Property 6).
+  const model = getDesignModel();
   const completion = await client().chat.completions.create({
     model,
     messages: [

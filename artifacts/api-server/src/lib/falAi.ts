@@ -652,3 +652,271 @@ function qualityToKontextGuidance(quality: "auto" | "low" | "medium" | "high"): 
 }
 
 export { NEGATIVE_PROMPT };
+
+/**
+ * Nano Banana 2 (Google Gemini 3 Flash Image) — text2img. SOTA по
+ * консистентности и качеству на fal (2026). Используется для единого холста
+ * мульти-ракурсного дизайн-борда (одна генерация = когерентная комната).
+ *
+ * Endpoint: `fal-ai/nano-banana-2`
+ * Pricing: $0.08 @ 1K, ×1.5 @ 2K, ×2 @ 4K.
+ */
+export async function falGenerateNanoBanana2(input: {
+  prompt: string;
+  aspectRatio?: string;
+  resolution?: "0.5K" | "1K" | "2K" | "4K";
+}): Promise<FalGenerationResult> {
+  return nanoBanana2Request("fal-ai/nano-banana-2", {
+    prompt: input.prompt,
+    aspect_ratio: input.aspectRatio ?? "1:1",
+    resolution: input.resolution ?? "1K",
+    output_format: "jpeg",
+    num_images: 1,
+  }, input.resolution ?? "1K");
+}
+
+/**
+ * Nano Banana 2 (edit) — image-to-image с до 14 reference-изображений и
+ * identity-консистентностью. Для цепочки ракурсов: каждый новый ракурс
+ * генерится с reference на мастер (и опц. предыдущие виды), удерживая комнату.
+ *
+ * Endpoint: `fal-ai/nano-banana-2/edit`
+ */
+export async function falEditNanoBanana2(input: {
+  prompt: string;
+  imageUrls: string[];
+  aspectRatio?: string;
+  resolution?: "0.5K" | "1K" | "2K" | "4K";
+}): Promise<FalGenerationResult> {
+  if (!input.imageUrls || input.imageUrls.length === 0) {
+    throw new Error("Fal.ai nano-banana-2/edit requires at least one image_url");
+  }
+  return nanoBanana2Request("fal-ai/nano-banana-2/edit", {
+    prompt: input.prompt,
+    image_urls: input.imageUrls,
+    aspect_ratio: input.aspectRatio ?? "1:1",
+    resolution: input.resolution ?? "1K",
+    output_format: "jpeg",
+    num_images: 1,
+  }, input.resolution ?? "1K");
+}
+
+/** Общий HTTP-вызов Nano Banana 2 (generate/edit делят формат ответа). */
+async function nanoBanana2Request(
+  modelId: string,
+  body: Record<string, unknown>,
+  resolution: "0.5K" | "1K" | "2K" | "4K",
+): Promise<FalGenerationResult> {
+  const apiKey = process.env.FAL_API_KEY;
+  if (!apiKey) {
+    throw new Error("FAL_API_KEY is not set");
+  }
+  const url = `${FAL_BASE_URL}/${modelId}`;
+
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(`Fal.ai nano-banana-2 network error: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`Fal.ai nano-banana-2 HTTP ${response.status}: ${errText.slice(0, 500)}`);
+  }
+
+  const data = (await response.json()) as {
+    images?: Array<{ url: string; width?: number; height?: number }>;
+  };
+  if (!data.images || data.images.length === 0) {
+    throw new Error("Fal.ai nano-banana-2 returned no images");
+  }
+
+  // $0.08 @ 1K база; 0.5K ×0.75, 2K ×1.5, 4K ×2.
+  const mult: Record<string, number> = { "0.5K": 0.75, "1K": 1, "2K": 1.5, "4K": 2 };
+  const first = data.images[0]!;
+  return {
+    imageUrl: first.url,
+    width: first.width ?? 1024,
+    height: first.height ?? 1024,
+    generationMs: Date.now() - startedAt,
+    costKopeks: Math.round(800 * (mult[resolution] ?? 1)),
+  };
+}
+
+/**
+ * Depth_ControlNet_Wrapper (подход B2, ai-design-3d-blockout spec §6).
+ *
+ * Перекрашивает одну `Depth_Map` в фотореалистичный ракурс через depth-управляемую
+ * модель на fal по тому же паттерну, что и остальные обёртки в этом файле
+ * (raw fetch, заголовок `Authorization: Key ${FAL_API_KEY}`, базовый URL
+ * `https://fal.run/{model}`, синхронный режим).
+ *
+ * Карта глубины задаёт СТРУКТУРУ (геометрию комнаты и расстановку мебели),
+ * `Shared_Style_Prompt` задаёт стиль/материалы/освещение. Так геометрия
+ * фиксируется блокаутом и одинакова во всех камерах `Camera_Rig`.
+ *
+ * Модель: env `FAL_MODEL_DEPTH_CONTROLNET`
+ *   (default `fal-ai/flux-control-lora-depth` — text-to-image: промпт задаёт
+ *   контент, карта глубины — структуру; init-изображение не требуется).
+ *
+ * Поведение при ошибках (Requirement 1.5, 6.6, 6.7):
+ *   • HTTP >= 400 или пустой результат → ошибка `Fal.ai HTTP {status}: {text}`.
+ *   • `has_nsfw_concepts=true` → бросает `NsfwBlockedError` (изображение НЕ
+ *     возвращается), который несёт `costKopeks`, чтобы оркестратор учёл
+ *     стоимость в `Cost_Budget` (Req 6.7).
+ */
+
+/** Аппроксимация cost'a одного depth-ControlNet вызова в копейках (~$0.025). */
+const DEPTH_CONTROLNET_COST_KOPEKS = 250;
+
+/**
+ * Сила depth-контроля (`control_lora_strength`) из env
+ * `FAL_DEPTH_CONTROL_STRENGTH`. Принимает число 0..1; при кривом/отсутствующем
+ * значении — дефолт 1 (жёсткое следование глубине). Ниже 1 даёт модели больше
+ * свободы — полезно, когда блокаут грубый (боксовая мебель).
+ */
+function resolveDepthControlStrength(): number {
+  const raw = process.env["FAL_DEPTH_CONTROL_STRENGTH"];
+  if (typeof raw !== "string") return 1;
+  const v = Number.parseFloat(raw.trim());
+  if (!Number.isFinite(v) || v < 0 || v > 1) return 1;
+  return v;
+}
+
+/**
+ * Ошибка NSFW-отказа. Несёт стоимость вызова, чтобы вызывающий код (cost guard)
+ * мог учесть её в бюджете даже при отказе вернуть изображение (Req 6.6, 6.7).
+ */
+export class NsfwBlockedError extends Error {
+  readonly costKopeks: number;
+  constructor(costKopeks: number, message = "Fal.ai depth-controlnet flagged image as NSFW") {
+    super(message);
+    this.name = "NsfwBlockedError";
+    this.costKopeks = costKopeks;
+  }
+}
+
+export interface DepthRepaintInput {
+  /** Публичный/signed URL Depth_Map в R2 — структурный управляющий сигнал. */
+  depthMapUrl: string;
+  /** Shared_Style_Prompt — единый стилевой промпт проекта. */
+  prompt: string;
+  /** Опц. направляющее изображение цвета (init image). */
+  initImageUrl?: string;
+  /** Целевой aspect-ratio выходного изображения. */
+  aspectRatio?: "16:9" | "4:3" | "1:1";
+  /**
+   * Опц. переопределение модели fal. Например, для hero+reference используется
+   * img2img-вариант `fal-ai/flux-control-lora-depth/image-to-image` вместе с
+   * `initImageUrl` = hero-ракурс (структура из глубины, внешность из hero).
+   * По умолчанию — env `FAL_MODEL_DEPTH_CONTROLNET` или text2image-вариант.
+   */
+  modelId?: string;
+}
+
+/**
+ * Один синхронный вызов depth-ControlNet на fal. `Depth_Map` передаётся как
+ * структурный управляющий сигнал (`control_lora_image_url`), опциональное
+ * init-изображение — как направляющий цвет (`image_url`).
+ */
+export async function falDepthControlNetRepaint(
+  input: DepthRepaintInput,
+): Promise<FalGenerationResult> {
+  const apiKey = process.env.FAL_API_KEY;
+  if (!apiKey) {
+    throw new Error("FAL_API_KEY is not set");
+  }
+  const model =
+    input.modelId ??
+    process.env.FAL_MODEL_DEPTH_CONTROLNET ??
+    "fal-ai/flux-control-lora-depth";
+  const url = `${FAL_BASE_URL}/${model}`;
+
+  const body: Record<string, unknown> = {
+    prompt: input.prompt,
+    negative_prompt: NEGATIVE_PROMPT,
+    // Depth_Map как структурный управляющий сигнал (Req 6.2).
+    control_lora_image_url: input.depthMapUrl,
+    // Сила depth-контроля. 1 = жёстко следовать глубине (грубый блокаут даёт
+    // «кубическую» мебель); ниже — больше свободы модели и правдоподобнее
+    // детали. Настраивается через env `FAL_DEPTH_CONTROL_STRENGTH` (0..1).
+    control_lora_strength: resolveDepthControlStrength(),
+    num_inference_steps: 28,
+    guidance_scale: 3.5,
+    image_size: aspectToImageSize(input.aspectRatio ?? "4:3"),
+    num_images: 1,
+    enable_safety_checker: true,
+  };
+  // Эндпоинт `fal-ai/flux-control-lora-depth` — text-to-image: картинка
+  // генерируется по `prompt`, а `control_lora_image_url` (карта глубины) задаёт
+  // только СТРУКТУРУ. `image_url` опционально и нужно лишь для img2img-варианта;
+  // подставлять туда серую карту глубины НЕЛЬЗЯ — иначе результат остаётся серым
+  // блокаутом (подтверждено живым прогоном). Поэтому init-изображение
+  // передаём ТОЛЬКО если оператор задал его явно (направляющий цвет).
+  if (input.initImageUrl) {
+    body.image_url = input.initImageUrl;
+  }
+
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(
+      `Fal.ai depth-controlnet network error: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
+  // Читаем тело как текст один раз, чтобы и при ошибке, и при пустом результате
+  // включить HTTP-статус и текст ответа в сообщение (Req 1.5, паттерн
+  // `Fal.ai HTTP {status}: {text}`).
+  const rawText = await response.text().catch(() => "");
+
+  if (!response.ok) {
+    throw new Error(`Fal.ai HTTP ${response.status}: ${rawText.slice(0, 500)}`);
+  }
+
+  let data: {
+    images?: Array<{ url: string; width?: number; height?: number }>;
+    has_nsfw_concepts?: boolean[];
+  };
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error(`Fal.ai HTTP ${response.status}: ${rawText.slice(0, 500)}`);
+  }
+
+  // NSFW-отказ: НЕ возвращаем изображение, но сообщаем стоимость (Req 6.6, 6.7).
+  if (data.has_nsfw_concepts?.some((flag) => flag === true)) {
+    throw new NsfwBlockedError(DEPTH_CONTROLNET_COST_KOPEKS);
+  }
+
+  if (!data.images || data.images.length === 0) {
+    throw new Error(`Fal.ai HTTP ${response.status}: ${rawText.slice(0, 500)}`);
+  }
+
+  const first = data.images[0]!;
+  return {
+    imageUrl: first.url,
+    width: first.width ?? 1024,
+    height: first.height ?? 768,
+    generationMs: Date.now() - startedAt,
+    costKopeks: DEPTH_CONTROLNET_COST_KOPEKS,
+  };
+}

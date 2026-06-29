@@ -37,7 +37,6 @@ const GAP = 16; // gap between cells
 // Top row: 4 photos in horizontal strip (height ~30%)
 const TOP_Y = PAD;
 const TOP_H = 410; // ~30% of H
-const PHOTO_W = Math.floor((W - PAD * 2 - GAP * 3) / 4); // ~485px each
 const PHOTO_H = TOP_H - 36; // leave 36px for caption below
 
 // Middle row: floor plan + 3D-isometric (left half) + text blocks (right half)
@@ -64,22 +63,30 @@ const PLAN_Y = MID_Y + 28;
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface InfographicInput {
-  /** 4 photo views (1024×1024 jpeg buffers from gpt-image-1.5). */
-  views: [Buffer, Buffer, Buffer, Buffer];
   /**
-   * 3D-isometric jpeg buffer (1024×1024). Приходит уже с наложенными
-   * выносками (см. `composeIsometricWithCallouts` из
-   * `lib/isometricCallouts.ts`) — этот модуль больше не дорисовывает
-   * подписи поверх (Requirement 9.3).
+   * Реальные ракурсы (1..4) — 1024×1024 jpeg-буферы. Раскладка ROW1
+   * адаптируется под фактическое число кадров: ровно `views.length` ячеек,
+   * без hero-дублей и пустых слотов (design §B, Property 5).
    */
-  isometric: Buffer;
-  /** 6 detail-crop jpeg buffers (768×768). */
-  detailCrops: [Buffer, Buffer, Buffer, Buffer, Buffer, Buffer];
+  views: Buffer[];
+  /**
+   * 3D-isometric jpeg buffer (1024×1024) ИЛИ `null`, если изометрия
+   * деградировала (опциональный шаг). Middle-блок изометрии собирается
+   * только при `isometric != null` — иначе центр/текст занимают
+   * освободившееся место, без пустой зоны (design §B).
+   *
+   * Приходит уже с наложенными выносками (см.
+   * `composeIsometricWithCallouts` из `lib/isometricCallouts.ts`) — этот
+   * модуль больше не дорисовывает подписи поверх (Requirement 9.3).
+   */
+  isometric: Buffer | null;
+  /** Реальные detail-crop jpeg-буферы (0..6, 768×768). */
+  detailCrops: Buffer[];
 
-  /** RU label под каждым из 4 фото. */
-  viewLabels: [string, string, string, string];
-  /** RU label под каждым из 6 кропов. */
-  cropLabels: [string, string, string, string, string, string];
+  /** RU label под каждым реальным ракурсом (по длине `views`). */
+  viewLabels: string[];
+  /** RU label под каждым реальным кропом (по длине `detailCrops`). */
+  cropLabels: string[];
 
   /**
    * Программно отрисованный «вид сверху» в виде PNG-буфера, тот же
@@ -104,6 +111,72 @@ export interface InfographicInput {
     colorPalette: Array<{ hex: string; name?: string | null }>;
     solutions: Array<{ text: string }>;
   };
+}
+
+// ─── Adaptive slot planner (pure, directly property-tested) ──────────────────
+
+/** Зона слота итоговой инфографики. */
+export type InfographicSlotZone = "view" | "isometric" | "crop";
+
+/**
+ * Слот итоговой инфографики. `content === null` означает пустую зону
+ * (зарезервированный прямоугольник без реального ассета). Адаптивный
+ * планировщик НЕ создаёт пустых слотов и НЕ дублирует контент: каждый
+ * реальный ассет получает ровно один слот со стабильным идентификатором.
+ */
+export interface InfographicSlot {
+  zone: InfographicSlotZone;
+  index: number;
+  /** Стабильный идентификатор занятого ассета (никогда `null` у планировщика). */
+  content: string | null;
+}
+
+/**
+ * Фактический набор ассетов, который воркер передаёт композитору.
+ * `views`/`detailCrops` — массивы реальных буферов (или тегов в тестах);
+ * учитываются только их длины. `hasIsometric` — присутствует ли реальная
+ * изометрия (middle-блок собирается только при `true`).
+ */
+export interface InfographicSlotAssets {
+  views: ReadonlyArray<unknown>;
+  hasIsometric: boolean;
+  detailCrops: ReadonlyArray<unknown>;
+}
+
+/**
+ * Чистый планировщик слотов инфографики (design §B, Property 5).
+ *
+ * Раскладывает ТОЛЬКО реально присутствующие ассеты:
+ *   - ровно `views.length` view-слотов (без hero-дублей из `pickFourViews`);
+ *   - один isometric-слот только при `hasIsometric == true`;
+ *   - ровно `detailCrops.length` crop-слотов.
+ *
+ * Инвариант: число занятых слотов == число реальных ассетов
+ * (`views.length + (hasIsometric ? 1 : 0) + detailCrops.length`), без
+ * пустых зон (`content === null`) и без дублирования контента — каждому
+ * слоту присваивается стабильный уникальный идентификатор.
+ */
+export function planInfographicSlots(
+  assets: InfographicSlotAssets,
+): InfographicSlot[] {
+  const slots: InfographicSlot[] = [];
+
+  // ROW1: ровно столько view-слотов, сколько реальных ракурсов.
+  assets.views.forEach((_, i) => {
+    slots.push({ zone: "view", index: i, content: `view:${i}` });
+  });
+
+  // MIDDLE: isometric-слот только при наличии реальной изометрии.
+  if (assets.hasIsometric) {
+    slots.push({ zone: "isometric", index: 0, content: "isometric" });
+  }
+
+  // BOTTOM: ровно столько crop-слотов, сколько реальных кропов.
+  assets.detailCrops.forEach((_, i) => {
+    slots.push({ zone: "crop", index: i, content: `crop:${i}` });
+  });
+
+  return slots;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -260,23 +333,40 @@ function wrapText(text: string, maxChars: number): string[] {
 // ─── Main composer ───────────────────────────────────────────────────────────
 
 export async function composeInfographic(input: InfographicInput): Promise<Buffer> {
-  // 1. Resize / crop photos to fit cells.
+  // Фактические длины ассетов — раскладка адаптивна под реальный набор
+  // (design §B, Property 5): ровно `viewCount` ячеек ROW1, isometric только
+  // при наличии, ровно `cropCount` crop-ячеек.
+  const viewCount = Math.max(1, Math.min(4, input.views.length));
+  const cropCount = Math.min(6, input.detailCrops.length);
+  const hasIsometric = input.isometric !== null;
+
+  // Ширина ячейки ROW1 из фактического числа кадров (без пустых слотов).
+  const photoW = Math.floor((W - PAD * 2 - GAP * (viewCount - 1)) / viewCount);
+  const photoH = PHOTO_H;
+
+  // 1. Resize / crop photos to fit cells (только реальные ракурсы).
   const photoCells = await Promise.all(
-    input.views.map((buf) =>
-      sharp(buf).resize(PHOTO_W, PHOTO_H, { fit: "cover" }).jpeg({ quality: 90 }).toBuffer(),
+    input.views.slice(0, viewCount).map((buf) =>
+      sharp(buf).resize(photoW, photoH, { fit: "cover" }).jpeg({ quality: 90 }).toBuffer(),
     ),
   );
 
   // 2. Resize 3D-isometric to fit center cell (560×420 within MID_LEFT).
+  //    Собираем только при наличии реальной изометрии.
   const ISO_W = 560;
   const ISO_H = 420;
-  const isoCell = await sharp(input.isometric).resize(ISO_W, ISO_H, { fit: "cover" }).jpeg({ quality: 90 }).toBuffer();
+  const isoCell = hasIsometric
+    ? await sharp(input.isometric!).resize(ISO_W, ISO_H, { fit: "cover" }).jpeg({ quality: 90 }).toBuffer()
+    : null;
 
-  // 3. Resize 6 detail crops (square, fit cell width).
-  const cropSizeW = CROP_W;
+  // 3. Resize detail crops (square, fit cell width) — по фактической длине.
+  //    Ширина crop-ячейки пересчитывается под реальное число кропов.
+  const cropSizeW = cropCount > 0
+    ? Math.floor((BOT_RIGHT_W - GAP * (cropCount - 1)) / cropCount)
+    : CROP_W;
   const cropSizeH = CROP_H;
   const cropCells = await Promise.all(
-    input.detailCrops.map((buf) =>
+    input.detailCrops.slice(0, cropCount).map((buf) =>
       sharp(buf).resize(cropSizeW, cropSizeH, { fit: "cover" }).jpeg({ quality: 88 }).toBuffer(),
     ),
   );
@@ -295,22 +385,28 @@ export async function composeInfographic(input: InfographicInput): Promise<Buffe
   // 5. Build SVG overlay for all text + (optional placeholder floor plan) +
   //    captions. Выноски на изометрию более не накладываются здесь —
   //    Requirement 9.3.
-  const svg = buildSvgOverlay(input, planCell === null);
+  const svg = buildSvgOverlay(input, planCell === null, {
+    viewCount,
+    cropCount,
+    photoW,
+    cropSizeW,
+    hasIsometric,
+  });
   const svgBuffer = Buffer.from(svg);
 
   // 6. Composite. Layers (bottom-up):
   //    a. White background canvas
-  //    b. 4 photos in top row
+  //    b. реальные фото в top row
   //    c. Top_Down_Plan PNG (если есть) в Section A
-  //    d. 3D-isometric в middle-center
-  //    e. 6 detail crops в bottom-right
+  //    d. 3D-isometric в middle-center (если есть)
+  //    e. реальные detail crops в bottom-right
   //    f. SVG overlay (текст, captions, table backgrounds, опц. placeholder
   //       плана)
   const composites: sharp.OverlayOptions[] = [];
 
-  // 4 top photos
-  for (let i = 0; i < 4; i++) {
-    const x = PAD + i * (PHOTO_W + GAP);
+  // top photos (по фактическому числу)
+  for (let i = 0; i < viewCount; i++) {
+    const x = PAD + i * (photoW + GAP);
     composites.push({ input: photoCells[i]!, left: x, top: TOP_Y });
   }
 
@@ -319,15 +415,17 @@ export async function composeInfographic(input: InfographicInput): Promise<Buffe
     composites.push({ input: planCell, left: PLAN_X, top: PLAN_Y });
   }
 
-  // 3D-isometric in middle-left section (right side of left half)
-  const isoX = PAD + PLAN_W + GAP;
-  const isoY = MID_Y + 20;
-  composites.push({ input: isoCell, left: isoX, top: isoY });
+  // 3D-isometric in middle-left section (right side of left half) — если есть
+  if (isoCell) {
+    const isoX = PAD + PLAN_W + GAP;
+    const isoY = MID_Y + 20;
+    composites.push({ input: isoCell, left: isoX, top: isoY });
+  }
 
-  // 6 detail crops in bottom row
+  // detail crops in bottom row (по фактическому числу)
   const cropStartX = PAD + BOT_LEFT_W + GAP;
-  for (let i = 0; i < 6; i++) {
-    const x = cropStartX + i * (CROP_W + GAP);
+  for (let i = 0; i < cropCount; i++) {
+    const x = cropStartX + i * (cropSizeW + GAP);
     composites.push({ input: cropCells[i]!, left: x, top: BOT_Y });
   }
 
@@ -355,22 +453,36 @@ export async function composeInfographic(input: InfographicInput): Promise<Buffe
  *   если `false` — слот уже занят PNG-композитом, поэтому placeholder не
  *   рисуется. Caption «5. Вид сверху...» рисуется в обоих случаях.
  */
-function buildSvgOverlay(input: InfographicInput, renderPlanPlaceholder: boolean): string {
-  // Photo captions (top row)
+function buildSvgOverlay(
+  input: InfographicInput,
+  renderPlanPlaceholder: boolean,
+  layout: {
+    viewCount: number;
+    cropCount: number;
+    photoW: number;
+    cropSizeW: number;
+    hasIsometric: boolean;
+  },
+): string {
+  const { viewCount, cropCount, photoW, cropSizeW } = layout;
+
+  // Photo captions (top row) — по фактическому числу ракурсов.
   let captions = "";
-  for (let i = 0; i < 4; i++) {
-    const cx = PAD + i * (PHOTO_W + GAP) + 16;
+  for (let i = 0; i < viewCount; i++) {
+    const cx = PAD + i * (photoW + GAP) + 16;
     const cy = TOP_Y + PHOTO_H + 24;
-    captions += `<text x="${cx}" y="${cy}" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">${escapeXml(`${i + 1}. ${input.viewLabels[i]}`)}</text>`;
+    const label = input.viewLabels[i] ?? `Ракурс ${i + 1}`;
+    captions += `<text x="${cx}" y="${cy}" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" fill="#3A4956">${escapeXml(`${i + 1}. ${label}`)}</text>`;
   }
 
-  // Detail crop captions (bottom row)
+  // Detail crop captions (bottom row) — по фактическому числу кропов.
   let cropCaptions = "";
   const cropStartX = PAD + BOT_LEFT_W + GAP;
-  for (let i = 0; i < 6; i++) {
-    const cx = cropStartX + i * (CROP_W + GAP) + 4;
+  for (let i = 0; i < cropCount; i++) {
+    const cx = cropStartX + i * (cropSizeW + GAP) + 4;
     const cy = BOT_Y + CROP_H + 22;
-    const lines = wrapText(input.cropLabels[i]!, 14);
+    const label = input.cropLabels[i] ?? "";
+    const lines = wrapText(label, 14);
     lines.slice(0, 1).forEach((line) => {
       cropCaptions += `<text x="${cx}" y="${cy}" font-family="DejaVu Sans, Arial, sans-serif" font-size="12" fill="#5C6975">${escapeXml(line)}</text>`;
     });

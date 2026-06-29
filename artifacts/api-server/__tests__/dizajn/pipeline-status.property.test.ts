@@ -127,15 +127,18 @@ function withEnv<T>(
 // Validates: Requirement 14.5
 //
 // The env knob feeds the budget guard. Garbage values must NOT crash the
-// worker — they fall back to `DEFAULT_COST_CEILING_KOPEKS = 3000`. The exact
+// worker — they fall back to `DEFAULT_COST_CEILING_KOPEKS = 10000`. The exact
 // fallback table is fixed by the implementation (`parseIntSafe` rejects
 // floats and non-decimal strings; negatives explicit-fail; 0 allowed).
 
 describe("designConfig — Property 22.1: getCostCeilingKopeks env handling", () => {
   // Validates: Requirement 14.5
 
-  it("DEFAULT_COST_CEILING_KOPEKS is the documented 3000-kopeks ($0.30) ceiling", () => {
-    assert.equal(DEFAULT_COST_CEILING_KOPEKS, 3000);
+  it("DEFAULT_COST_CEILING_KOPEKS is the documented 10000-kopeks (100 ₽) ceiling", () => {
+    // Bumped from the original 3000 ($0.30) to 10000 (100 ₽) to fit the
+    // identity-preserving edit-image budget: hero(high) + 3×edit(high)
+    // (ai-design-quality-fix design §F). 10000 is the current source of truth.
+    assert.equal(DEFAULT_COST_CEILING_KOPEKS, 10000);
   });
 
   it("undefined env → DEFAULT_COST_CEILING_KOPEKS", () => {
