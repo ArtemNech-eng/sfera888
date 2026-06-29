@@ -6,6 +6,12 @@ import type { DesignFullDTO, DesignFeedItemDTO, DesignStatus } from "../../lib/t
 import { SaveButton } from "./SaveButton";
 import { DesignLeadForm } from "./DesignLeadForm";
 import { ShareButton } from "./ShareButton";
+import {
+  viewsGridClass,
+  row2TemplateClass,
+  row3TemplateClass,
+  shouldRenderRow3,
+} from "./designBoardLayout";
 
 /**
  * Подобранная под Layout_JSON позиция мебели — одна строка.
@@ -202,6 +208,16 @@ export function DesignBoard({
 
   const detailCrops = design.detailCrops ?? [];
 
+  // ── Адаптивная раскладка инфографики (чистые хелперы §A) ────────────────────
+  const hasLeftColumn = Boolean(isometricView || topDownPlanUrl);
+  const hasPalette = Boolean(design.colorPalette && design.colorPalette.length > 0);
+  const hasSolutions = Boolean(design.solutions && design.solutions.length > 0);
+  const hasCrops = detailCrops.length > 0;
+  const row1Class = viewsGridClass(mainViews.length);
+  const row2Class = row2TemplateClass({ hasLeft: hasLeftColumn, hasPalette });
+  const row3Class = row3TemplateClass({ hasSolutions, hasCrops });
+  const renderRow3 = shouldRenderRow3({ hasSolutions, hasCrops });
+
   const pickedFurnitureItems =
     pickedFurniture && pickedFurniture.length > 0 ? pickedFurniture : null;
 
@@ -215,6 +231,13 @@ export function DesignBoard({
   const totalEstimateRub = design.estimate
     ? Math.round(design.estimate.reduce((s, e) => s + e.amountKopeks, 0) / 100)
     : null;
+
+  // Итемизированная смета «по позициям»: конкретная подобранная мебель
+  // (из pickedFurniture) + оставшиеся категориальные строки сметы (отделка,
+  // освещение, текстиль, прочее), исключая общий бакет «Мебель» — его
+  // заменяют детальные позиции. Если мебель не подобрана, рендерим обычную
+  // категориальную смету (fallback ниже в JSX).
+  const itemizedEstimate = buildItemizedEstimate(pickedFurnitureItems, design.estimate);
 
   return (
     <article className="bg-[var(--color-background)]">
@@ -256,7 +279,7 @@ export function DesignBoard({
               Хочу такой же
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
             </a>
-            <SaveButton slug={design.slug} initialSaved={design.isSavedByCurrentUser} initialCount={design.saveCount} variant="pill" />
+            <SaveButton slug={design.slug} initialSaved={design.isSavedByCurrentUser} initialCount={design.saveCount} variant="pill" resolveSavedOnMount />
             <ShareButton shareUrl={designUrl} shareTitle={shareTitle} shareText={`Создал AI-дизайн-проект: ${shareTitle}. Посмотри.`} />
             {showPdfButton && (
               <button type="button" onClick={handlePdfDownload} disabled={pdfBusy} className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--color-text)] px-5 text-xs font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-text)] hover:text-white disabled:opacity-60" aria-label="Скачать дизайн-проект в PDF">
@@ -313,8 +336,8 @@ export function DesignBoard({
         <section className="bg-[var(--color-background)]">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
 
-            {/* ROW 1: 4 ракурса в ряд */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+            {/* ROW 1: основные ракурсы — адаптивная сетка под их число */}
+            <div className={row1Class}>
               {mainViews.map((v, i) => (
                 <figure key={v.url} className="relative overflow-hidden rounded-xl">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -332,25 +355,27 @@ export function DesignBoard({
             </div>
 
             {/* ROW 2: Изометрия + Параметры/Материалы/Смета + Палитра */}
-            <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_2fr_auto]">
+            <div className={row2Class}>
 
-              {/* LEFT: Isometric + Top-down plan */}
-              <div className="space-y-3">
-                {isometricView && (
-                  <figure className="overflow-hidden rounded-xl">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={isometricView.url} alt="3D-планировка" className="w-full rounded-xl" loading="lazy" />
-                    <figcaption className="mt-1 text-[10px] text-center text-[var(--color-muted)]">3D-планировка</figcaption>
-                  </figure>
-                )}
-                {topDownPlanUrl && (
-                  <figure className="overflow-hidden rounded-xl border border-[var(--color-border)]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={topDownPlanUrl} alt="План помещения" className="w-full" loading="lazy" />
-                    <figcaption className="mt-1 text-[10px] text-center text-[var(--color-muted)]">Вид сверху</figcaption>
-                  </figure>
-                )}
-              </div>
+              {/* LEFT: Isometric + Top-down plan — только при наличии */}
+              {hasLeftColumn && (
+                <div className="space-y-3">
+                  {isometricView && (
+                    <figure className="overflow-hidden rounded-xl">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={isometricView.url} alt="3D-планировка" className="w-full rounded-xl" loading="lazy" />
+                      <figcaption className="mt-1 text-[10px] text-center text-[var(--color-muted)]">3D-планировка</figcaption>
+                    </figure>
+                  )}
+                  {topDownPlanUrl && (
+                    <figure className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={topDownPlanUrl} alt="План помещения" className="w-full" loading="lazy" />
+                      <figcaption className="mt-1 text-[10px] text-center text-[var(--color-muted)]">Вид сверху</figcaption>
+                    </figure>
+                  )}
+                </div>
+              )}
 
               {/* CENTER: params + materials + estimate */}
               <div className="space-y-4">
@@ -392,7 +417,32 @@ export function DesignBoard({
                 )}
 
                 {/* Смета реализации */}
-                {design.estimate && design.estimate.length > 0 && (
+                {itemizedEstimate ? (
+                  <div>
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">
+                      Смета {design.budget != null ? `(до ${formatRub(design.budget)} ₽)` : "реализации"}
+                    </h3>
+                    <table className="mt-2 w-full text-xs">
+                      <tbody>
+                        {itemizedEstimate.lines.map((line, i) => (
+                          <tr key={i} className="border-b border-[var(--color-border)]">
+                            <td className="py-1 pr-2 text-[var(--color-text)]">
+                              {line.label}
+                              {line.kind === "furniture" && (
+                                <span className="ml-1 text-[9px] uppercase tracking-wide text-[var(--color-faint)]">мебель</span>
+                              )}
+                            </td>
+                            <td className="py-1 text-right font-semibold whitespace-nowrap">{formatRub(line.rub)} ₽</td>
+                          </tr>
+                        ))}
+                        <tr className="bg-[var(--color-cream-deep)]">
+                          <td className="py-1.5 font-bold text-[var(--color-text)]">Итого</td>
+                          <td className="py-1.5 text-right font-bold text-[var(--color-text)] whitespace-nowrap">{formatRub(itemizedEstimate.total)} ₽</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : design.estimate && design.estimate.length > 0 ? (
                   <div>
                     <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Смета реализации</h3>
                     <table className="mt-2 w-full text-xs">
@@ -412,58 +462,58 @@ export function DesignBoard({
                       </tbody>
                     </table>
                   </div>
-                )}
+                ) : null}
               </div>
 
-              {/* RIGHT: palette */}
-              <div>
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Цветовая палитра</h3>
-                {design.colorPalette && design.colorPalette.length > 0 ? (
+              {/* RIGHT: palette — только при наличии данных (без плейсхолдера) */}
+              {hasPalette && (
+                <div>
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Цветовая палитра</h3>
                   <div className="mt-3 flex flex-wrap gap-2 lg:flex-col lg:items-start">
-                    {design.colorPalette.slice(0, 5).map((swatch) => (
+                    {design.colorPalette!.slice(0, 5).map((swatch) => (
                       <div key={swatch.hex} className="text-center">
                         <div className="h-10 w-10 rounded-full border border-[var(--color-border)]" style={{ backgroundColor: swatch.hex }} title={swatch.name ?? swatch.hex} />
                         <span className="mt-1 block text-[9px] text-[var(--color-muted)]">{swatch.hex}</span>
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <p className="mt-2 text-xs text-[var(--color-faint)]">Палитра уточняется.</p>
-                )}
-              </div>
+                </div>
+              )}
 
             </div>{/* end ROW 2 */}
 
-            {/* ROW 3: Solutions + 6 detail crops */}
-            <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_3fr]">
-              {/* Основные решения */}
-              {design.solutions && design.solutions.length > 0 && (
-                <div>
-                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Основные решения</h3>
-                  <ul className="mt-2 space-y-1 text-sm">
-                    {design.solutions.map((s, i) => (
-                      <li key={i} className="flex gap-2">
-                        <span className="text-[var(--color-primary)]">•</span>
-                        <span className="text-[var(--color-text)]">{s.text}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+            {/* ROW 3: Solutions + detail crops — адаптивно, не рендерим пустую */}
+            {renderRow3 && (
+              <div className={row3Class}>
+                {/* Основные решения */}
+                {hasSolutions && (
+                  <div>
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Основные решения</h3>
+                    <ul className="mt-2 space-y-1 text-sm">
+                      {design.solutions!.map((s, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="text-[var(--color-primary)]">•</span>
+                          <span className="text-[var(--color-text)]">{s.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-              {/* 6 detail crops in a row */}
-              {detailCrops.length > 0 && (
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                  {detailCrops.slice(0, 6).map((crop) => (
-                    <figure key={crop.url} className="text-center">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={crop.url} alt={crop.label} className="aspect-square w-full rounded-lg object-cover" loading="lazy" />
-                      <figcaption className="mt-1 text-[10px] leading-tight text-[var(--color-muted)]">{crop.label}</figcaption>
-                    </figure>
-                  ))}
-                </div>
-              )}
-            </div>{/* end ROW 3 */}
+                {/* detail crops in a row */}
+                {hasCrops && (
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {detailCrops.slice(0, 6).map((crop) => (
+                      <figure key={crop.url} className="text-center">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={crop.url} alt={crop.label} className="aspect-square w-full rounded-lg object-cover" loading="lazy" />
+                        <figcaption className="mt-1 text-[10px] leading-tight text-[var(--color-muted)]">{crop.label}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}{/* end ROW 3 */}
 
           </div>
         </section>
@@ -674,6 +724,50 @@ const FURNITURE_TYPE_LABELS: Record<string, string> = {
 
 function furnitureTypeLabel(type: string): string {
   return FURNITURE_TYPE_LABELS[type] ?? capitalize(type.replace(/_/g, " "));
+}
+
+/** Строка итемизированной сметы. */
+interface ItemizedEstimateLine {
+  label: string;
+  rub: number;
+  kind: "furniture" | "category";
+}
+
+/**
+ * Собирает смету «по позициям» в стиле референса: конкретная подобранная
+ * мебель (из `pickedFurniture`, с реальными ценами и названиями) + оставшиеся
+ * категориальные строки сметы (отделка, освещение, текстиль, прочее), кроме
+ * общего бакета «Мебель» — его заменяют детальные позиции.
+ *
+ * Возвращает `null`, если нет ни одной подобранной мебельной позиции с ценой —
+ * тогда UI рендерит обычную категориальную смету.
+ */
+function buildItemizedEstimate(
+  picked: DesignPickedFurnitureDTO[] | null,
+  estimate: { category: string; amountKopeks: number }[] | null,
+): { lines: ItemizedEstimateLine[]; total: number } | null {
+  const furnitureLines: ItemizedEstimateLine[] = (picked ?? [])
+    .filter((p) => p.sku !== null && p.pricePaidKopeks > 0)
+    .map((p) => ({
+      label: p.name ?? furnitureTypeLabel(p.type),
+      rub: Math.round(p.pricePaidKopeks / 100),
+      kind: "furniture" as const,
+    }));
+
+  if (furnitureLines.length === 0) return null;
+
+  // Категориальные строки, кроме «Мебель» (её заменяют детальные позиции).
+  const categoryLines: ItemizedEstimateLine[] = (estimate ?? [])
+    .filter((e) => !/мебел/i.test(e.category) && e.amountKopeks > 0)
+    .map((e) => ({
+      label: e.category,
+      rub: Math.round(e.amountKopeks / 100),
+      kind: "category" as const,
+    }));
+
+  const lines = [...furnitureLines, ...categoryLines];
+  const total = lines.reduce((sum, l) => sum + l.rub, 0);
+  return { lines, total };
 }
 
 function PickedFurnitureCard({ item }: { item: DesignPickedFurnitureDTO }) {
