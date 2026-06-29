@@ -91,11 +91,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
 // ── AI-designer sitemap entries ─────────────────────────────────────────────
 
-const DESIGN_ROOMS = ["bathroom", "kitchen", "living-room", "bedroom", "hallway", "apartment"];
-const DESIGN_STYLES = ["modern", "scandinavian", "loft", "minimalism", "neoclassic", "japandi"];
+const DESIGN_ROOMS = ["bathroom", "kitchen", "living-room", "bedroom", "hallway", "nursery", "apartment"];
+const DESIGN_STYLES = ["modern", "scandinavian", "loft", "minimalism", "neoclassic", "japandi", "classic"];
 
 /**
- * Билдер aggregate-URL'ов /dizajn/{room}-{style}. 6×6 = 36 комбинаций.
+ * Билдер aggregate-URL'ов /dizajn/{room}-{style}. 7×7 = 49 комбинаций.
  * Также добавляем «только room» и «только style» агрегаты для widest reach.
  */
 function buildDesignAggregateEntries(base: string, now: Date): MetadataRoute.Sitemap {

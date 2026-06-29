@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Save toggle button для AI-design на странице `/dizajn/[slug]`.
@@ -12,6 +12,13 @@ import { useState } from "react";
  * Cookie management полностью на стороне Next route handler (HTTP-only
  * `kiro_anon_id` cookie выставляется/читается там). С client-side
  * никаких cookie операций.
+ *
+ * `resolveSavedOnMount`: страница `/dizajn/[slug]` теперь ISR-кэшируется без
+ * anon-контекста, поэтому серверный `initialSaved` всегда false. Когда флаг
+ * включён (единственная pill-кнопка на странице дизайна), компонент один раз
+ * дотягивает реальный saved-state по GET /api/dizajn/[slug] (anon-cookie
+ * пробрасывается в роуте). В ленте/агрегатах флаг выключен — там лишние
+ * запросы не нужны.
  */
 
 interface Props {
@@ -20,12 +27,50 @@ interface Props {
   initialCount: number;
   /** Variant 'pill' (на странице дизайна) или 'icon' (компактный для feed/aggregate). */
   variant?: "pill" | "icon";
+  /** Догидрировать реальный saved-state на маунте (для ISR-страницы дизайна). */
+  resolveSavedOnMount?: boolean;
 }
 
-export function SaveButton({ slug, initialSaved, initialCount, variant = "pill" }: Props) {
+export function SaveButton({
+  slug,
+  initialSaved,
+  initialCount,
+  variant = "pill",
+  resolveSavedOnMount = false,
+}: Props) {
   const [saved, setSaved] = useState(initialSaved);
   const [count, setCount] = useState(initialCount);
   const [submitting, setSubmitting] = useState(false);
+  const resolvedRef = useRef(false);
+
+  // Догидрация saved-state на ISR-кэшированной странице: серверный
+  // initialSaved=false, поэтому один раз спрашиваем у API реальное состояние
+  // для текущего гостя. Только когда явно включено (страница дизайна).
+  useEffect(() => {
+    if (!resolveSavedOnMount || resolvedRef.current) return;
+    resolvedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/dizajn/${slug}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data?.ok || !data.design) return;
+        if (typeof data.design.isSavedByCurrentUser === "boolean") {
+          setSaved(data.design.isSavedByCurrentUser);
+        }
+        if (typeof data.design.saveCount === "number") {
+          setCount(data.design.saveCount);
+        }
+      } catch {
+        // Сеть недоступна — оставляем дефолт (не сохранено), клик всё равно
+        // синхронизируется по ответу /save.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveSavedOnMount, slug]);
 
   async function toggle() {
     if (submitting) return;

@@ -402,14 +402,28 @@ export async function fetchSaves(anonId: string): Promise<{
  * Опциональный `anonId` — передаётся как query, api-server возвращает
  * `isSavedByCurrentUser: boolean` для рендера save-state без extra fetch.
  */
-export async function fetchDesign(slug: string, anonId: string | null = null): Promise<DesignFullDTO | null> {
+export async function fetchDesign(
+  slug: string,
+  anonId: string | null = null,
+  opts: { revalidate?: number } = {},
+): Promise<DesignFullDTO | null> {
   const params = new URLSearchParams();
   if (anonId) params.set("anonId", anonId);
   const qs = params.toString();
+  // anonId-bound ответы (isSavedByCurrentUser) кэшировать нельзя — это
+  // per-visitor данные. Анонимный fetch (page-level ISR) можно кэшировать на
+  // `opts.revalidate` секунд: страница становится статической и быстрой, а
+  // на завершении генерации воркер шлёт on-demand revalidatePath (см.
+  // lib/designWorker.ts → revalidateMarketplacePaths), поэтому "generating"
+  // не залипает в кэше.
+  const cacheOpts =
+    !anonId && opts.revalidate !== undefined
+      ? { revalidate: opts.revalidate }
+      : { noStore: true as const };
   try {
     const r = await call<{ ok: true; design: DesignFullDTO }>(
       `/dizajn/${encodeURIComponent(slug)}${qs ? `?${qs}` : ""}`,
-      { noStore: true }, // status может меняться (generating → completed), нельзя кэшировать
+      cacheOpts,
     );
     // Абсолютизируем URL'ы (api-server-relative → absolute https://sfera-master.ru/...).
     const design = r.design;

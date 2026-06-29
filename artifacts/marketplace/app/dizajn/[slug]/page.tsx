@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import { fetchDesign, fetchRecentDesigns } from "../../../lib/api";
 import { publicUrl } from "../../../lib/env";
@@ -21,9 +20,18 @@ import { DesignsAggregate } from "../../../components/dizajn/DesignsAggregate";
  *
  * Disambiguation: full slug заканчивается на 8-символьный nanoid (lowercase
  * alphanumeric). Если последний segment не такой — значит это aggregate.
+ *
+ * Кэширование (ISR): страница статически кэшируется на `revalidate` секунд.
+ * Персональные данные (save-state, owner-бейдж) НЕ рендерятся на сервере —
+ * они догидрируются на клиенте (DesignBoard читает cookie для owner-бейджа,
+ * SaveButton дотягивает saved-state по /api/dizajn/[slug]). Завершение
+ * генерации мгновенно сбрасывает кэш через revalidatePath из воркера
+ * (lib/designWorker.ts), поэтому "generating" не залипает.
  */
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
+
+const DESIGN_REVALIDATE_SECONDS = 3600;
 
 interface RouteParams {
   slug: string;
@@ -36,6 +44,7 @@ const VALID_ROOMS = new Set([
   "living_room",
   "bedroom",
   "hallway",
+  "nursery",
   "apartment",
 ]);
 const VALID_STYLES = new Set([
@@ -45,6 +54,7 @@ const VALID_STYLES = new Set([
   "minimalism",
   "neoclassic",
   "japandi",
+  "classic",
 ]);
 
 interface ParsedRoute {
@@ -131,7 +141,7 @@ export async function generateMetadata(
   }
 
   if (parsed.kind === "design" && parsed.slug) {
-    const design = await fetchDesign(parsed.slug);
+    const design = await fetchDesign(parsed.slug, null, { revalidate: DESIGN_REVALIDATE_SECONDS });
     if (!design) return { robots: { index: false, follow: false } };
     if (design.status !== "completed") {
       return {
@@ -183,6 +193,7 @@ function buildAggregateMeta(room: string | null, style: string | null): { title:
     living_room: "гостиной",
     bedroom: "спальни",
     hallway: "прихожей",
+    nursery: "детской",
     apartment: "квартиры",
   };
   const STYLE: Record<string, string> = {
@@ -192,6 +203,7 @@ function buildAggregateMeta(room: string | null, style: string | null): { title:
     minimalism: "Минимализм",
     neoclassic: "Неоклассика",
     japandi: "Японди",
+    classic: "Классика",
   };
   const STYLE_GEN: Record<string, string> = {
     modern: "современной",
@@ -200,6 +212,7 @@ function buildAggregateMeta(room: string | null, style: string | null): { title:
     minimalism: "минималистичной",
     neoclassic: "неоклассической",
     japandi: "в стиле японди",
+    classic: "классической",
   };
   if (room && style) {
     const t = `Дизайн ${STYLE_GEN[style] ?? style} ${ROOM[room] ?? room} — AI-проекты`;
@@ -233,9 +246,9 @@ export default async function DesignSlugPage(
   if (!parsed) notFound();
 
   if (parsed.kind === "design" && parsed.slug) {
-    const cookieStore = await cookies();
-    const anonId = cookieStore.get("kiro_anon_id")?.value ?? null;
-    const design = await fetchDesign(parsed.slug, anonId);
+    // Без anonId — ответ кэшируемый (ISR). Персональные данные (save/owner)
+    // догидрируются на клиенте.
+    const design = await fetchDesign(parsed.slug, null, { revalidate: DESIGN_REVALIDATE_SECONDS });
     if (!design) notFound();
 
     // Smart-similar buckets — параллельно (3 запроса).

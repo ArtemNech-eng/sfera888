@@ -44,12 +44,21 @@ import sharp from "sharp";
 import { objectStorageClient } from "./objectStorage.js";
 import {
   falGenerateGptImage,
+  falGenerateGptImageEdit,
+  falGenerateFluxKontextPro,
   downloadImage,
   type FalGenerationResult,
 } from "./falAi.js";
+import {
+  getEditImageProvider,
+  isEditImageAvailable,
+  chooseViewStrategy,
+  chooseHeroGenerationStrategy,
+} from "./designConfig.js";
 import { generateDesignContent } from "./designContent.js";
 import { extractPalette } from "./colorExtraction.js";
 import { pingIndexNow } from "./indexNow.js";
+import { revalidateMarketplacePaths } from "./marketplaceRevalidate.js";
 import { composeInfographic, type InfographicInput } from "./infographicComposer.js";
 import { generateLayoutJson } from "./layoutPlanner.js";
 import {
@@ -302,6 +311,7 @@ function buildHeroCollagePrompt(room: string, style: string, area: number | null
 
     return [
       `Коллаж-сетка 2×2 из четырёх интерьерных фотографий ОДНОЙ И ТОЙ ЖЕ ${roomNoun}${areaPart} в стиле «${styleClause}».`,
+      styleLeadClause(style),
       `Все 4 кадра — одна комната с одинаковой отделкой, одной цветовой палитрой и одной мебелью.`,
       `Комната ${roomW}×${roomL} см. ${doorDesc} ${windowDesc}`,
       `Мебель в комнате: ${furnitureDescriptions.join(", ")}.`,
@@ -313,12 +323,14 @@ function buildHeroCollagePrompt(room: string, style: string, area: number | null
       ``,
       `Стиль: фотореализм, интерьерная съёмка, тёплое мягкое освещение, натуральное дерево, светлые стены, без людей, без текста, без водяных знаков.`,
       `Между кадрами тонкий белый разделитель 2-3 пикселя.`,
+      NEGATIVE_PROMPT,
     ].join("\n");
   }
 
   // Fallback: без layout (generic prompt без мебели)
   return [
     `Коллаж-сетка 2×2 из четырёх интерьерных фотографий ОДНОЙ И ТОЙ ЖЕ ${roomNoun}${areaPart} в стиле «${styleClause}».`,
+    styleLeadClause(style),
     `Все 4 кадра — одна комната с одинаковой отделкой, одной цветовой палитрой и одной мебелью.`,
     ``,
     `Верхний-левый кадр: ${quadrantDescriptions[0]}.`,
@@ -328,6 +340,7 @@ function buildHeroCollagePrompt(room: string, style: string, area: number | null
     ``,
     `Стиль: фотореализм, интерьерная съёмка, тёплое мягкое освещение, натуральное дерево, светлые стены, без людей, без текста, без водяных знаков.`,
     `Между кадрами тонкий белый разделитель 2-3 пикселя.`,
+    NEGATIVE_PROMPT,
   ].join("\n");
 }
 
@@ -393,6 +406,173 @@ function roomLabel(room: string): string {
 // (legacy 3-prompt array and buildAnglePrompt removed — pipeline v2 uses
 // panoramic Hero + sharp crops instead of per-angle AI generation)
 
+/**
+ * Промпт для одиночного нативного 1024 hero-ракурса (view 1) — identity-
+ * preserving путь (design §F). В отличие от `buildHeroCollagePrompt`, это НЕ
+ * коллаж 2×2, а один общий вид комнаты от входа, который затем служит
+ * reference-источником для edit-image ракурсов 2..4 (нет нарезки/апскейла).
+ */
+function buildHeroViewPrompt(
+  room: string,
+  style: string,
+  area: number | null,
+  layout?: LayoutJson | null,
+): string {
+  const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
+  const areaPart = area ? `, площадь ${area} м²` : "";
+  const roomNoun = roomLabel(room);
+  const quadrantDescriptions =
+    COLLAGE_QUADRANT_DESCRIPTIONS[room] ?? COLLAGE_QUADRANT_DESCRIPTIONS.bedroom!;
+  const overallView = quadrantDescriptions[0];
+
+  if (layout && layout.furniture.length > 0) {
+    const furnitureDescriptions = layout.furniture.map((f) => {
+      const typeLabels: Record<string, string> = {
+        bed: "двуспальная кровать",
+        wardrobe: "встроенный шкаф",
+        nightstand: "прикроватная тумба",
+        desk: "рабочий стол",
+        chair: "стул",
+        rug: "ковёр",
+        dresser: "комод",
+        shelf: "полка",
+        sofa: "диван",
+        armchair: "кресло",
+      };
+      const label = typeLabels[f.type] ?? f.type;
+      return `${label} ${f.widthCm}×${f.depthCm} см`;
+    });
+    const windowDesc = layout.window
+      ? `Окно на ${wallLabel(layout.window.wall)} стене.`
+      : "";
+    const doorDesc = `Дверь на ${wallLabel(layout.door.wall)} стене.`;
+    return [
+      `Интерьерная фотография ${roomNoun}${areaPart} в стиле «${styleClause}»: ${overallView}.`,
+      styleLeadClause(style),
+      `Комната ${layout.room.widthCm}×${layout.room.lengthCm} см. ${doorDesc} ${windowDesc}`,
+      `Мебель в комнате: ${furnitureDescriptions.join(", ")}.`,
+      `Фотореализм, интерьерная съёмка, тёплое мягкое освещение, натуральное дерево, светлые стены, без людей, без текста, без водяных знаков.`,
+      NEGATIVE_PROMPT,
+    ].join("\n");
+  }
+
+  return [
+    `Интерьерная фотография ${roomNoun}${areaPart} в стиле «${styleClause}»: ${overallView}.`,
+    styleLeadClause(style),
+    `Фотореализм, интерьерная съёмка, тёплое мягкое освещение, натуральное дерево, светлые стены, без людей, без текста, без водяных знаков.`,
+    NEGATIVE_PROMPT,
+  ].join("\n");
+}
+
+/**
+ * Промпт для identity-preserving edit-image ракурса (views 2..4) — design §F.
+ * Reference = Hero_Render (view 1). Инструктирует провайдер показать ТУ ЖЕ
+ * комнату под другим углом, СОХРАНЯЯ отделку, мебель, палитру и стиль.
+ */
+function buildAngleEditPrompt(room: string, style: string, position: number): string {
+  const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
+  const subjects = ROOM_VIEW_SUBJECTS[room] ?? ROOM_VIEW_SUBJECTS.bedroom!;
+  // position 2..4 → subjects index 1..3 (subjects[0] — общий вид = hero).
+  const subject = subjects[position - 1] ?? subjects[subjects.length - 1]!;
+  return [
+    `Same interior room as the reference image: same finishes, same furniture, same color palette, same «${styleClause}» style — identical room, only a different camera angle.`,
+    `Strictly preserve the «${styleClause}» interior style of the reference — do not drift into any other style.`,
+    `Show this view: ${subject}.`,
+    `Keep wall colors, flooring, furniture models, materials and lighting consistent with the reference. Photorealistic interior photography, warm soft lighting, no people, no text, no watermark. No mixing with other interior styles, no foreign-style decor, no distorted room geometry.`,
+  ].join(" ");
+}
+
+/**
+ * Промпт для hero-ракурса, построенного из фото пользователя как reference
+ * (edit-image) — design §G, Property 9 / Requirement 2.9. Инструктирует
+ * провайдер сохранить геометрию исходной комнаты (стены, окна, дверь,
+ * пропорции) и переоформить её строго в выбранном стиле.
+ */
+function buildHeroFromPhotoPrompt(
+  room: string,
+  style: string,
+  area: number | null,
+  layout?: LayoutJson | null,
+): string {
+  const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
+  const areaPart = area ? `, площадь ${area} м²` : "";
+  const roomNoun = roomLabel(room);
+  const lines = [
+    `Это фото реальной ${roomNoun}${areaPart} пользователя. Переоформи ЭТУ ЖЕ комнату, сохранив её геометрию, окна, дверь и пропорции из reference-фото.`,
+    styleLeadClause(style),
+    `Сделай дизайн-рендер этой комнаты строго в стиле «${styleClause}».`,
+  ];
+  if (layout && layout.furniture.length > 0) {
+    const furnitureDescriptions = layout.furniture.map((f) => {
+      const typeLabels: Record<string, string> = {
+        bed: "двуспальная кровать",
+        wardrobe: "встроенный шкаф",
+        nightstand: "прикроватная тумба",
+        desk: "рабочий стол",
+        chair: "стул",
+        rug: "ковёр",
+        dresser: "комод",
+        shelf: "полка",
+        sofa: "диван",
+        armchair: "кресло",
+      };
+      const label = typeLabels[f.type] ?? f.type;
+      return `${label} ${f.widthCm}×${f.depthCm} см`;
+    });
+    lines.push(`Расставь мебель: ${furnitureDescriptions.join(", ")}.`);
+  }
+  lines.push(
+    `Фотореализм, интерьерная съёмка, тёплое мягкое освещение, без людей, без текста, без водяных знаков.`,
+  );
+  lines.push(NEGATIVE_PROMPT);
+  return lines.join("\n");
+}
+
+/**
+ * Генерирует hero-ракурс из фото пользователя как reference через выбранный
+ * edit-image провайдер (`getEditImageProvider()`) — design §G. Подаёт
+ * `image_urls=[userPhotoUrl]` и `input_fidelity:"high"`, чтобы итоговый рендер
+ * заметно соответствовал исходной комнате. Сигнатуры
+ * `falGenerateGptImageEdit` / `falGenerateFluxKontextPro` совпадают.
+ */
+async function generateHeroFromUserPhoto(input: {
+  prompt: string;
+  userPhotoUrl: string;
+}): Promise<FalGenerationResult> {
+  const args = {
+    prompt: input.prompt,
+    imageUrls: [input.userPhotoUrl],
+    imageSize: "1024x1024" as const,
+    quality: "high" as const,
+    inputFidelity: "high" as const,
+  };
+  return getEditImageProvider() === "flux_kontext_pro"
+    ? falGenerateFluxKontextPro(args)
+    : falGenerateGptImageEdit(args);
+}
+
+/**
+ * Вызывает выбранный edit-image провайдер (`getEditImageProvider()`) для
+ * одного identity-preserving ракурса нативного 1024 (design §F). Сигнатуры
+ * `falGenerateGptImageEdit` / `falGenerateFluxKontextPro` совпадают, поэтому
+ * переключение провайдера не меняет вызов.
+ */
+async function generateAngleEdit(input: {
+  prompt: string;
+  heroUrl: string;
+}): Promise<FalGenerationResult> {
+  const args = {
+    prompt: input.prompt,
+    imageUrls: [input.heroUrl],
+    imageSize: "1024x1024" as const,
+    quality: "high" as const,
+    inputFidelity: "high" as const,
+  };
+  return getEditImageProvider() === "flux_kontext_pro"
+    ? falGenerateFluxKontextPro(args)
+    : falGenerateGptImageEdit(args);
+}
+
 /** RU описания стилей для подстановки в промпт. */
 const STYLE_RU_CLAUSES: Record<string, string> = {
   modern: "современный минимализм с элементами скандинавского",
@@ -403,6 +583,32 @@ const STYLE_RU_CLAUSES: Record<string, string> = {
   japandi: "современный минимализм с элементами Japandi",
   classic: "современная классика с натуральными материалами",
 };
+
+/**
+ * Усиленная привязка стиля (design §G, Property 9 / Requirement 2.9).
+ *
+ * Ведущий клаузис помещается в НАЧАЛО промпта, чтобы выбранный стиль был
+ * доминирующим сигналом для генератора, а не растворялся в хвосте описания.
+ */
+function styleLeadClause(style: string): string {
+  const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
+  return (
+    `Стиль интерьера — строго «${styleClause}». ` +
+    `Это главный приоритет: все материалы, цвета, мебель и декор должны явно ` +
+    `соответствовать стилю «${styleClause}».`
+  );
+}
+
+/**
+ * NEGATIVE_PROMPT-подобная защита от ухода в чужой стиль и артефакты
+ * (design §G). Подаётся в хвост промпта как «чего не должно быть». GPT-Image и
+ * FLUX Kontext не имеют отдельного negative-поля, поэтому формулируем как
+ * запрет внутри основного промпта.
+ */
+const NEGATIVE_PROMPT =
+  "Не смешивать с другими стилями интерьера, без чужеродных стилю элементов и " +
+  "декора, без искажения геометрии комнаты, без людей, без текста, без " +
+  "подписей, без логотипов и водяных знаков.";
 
 /**
  * 6 detail-crops: координаты zoom-кропов из конкретных views (1024×1024).
@@ -516,6 +722,14 @@ async function pingForDesign(slug: string, room: string, style: string): Promise
     `/dizajn/${roomSlug}`,
     `/dizajn/${style}`,
   ];
+
+  // On-demand ISR revalidation: страница `/dizajn/{slug}` кэшируется как
+  // статика (revalidate=3600), поэтому без явного revalidatePath свежий
+  // завершённый проект «залипал» бы в кэше как generating. Сбрасываем кэш
+  // самого проекта + агрегатов + sitemap сразу после завершения генерации.
+  // Fire-and-forget, ошибки не пробрасываются (resolves regardless).
+  void revalidateMarketplacePaths([...urls, "/sitemap.xml", "/dizajn"]);
+
   try {
     const sent = await pingIndexNow(urls);
     if (sent > 0) {
@@ -592,6 +806,19 @@ const STEP_REAL_ESTIMATE = "real_estimate";
 const STEP_COLOR_PALETTE = "color_palette";
 const STEP_AI_TEXT = "ai_text";
 const STEP_INFOGRAPHIC = "infographic";
+
+// ─── Flagship publication threshold (design §C, Property 4 / Requirement 2.4) ─
+//
+// Beyond the four required artifacts (Layout_JSON, Hero_Render, AI-text,
+// Real_Estimate), a project must collect a *coherent set of angle views* to be
+// worthy of publication as a flagship result. The required steps already
+// guarantee no empty project ships (Property 11 / 3.2), so "sparseness" is a
+// rare degenerate tail (e.g. the collage slice collapsed to a single duplicated
+// hero → `views.length == 1`). `FLAGSHIP_MIN_VIEWS` guards against exactly that
+// pathology: completed projects below this view count are routed through the
+// standard fail path (`is_public=false`) instead of being published as a
+// one-frame "flagship". Exposed via `__test__` so integration tests can vary it.
+const FLAGSHIP_MIN_VIEWS = 2;
 
 // ─── Progress milestones (Requirement 5.2, design.md FSM diagram) ───────────
 
@@ -711,13 +938,25 @@ async function markFailed(designId: number, errorMessage: string): Promise<void>
  * Pure: no I/O, no DB. Used both inline in `processDesign` and from the
  * worker-fsm property test (`__test__.assertCompletionInvariant`).
  *
- * @throws {RequiredStepFailedError} when any required artifact is missing.
+ * In addition to the four required artifacts, this guard enforces the
+ * `Flagship_Publication_Threshold` (design §C, Property 4 / Requirement 2.4):
+ * a completed project must carry at least `FLAGSHIP_MIN_VIEWS` rendered views.
+ * When `viewsCount` is omitted it defaults to `FLAGSHIP_MIN_VIEWS` so that the
+ * legacy 4-field call shape (`{ designId, layout, heroPublicUrl, content }`)
+ * keeps its original semantics and never fails on the threshold (preserves
+ * Property 11 / 3.2). Callers that know the actual view count pass it
+ * explicitly; below the threshold the project is routed through the standard
+ * fail path via `RequiredStepFailedError(STEP_ANGLE_RENDERS, …)`.
+ *
+ * @throws {RequiredStepFailedError} when any required artifact is missing, or
+ *   when the rendered view count is below `FLAGSHIP_MIN_VIEWS`.
  */
 function assertCompletionInvariant(state: {
   designId: number;
   layout: LayoutJson | null;
   heroPublicUrl: string | null;
   content: { h1?: string } | null;
+  viewsCount?: number;
 }): void {
   if (!state.layout) {
     throw new RequiredStepFailedError(
@@ -746,6 +985,25 @@ function assertCompletionInvariant(state: {
       new Error(
         `[design ${state.designId}] ai_text missing at completion `
         + "— invariant violated",
+      ),
+    );
+  }
+
+  // ── Flagship_Publication_Threshold (design §C, Property 4 / Req 2.4) ──
+  //
+  // All four required artifacts are present, but a flagship result also needs
+  // a coherent set of rendered views. A degenerate set (e.g. the collage slice
+  // collapsed to a single duplicated hero → `viewsCount == 1`) is not worthy of
+  // publication. When `viewsCount` is omitted it defaults to the threshold, so
+  // the legacy 4-field call shape never trips here (preserves 3.2 baseline).
+  const viewsCount = state.viewsCount ?? FLAGSHIP_MIN_VIEWS;
+  if (viewsCount < FLAGSHIP_MIN_VIEWS) {
+    throw new RequiredStepFailedError(
+      STEP_ANGLE_RENDERS,
+      "не удалось собрать связный набор ракурсов",
+      new Error(
+        `[design ${state.designId}] flagship publication threshold not met `
+        + `at completion — views=${viewsCount} < FLAGSHIP_MIN_VIEWS=${FLAGSHIP_MIN_VIEWS}`,
       ),
     );
   }
@@ -962,51 +1220,88 @@ async function processDesign(designId: number): Promise<void> {
     await setProgress(designId, STEP_LAYOUT_JSON, PROGRESS_LAYOUT_JSON);
     await enforceCostCeiling(designId);
 
-    // ── 2. Collage 2×2 Hero_Render (required, 1024×1024, 1 повтор). ───
+    // ── 2. Hero_Render (required, 1024×1024, 1 повтор) — design §F. ───
     //
-    // Одна генерация квадратного коллажа 2×2 (1024×1024) через
-    // `falGenerateGptImage`. Содержит 4 ракурса одной комнаты. Далее
-    // sharp разрезает на 4 квадранта 512×512 → resize 1024×1024 каждый.
-    // Идеальная identity preservation (одна палитра, одна мебель).
+    // Стратегия ракурсов выбирается из доступности identity-preserving
+    // edit-image (`chooseViewStrategy`). В primary-пути hero — это ОДИН
+    // нативный 1024 общий вид (view 1), служащий reference-источником для
+    // ракурсов 2..4 (шаг 3, edit-image, без нарезки/апскейла). В fallback-
+    // пути hero — коллаж 2×2, который шаг 3 режет на 4 квадранта 512→1024.
     // Hero также источник для `Color_Palette` (Requirement 12.1).
+    const viewStrategy = chooseViewStrategy({
+      editImageAvailable: isEditImageAvailable(),
+    });
+    // Стратегия hero по наличию пользовательского фото (design §G, Property 9).
+    // user-upload (есть `input_image_url`, проект НЕ seed) → hero генерится
+    // edit-image с фото пользователя как reference (`image_urls=[userPhotoUrl]`,
+    // `input_fidelity:"high"`), чтобы рендер заметно соответствовал исходной
+    // комнате. seed-проекты (без `anon_id`) сохраняют text2img-путь без
+    // изменений (Preservation §G).
+    const heroStrategy = chooseHeroGenerationStrategy({
+      userPhotoUrl: design.inputImageUrl ?? null,
+      isSeed: !design.anonId,
+      style: design.style,
+    });
+    // Когда hero строится из фото пользователя (edit-image) ИЛИ выбран
+    // identity-preserving primary-путь §F, hero — это нативный 1024 view 1
+    // (без нарезки/апскейла), служащий reference-источником для ракурсов 2..4.
+    const heroIsNativeView =
+      heroStrategy.usesUserPhoto || viewStrategy.kind === "primary";
     {
-      const heroPrompt = buildHeroCollagePrompt(
-        design.roomType,
-        design.style,
-        areaNum,
-        layout,
-      );
+      const heroPrompt = heroStrategy.usesUserPhoto
+        ? buildHeroFromPhotoPrompt(design.roomType, design.style, areaNum, layout)
+        : viewStrategy.kind === "primary"
+          ? buildHeroViewPrompt(design.roomType, design.style, areaNum, layout)
+          : buildHeroCollagePrompt(design.roomType, design.style, areaNum, layout);
+      const heroMode = heroStrategy.usesUserPhoto
+        ? "edit-image-high-native-1024-user-photo"
+        : viewStrategy.kind === "primary"
+          ? "text2img-high-native-1024"
+          : "text2img-high-collage-2x2";
+      const heroViewTag = heroIsNativeView ? "view_1_native" : "view_collage_2x2";
+      const heroModel = heroStrategy.usesUserPhoto
+        ? getEditImageProvider() === "flux_kontext_pro"
+          ? process.env.FAL_MODEL_FLUX_KONTEXT_PRO ?? "fal-ai/flux-pro/kontext"
+          : `${process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5"}/edit`
+        : process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5";
       let lastError: unknown = null;
       for (let attempt = 0; attempt <= SINGLE_RETRY; attempt++) {
         try {
           const res = await withCostGuard(
             designId,
             () =>
-              falGenerateGptImage({
-                prompt: heroPrompt,
-                imageSize: "1024x1024",
-                quality: "high",
-              }),
+              heroStrategy.usesUserPhoto
+                ? generateHeroFromUserPhoto({
+                    prompt: heroPrompt,
+                    userPhotoUrl: heroStrategy.imageUrls[0]!,
+                  })
+                : falGenerateGptImage({
+                    prompt: heroPrompt,
+                    imageSize: "1024x1024",
+                    quality: "high",
+                  }),
             (r) =>
               recordGenerationSuccess(designId, {
-                model: process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5",
+                model: heroModel,
                 prompt: heroPrompt,
                 roomType: design.roomType,
                 style: design.style,
                 costKopeks: r.costKopeks,
                 providerResponse: {
                   generationMs: r.generationMs,
-                  view: "view_collage_2x2",
-                  mode: "text2img-high-collage-2x2",
+                  view: heroViewTag,
+                  mode: heroMode,
                   imageSize: `${r.width}x${r.height}`,
                 },
               }),
           );
           heroResult = res;
           heroBuffer = await downloadImage(res.imageUrl);
-          // Сохраняем полный коллаж как view_1 (общий вид = top-left квадрант
-          // будет отдельно нарезан ниже, но коллаж сохраняется для дебага).
-          const heroR2Key = `dizajn/results/${designId}_collage.jpg`;
+          // Сохраняем hero как источник. В fallback это коллаж (нарезается
+          // ниже); в primary / user-photo это уже нативный view 1.
+          const heroR2Key = heroIsNativeView
+            ? `dizajn/results/${designId}_view_1.jpg`
+            : `dizajn/results/${designId}_collage.jpg`;
           heroPublicUrl = await uploadJpegToR2(bucketId, heroR2Key, heroBuffer);
           break;
         } catch (e) {
@@ -1032,13 +1327,100 @@ async function processDesign(designId: number): Promise<void> {
     await setProgress(designId, STEP_HERO_RENDER, PROGRESS_HERO_RENDER);
     await enforceCostCeiling(designId);
 
-    // ── 3. Collage 2×2 → 4 views через sharp (replaces panoramic crops). ─
+    // ── 3. Angle renders (optional) — design §F. ─────────────────────
     //
-    // Разрезаем коллаж 1024×1024 на 4 квадранта (512×512), каждый
-    // ресайзим до 1024×1024. Результат: 4 views (позиции 1..4).
-    // При сбое sharp (крайне маловероятно) — логируем и продолжаем
-    // с тем что есть (optional step, Requirement 14.2).
-    {
+    // PRIMARY (identity-preserving): view 1 = hero (нативный 1024). Ракурсы
+    // 2..4 генерятся edit-image провайдером (`getEditImageProvider()` →
+    // `falGenerateGptImageEdit` / `falGenerateFluxKontextPro`) с
+    // `image_urls=[heroUrl]`, `quality:"high"`, `input_fidelity:"high"` —
+    // нативное 1024 без апскейла, единый reference сохраняет identity. Каждый
+    // вызов под `withCostGuard`. Сбой ракурса 2..4 НЕ уводит проект в `failed`
+    // (optional step, Requirement 14.2 / 3.2).
+    //
+    // FALLBACK (edit-image недоступен): коллаж 1024×1024 режется на 4
+    // квадранта 512×512, каждый ресайзится (АПСКЕЙЛ) до 1024×1024 — прежнее
+    // поведение, только теперь как деградация.
+    if (heroIsNativeView) {
+      // view 1 — нативный hero.
+      await db.insert(designImagesTable).values({
+        designId,
+        type: "view_1",
+        url: heroPublicUrl,
+        width: 1024,
+        height: 1024,
+        sortOrder: 0,
+      });
+      views.push({ url: heroPublicUrl, label: VIEW_LABELS_4[0]!, position: 1 });
+      viewBuffers[0] = heroBuffer;
+
+      // Ракурсы 2..4 — identity-preserving edit-image (optional каждый).
+      for (let position = 2; position <= 4; position++) {
+        const anglePrompt = buildAngleEditPrompt(design.roomType, design.style, position);
+        let angleError: unknown = null;
+        for (let attempt = 0; attempt <= SINGLE_RETRY; attempt++) {
+          try {
+            const res = await withCostGuard(
+              designId,
+              () => generateAngleEdit({ prompt: anglePrompt, heroUrl: heroPublicUrl! }),
+              (r) =>
+                recordGenerationSuccess(designId, {
+                  model:
+                    getEditImageProvider() === "flux_kontext_pro"
+                      ? process.env.FAL_MODEL_FLUX_KONTEXT_PRO ?? "fal-ai/flux-pro/kontext"
+                      : `${process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5"}/edit`,
+                  prompt: anglePrompt,
+                  roomType: design.roomType,
+                  style: design.style,
+                  costKopeks: r.costKopeks,
+                  providerResponse: {
+                    generationMs: r.generationMs,
+                    view: `view_${position}`,
+                    mode: "edit-image-high-native-1024",
+                    imageSize: `${r.width}x${r.height}`,
+                  },
+                }),
+            );
+            const angleBuffer = await downloadImage(res.imageUrl);
+            const key = `dizajn/results/${designId}_view_${position}.jpg`;
+            const anglePublicUrl = await uploadJpegToR2(bucketId, key, angleBuffer);
+            await db.insert(designImagesTable).values({
+              designId,
+              type: `view_${position}`,
+              url: anglePublicUrl,
+              width: 1024,
+              height: 1024,
+              sortOrder: position - 1,
+            });
+            views.push({
+              url: anglePublicUrl,
+              label: VIEW_LABELS_4[position - 1]!,
+              position,
+            });
+            viewBuffers[position - 1] = angleBuffer;
+            angleError = null;
+            break;
+          } catch (e) {
+            if (e instanceof BudgetExceededError) throw e;
+            angleError = e;
+            if (attempt < SINGLE_RETRY) {
+              console.warn(
+                `[designWorker] design ${designId}: Angle_Render ${position} attempt `
+                + `${attempt + 1} failed: ${e instanceof Error ? e.message : String(e)} — retrying`,
+              );
+              continue;
+            }
+          }
+        }
+        if (angleError) {
+          // Optional: ракурс не собрался — продолжаем без него (без `failed`).
+          console.error(
+            `[designWorker] design ${designId}: Angle_Render ${position} failed `
+            + `(non-fatal, optional): ${angleError instanceof Error ? angleError.message : String(angleError)}`,
+          );
+        }
+      }
+    } else {
+      // FALLBACK: коллаж 2×2 → 4 квадранта 512→1024 (апскейл, прежний путь).
       try {
         const heroMeta = await sharp(heroBuffer).metadata();
         const W = heroMeta.width ?? 1024;
@@ -1058,7 +1440,7 @@ async function processDesign(designId: number): Promise<void> {
           const position = i + 1; // позиции 1..4
           const cropBuffer = await sharp(heroBuffer)
             .extract(quadrant)
-            .resize(1024, 1024, { fit: "cover" })
+            .resize(1024, 1024, { fit: "cover" }) // АПСКЕЙЛ 512→1024 (только fallback)
             .jpeg({ quality: 90, progressive: true })
             .toBuffer();
           const key = `dizajn/results/${designId}_view_${position}.jpg`;
@@ -1357,39 +1739,36 @@ async function processDesign(designId: number): Promise<void> {
 
     // ── 11. Infographic 2048×1366 (optional). ───────────────────────────
     //
-    // Использует первые 4 ракурса из `viewBuffers` (Hero + первые 3
-    // успешных Angle), 6 detail crops, и `topDownPlanPng` (если был
-    // отрисован). При недостатке ассетов слот не собираем — страница
-    // отрендерится без этого блока (Requirement 14.4).
+    // Адаптивная сборка под ФАКТИЧЕСКИЙ набор ассетов (design §B): реальные
+    // ракурсы из `viewBuffers` (без hero-дублей), изометрия `Buffer | null`,
+    // фактические `cropBuffers` (0..6), и `topDownPlanPng` (если отрисован).
+    // Минимальный гейт — ≥1 реальный ракурс + AI-текст; при его недостижении
+    // блок не собирается, страница рендерится без инфографики (Requirement
+    // 14.4). Шаг остаётся optional.
     try {
-      // Берём ровно 4 ракурса для top-row composer'а: Hero + первые 3
-      // успешно отрендеренных Angle. Если ракурсов меньше 4 — используем
-      // hero как fallback (placeholder), чтобы composer не падал.
-      const composerViews = pickFourViews(viewBuffers, heroBuffer);
-      if (
-        composerViews
-        && isometricBuffer
-        && cropBuffers.length === 6
-        && content
-      ) {
+      // Реальные ракурсы без hero-дублей: берём фактически отрендеренные
+      // буферы из `viewBuffers` (sparse — упавшие Angle оставляют дыры),
+      // сохраняя соответствие позиции → подпись. Capping до 4 для ROW1.
+      const realViewEntries = viewBuffers
+        .map((buf, i) => ({ buf, label: VIEW_LABELS_4[i] ?? `Ракурс ${i + 1}` }))
+        .filter((e): e is { buf: Buffer; label: string } => Boolean(e.buf))
+        .slice(0, 4);
+      const composerViews = realViewEntries.map((e) => e.buf);
+      const composerViewLabels = realViewEntries.map((e) => e.label);
+
+      // Минимальный гейт: ≥1 реальный ракурс + готовый AI-текст. Изометрия и
+      // кропы опциональны — раскладка адаптивна (design §B, Property 5). Шаг
+      // остаётся optional: при недостатке ассетов блок просто не собирается.
+      if (composerViews.length >= 1 && content) {
         const composerInput: InfographicInput = {
           views: composerViews,
           isometric: isometricBuffer,
-          detailCrops: [
-            cropBuffers[0]!,
-            cropBuffers[1]!,
-            cropBuffers[2]!,
-            cropBuffers[3]!,
-            cropBuffers[4]!,
-            cropBuffers[5]!,
-          ],
-          viewLabels: [
-            VIEW_LABELS_4[0]!,
-            VIEW_LABELS_4[1]!,
-            VIEW_LABELS_4[2]!,
-            VIEW_LABELS_4[3]!,
-          ],
-          cropLabels: pickSixCropLabels(design.roomType),
+          detailCrops: cropBuffers.slice(0, 6),
+          viewLabels: composerViewLabels,
+          cropLabels: pickSixCropLabels(design.roomType).slice(
+            0,
+            Math.min(6, cropBuffers.length),
+          ),
           topDownPlanPng,
           design: {
             roomType: design.roomType,
@@ -1443,6 +1822,7 @@ async function processDesign(designId: number): Promise<void> {
       layout,
       heroPublicUrl,
       content,
+      viewsCount: views.length,
     });
 
     // ── Финальный UPDATE: status=completed, result_image_url=Infographic ──
@@ -1538,21 +1918,6 @@ function layoutDim(
 }
 
 /**
- * Берёт ровно 4 ракурса для composer'а инфографики. Composer ожидает
- * `[Buffer, Buffer, Buffer, Buffer]` (Hero + 3 angle); если каких-то
- * Angle_Render не хватило, дублируем Hero в незанятые слоты как
- * placeholder (страница покажет 4 одинаковых верхних кадра, но не упадёт).
- */
-function pickFourViews(
-  viewBuffers: Buffer[],
-  heroBuffer: Buffer | null,
-): [Buffer, Buffer, Buffer, Buffer] | null {
-  if (!heroBuffer) return null;
-  const slot = (i: number): Buffer => viewBuffers[i] ?? heroBuffer;
-  return [slot(0), slot(1), slot(2), slot(3)];
-}
-
-/**
  * Подписи 6 detail-crops в зависимости от типа помещения. Дублирует логику
  * fallback'а из старого пайплайна, чтобы не вычитать `cropLabels` тяжёлым
  * `import.*` в нескольких местах.
@@ -1644,6 +2009,9 @@ export const __test__ = {
   ALL_STEPS,
   STEPS_REQUIRED,
   STEPS_OPTIONAL,
+  // Flagship publication threshold (design §C, Property 4 — integration test
+  // 12.3 varies this to drive the fail path vs. publish path).
+  FLAGSHIP_MIN_VIEWS,
   // Progress milestones (Requirement 5.2).
   PROGRESS_LAYOUT_JSON,
   PROGRESS_HERO_RENDER,

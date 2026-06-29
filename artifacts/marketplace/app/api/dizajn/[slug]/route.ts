@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
@@ -25,10 +25,16 @@ export async function GET(
     );
   }
 
+  // Пробрасываем anon-id (если есть) как query — api-server вернёт
+  // `isSavedByCurrentUser` для текущего гостя. Нужно, чтобы SaveButton
+  // мог догидрировать saved-state на ISR-кэшированной странице.
+  const anonId = req.cookies.get("kiro_anon_id")?.value;
+  const qs = anonId ? `?anonId=${encodeURIComponent(anonId)}` : "";
+
   let upstream: Response;
   try {
     upstream = await fetch(
-      `${internalApiBase().replace(/\/+$/, "")}/marketplace/dizajn/${encodeURIComponent(slug)}`,
+      `${internalApiBase().replace(/\/+$/, "")}/marketplace/dizajn/${encodeURIComponent(slug)}${qs}`,
       {
         method: "GET",
         headers: {
