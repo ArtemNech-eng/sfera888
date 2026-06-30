@@ -1272,13 +1272,24 @@ async function processDesign(designId: number): Promise<void> {
       editImageAvailable: isEditImageAvailable(),
     });
     // Стратегия hero по наличию пользовательского фото (design §G, Property 9).
-    // user-upload (есть `input_image_url`, проект НЕ seed) → hero генерится
-    // edit-image с фото пользователя как reference (`image_urls=[userPhotoUrl]`,
-    // `input_fidelity:"high"`), чтобы рендер заметно соответствовал исходной
-    // комнате. seed-проекты (без `anon_id`) сохраняют text2img-путь без
-    // изменений (Preservation §G).
+    // ВАЖНО: Fal фетчит `image_urls` на своей стороне и не умеет достать
+    // «голый» R2-ключ (`dizajn/uploads/{uuid}`) или относительный путь —
+    // нужен АБСОЛЮТНЫЙ публичный URL. Поэтому ключ из `input_image_url`
+    // превращаем в `${R2_PUBLIC_URL}/{key}`. Если публичный базовый URL не
+    // задан (или ключ нельзя сделать публичным) — деградируем в text2img,
+    // а не кормим Fal битым URL (иначе hero падает с «не удалось
+    // сгенерировать ракурс», как было у image-to-image заявок).
+    const r2PublicBaseForPhoto = (process.env.R2_PUBLIC_URL ?? "").replace(/\/+$/, "");
+    const rawUserPhotoKey = design.inputImageUrl ?? null;
+    const resolvedUserPhotoUrl = rawUserPhotoKey
+      ? rawUserPhotoKey.startsWith("http")
+        ? rawUserPhotoKey
+        : r2PublicBaseForPhoto
+          ? `${r2PublicBaseForPhoto}/${rawUserPhotoKey.replace(/^\/+/, "")}`
+          : null
+      : null;
     const heroStrategy = chooseHeroGenerationStrategy({
-      userPhotoUrl: design.inputImageUrl ?? null,
+      userPhotoUrl: resolvedUserPhotoUrl,
       isSeed: !design.anonId,
       style: design.style,
     });

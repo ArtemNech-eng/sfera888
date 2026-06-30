@@ -30,14 +30,15 @@ import type {
   DesignEstimateItem,
   DesignSolution,
 } from "@workspace/db";
+import { getDesignModel } from "./designConfig.js";
 
 const apiKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
 const baseURL = process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"];
-// Use shared model env (same gateway as dispatcherAI). Fallback chain:
-//   AI_INTEGRATIONS_DESIGN_MODEL → AI_INTEGRATIONS_OPENAI_MODEL → default.
-const model = process.env["AI_INTEGRATIONS_DESIGN_MODEL"]
-  ?? process.env["AI_INTEGRATIONS_OPENAI_MODEL"]
-  ?? "claude-opus-4-7";
+// Модель читается СВЕЖО через `getDesignModel()` (та же fallback-цепочка, что
+// в layoutPlanner): AI_INTEGRATIONS_DESIGN_MODEL → AI_INTEGRATIONS_OPENAI_MODEL
+// → надёжный дефолт со strict json_schema (`gpt-4o-2024-08-06`). Раньше здесь
+// был захардкоженный `claude-opus-4-7`, который НЕ поддерживает strict
+// structured outputs — при незаданной env это ломало шаг AI-текста.
 
 let openai: OpenAI | null = null;
 function client(): OpenAI {
@@ -291,7 +292,7 @@ export async function generateDesignContent(input: DesignContentInput): Promise<
   } as const;
 
   const completion = await client().chat.completions.create({
-    model,
+    model: getDesignModel(),
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },

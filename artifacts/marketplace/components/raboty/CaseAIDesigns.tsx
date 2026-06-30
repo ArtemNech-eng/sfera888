@@ -17,9 +17,10 @@ interface CaseAIDesignsProps {
 export function CaseAIDesigns({ roomSlug }: CaseAIDesignsProps) {
   const presets = STYLE_PRESETS.map((s) => ({
     ...s,
+    // Канонический адрес формы — `/dizajn` (маршрут `/dizajn/new` удалён).
     href: roomSlug
-      ? `/dizajn/new?style=${s.slug}&room=${roomSlug}`
-      : `/dizajn/new?style=${s.slug}`,
+      ? `/dizajn?style=${s.slug}&room=${roomSlug}`
+      : `/dizajn?style=${s.slug}`,
   }));
 
   return (
