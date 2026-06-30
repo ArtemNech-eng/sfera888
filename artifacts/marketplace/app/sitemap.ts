@@ -75,6 +75,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // /dizajn/{slug} — каждый AI-дизайн = SEO-страница. L1 контент-двигатель
   // из стратегии v3. Меняется редко после генерации (immutable result).
+  //
+  // `fetchPublishedDesignSlugs` уже отдаёт ТОЛЬКО завершённые проекты: backend
+  // фильтрует `status='completed'`, а на стороне marketplace ответ проходит
+  // через чистый предикат `selectSitemapDesignSlugs` (lib/dizajnIndexing.ts).
+  // Включение зависит от статуса, а не от доступности ассетов, поэтому
+  // завершённый проект остаётся в sitemap даже при временной недоступности
+  // `resultImageUrl` (Req 10.1, 10.2, 10.5; Property 14/17).
   const designs: MetadataRoute.Sitemap = designSlugs.map((slug) => ({
     url: `${base}/dizajn/${slug}`,
     lastModified: now,

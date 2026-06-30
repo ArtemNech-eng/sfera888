@@ -25,12 +25,12 @@ import { useCallback, useEffect, useState } from "react";
 
 export type QuotaTier = "anon" | "pro";
 
-const STORAGE_KEY = "sfera_design_quota_v1";
+export const STORAGE_KEY = "sfera_design_quota_v1";
 
-const FREE_ANON = 1;
-const PRO_GENERATIONS = 100;
+export const FREE_ANON = 1;
+export const PRO_GENERATIONS = 100;
 
-interface StoredQuota {
+export interface StoredQuota {
   used: number;
   tier: QuotaTier;
 }
@@ -64,6 +64,41 @@ function limitForTier(tier: QuotaTier): number {
     default:
       return FREE_ANON;
   }
+}
+
+/**
+ * Чистая арифметика остатка квоты. Никогда не отрицательна.
+ *
+ * Вынесена отдельно, чтобы быть детерминированной и тестируемой
+ * (property-тест полагается на `remaining = max(0, limit - used)`).
+ */
+export function computeRemaining(limit: number, used: number): number {
+  return Math.max(0, limit - used);
+}
+
+/**
+ * Чистый переход состояния квоты при успешном старте генерации (HTTP 202):
+ * увеличивает `used` ровно на единицу, тир не меняет.
+ *
+ * Вынесен отдельно от хука, чтобы быть детерминированным и тестируемым
+ * (Property 12: один успешный старт списывает ровно одну единицу квоты).
+ */
+export function recordUsage(state: StoredQuota): StoredQuota {
+  return { ...state, used: state.used + 1 };
+}
+
+/**
+ * Чистая проекция хранимого состояния в вычисляемые поля квоты
+ * (`limit`/`remaining`/`canGenerate`). Используется и хуком, и тестами.
+ */
+export function deriveQuota(state: StoredQuota): {
+  limit: number;
+  remaining: number;
+  canGenerate: boolean;
+} {
+  const limit = limitForTier(state.tier);
+  const remaining = computeRemaining(limit, state.used);
+  return { limit, remaining, canGenerate: remaining > 0 };
 }
 
 function readStored(): StoredQuota {
@@ -114,7 +149,7 @@ export function useGenerationQuota(): GenerationQuota {
 
   const record = useCallback(() => {
     setState((prev) => {
-      const next = { ...prev, used: prev.used + 1 };
+      const next = recordUsage(prev);
       writeStored(next);
       return next;
     });
@@ -137,15 +172,14 @@ export function useGenerationQuota(): GenerationQuota {
     setState(next);
   }, []);
 
-  const limit = limitForTier(state.tier);
-  const remaining = Math.max(0, limit - state.used);
+  const { limit, remaining, canGenerate } = deriveQuota(state);
 
   return {
     used: state.used,
     limit,
     remaining,
     tier: state.tier,
-    canGenerate: remaining > 0,
+    canGenerate,
     ready,
     record,
     upgradeTier,

@@ -31,6 +31,25 @@ export function publicUrl(): string {
   return optional("MARKETPLACE_PUBLIC_URL", "https://chestnye-mastera.ru");
 }
 
+/**
+ * ISR revalidation interval (in seconds) for the completed `/dizajn/{slug}`
+ * `Public_Page`. Configurable via `DIZAJN_ISR_REVALIDATE_SECONDS`; defaults to
+ * 3600 (one hour).
+ *
+ * A configured value of `0` means "fully static after the first generation":
+ * the page is cached indefinitely and only refreshed via the on-demand
+ * `revalidatePath` the worker fires on completion (see Requirement 9.5).
+ *
+ * Invalid, negative or non-numeric values fall back to the 3600 default.
+ */
+export function dizajnRevalidateSeconds(): number {
+  const raw = process.env.DIZAJN_ISR_REVALIDATE_SECONDS;
+  if (raw === undefined || raw.length === 0) return 3600;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 3600;
+  return Math.floor(n);
+}
+
 /** Canonical host (no scheme), used for canonicalising redirects. */
 export function canonicalHost(): string {
   return optional("MARKETPLACE_CANONICAL_HOST", "chestnye-mastera.ru");

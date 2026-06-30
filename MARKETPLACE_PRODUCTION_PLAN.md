@@ -5044,17 +5044,23 @@ Worker запоминает angle_code при сохранении в R2.
 
 #### URL-схема
 
+> **Статус реализации (ai-design-flagship):** канонический префикс — `/dizajn`,
+> а НЕ `/ai-design`. Точка входа (форма) консолидирована в единый адрес
+> `/dizajn`; старые URL `/ai-design` и `/hochu-takzhe` удалены. Реализованы:
+> `/dizajn/{slug}` (конкретный проект) и агрегаты `/dizajn/{room}-{style}`,
+> `/dizajn/{room}`, `/dizajn/{style}` (через дефис, не вложенными сегментами).
+> Programmatic-SEO уровни с `{areaBand}`/`{city}` ниже — пока план, не код.
+
 ```
-/ai-design/{slug}                           — конкретный AI-проект
-/ai-design/{room}                            — фид AI по комнате
-/ai-design/{room}/{style}                    — фид AI по комнате+стилю
-/ai-design/{room}/{style}/{areaBand}         — programmatic SEO (когда есть ≥5 проектов)
-/ai-design/{room}/{style}/{city}             — programmatic SEO для топ-городов
+/dizajn/{slug}                               — конкретный AI-проект (реализовано)
+/dizajn/{room}                               — фид AI по комнате (реализовано)
+/dizajn/{room}-{style}                       — фид AI по комнате+стилю (реализовано)
+/dizajn/{style}                              — фид AI по стилю (реализовано)
+/dizajn/{room}-{style}-{areaBand}            — programmatic SEO (план, когда есть ≥5 проектов)
+/dizajn/{room}-{style}-{city}                — programmatic SEO для топ-городов (план)
 ```
 
-Slug-формат: `{style}-{room}-{area}m-{city}-{userHash4}`
-
-Например: `/ai-design/japandi-kvartira-58m-krasnodar-x7f3`
+Slug-формат: `{room}-{style}-{nanoid}` (например `spalnya-modern-x7k9p2ab`).
 
 #### Расширение схемы `designs`
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { DesignFullDTO } from "../../lib/types";
+import { shouldContinuePolling } from "./shouldContinuePolling";
 
 /**
  * Polling state для status='generating'. Каждые 2с пуллит GET /api/dizajn/[slug],
@@ -21,7 +22,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
   const [pollCount, setPollCount] = useState(0);
 
   useEffect(() => {
-    if (design.status !== "generating") return;
+    if (!shouldContinuePolling(design.status)) return;
     if (pollCount >= 60) return; // 60 polls × 2s = 120s timeout
 
     const timer = setTimeout(async () => {

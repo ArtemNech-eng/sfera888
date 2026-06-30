@@ -30,7 +30,25 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { createCostBudget } from "../../src/lib/designCostGuard.js";
+
+// ─── Fake env BEFORE any production import ───────────────────────────────────
+//
+// `designCostGuard.ts` transitively imports `@workspace/db`, which instantiates
+// a `pg.Pool` from `DATABASE_URL` at module-load time (and `objectStorage.ts`
+// builds an S3 client from the R2_* vars). Neither connects eagerly, but their
+// presence checks throw without env. Static `import` statements are hoisted and
+// would run before any env assignment, so the module is loaded via a dynamic
+// `import` *after* the env is seeded (mirrors the flagship dizajn tests).
+process.env.DATABASE_URL =
+  process.env.DATABASE_URL ?? "postgres://fake:fake@localhost:5432/fake";
+process.env.R2_ENDPOINT = process.env.R2_ENDPOINT ?? "https://fake.r2.dev";
+process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "fake-key";
+process.env.R2_SECRET_ACCESS_KEY =
+  process.env.R2_SECRET_ACCESS_KEY ?? "fake-secret";
+process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID =
+  process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID ?? "fake-bucket";
+
+const { createCostBudget } = await import("../../src/lib/designCostGuard.js");
 
 // ─── Generators ──────────────────────────────────────────────────────────────
 

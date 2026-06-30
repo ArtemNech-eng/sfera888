@@ -137,7 +137,11 @@ const generateLayer = dizajnRouter.stack.find(
     l.route?.path === "/generate" && l.route.methods?.post === true,
 );
 assert.ok(generateLayer?.route, "POST /generate handler not found in router");
-const handleGenerate = generateLayer.route!.stack[0]!.handle;
+// Route layer stack is [multer upload.single("image"), asyncHandler]; the real
+// request handler is the terminal entry. Driving it directly bypasses multer
+// (irrelevant: captcha rejects before any photo handling).
+const layerStack = generateLayer.route!.stack;
+const handleGenerate = layerStack[layerStack.length - 1]!.handle;
 
 // ─── Mock req/res helpers ───────────────────────────────────────────────────
 

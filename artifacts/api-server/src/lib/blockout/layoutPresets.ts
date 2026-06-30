@@ -341,7 +341,12 @@ export const LAYOUT_PRESETS: Partial<Record<RoomType, LayoutPreset>> = {
  *   сообщение содержит имя запрошенного типа (Requirement 3.5 / Property 9).
  */
 export function selectLayoutPreset(roomType: RoomType): LayoutPreset {
-  const preset = LAYOUT_PRESETS[roomType];
+  // `Object.hasOwn` гарантирует, что мы не подхватим унаследованные члены
+  // `Object.prototype` (например, при `roomType === "valueOf"`/"toString"),
+  // которые иначе вернулись бы как truthy и обошли бросок ошибки (Req 3.5).
+  const preset = Object.hasOwn(LAYOUT_PRESETS, roomType)
+    ? LAYOUT_PRESETS[roomType]
+    : undefined;
   if (!preset) {
     throw new Error(
       `No Layout_Preset defined for room type "${roomType}"`,

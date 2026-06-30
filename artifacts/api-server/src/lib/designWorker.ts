@@ -272,10 +272,11 @@ function buildIsometricPrompt(room: string, style: string, area: number | null):
  *
  * Строится из **Layout_JSON** чтобы мебель в кадре соответствовала плану.
  */
-function buildHeroCollagePrompt(room: string, style: string, area: number | null, layout?: LayoutJson | null): string {
+function buildHeroCollagePrompt(room: string, style: string, area: number | null, layout?: LayoutJson | null, palette?: string | null): string {
   const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
   const areaPart = area ? `, площадь ${area} м²` : "";
   const roomNoun = roomLabel(room);
+  const palClause = paletteClause(palette);
 
   // Подписи к 4 квадрантам зависят от типа комнаты
   const quadrantDescriptions = COLLAGE_QUADRANT_DESCRIPTIONS[room] ?? COLLAGE_QUADRANT_DESCRIPTIONS.bedroom!;
@@ -312,6 +313,7 @@ function buildHeroCollagePrompt(room: string, style: string, area: number | null
     return [
       `Коллаж-сетка 2×2 из четырёх интерьерных фотографий ОДНОЙ И ТОЙ ЖЕ ${roomNoun}${areaPart} в стиле «${styleClause}».`,
       styleLeadClause(style),
+      ...(palClause ? [palClause] : []),
       `Все 4 кадра — одна комната с одинаковой отделкой, одной цветовой палитрой и одной мебелью.`,
       `Комната ${roomW}×${roomL} см. ${doorDesc} ${windowDesc}`,
       `Мебель в комнате: ${furnitureDescriptions.join(", ")}.`,
@@ -331,6 +333,7 @@ function buildHeroCollagePrompt(room: string, style: string, area: number | null
   return [
     `Коллаж-сетка 2×2 из четырёх интерьерных фотографий ОДНОЙ И ТОЙ ЖЕ ${roomNoun}${areaPart} в стиле «${styleClause}».`,
     styleLeadClause(style),
+    ...(palClause ? [palClause] : []),
     `Все 4 кадра — одна комната с одинаковой отделкой, одной цветовой палитрой и одной мебелью.`,
     ``,
     `Верхний-левый кадр: ${quadrantDescriptions[0]}.`,
@@ -417,10 +420,12 @@ function buildHeroViewPrompt(
   style: string,
   area: number | null,
   layout?: LayoutJson | null,
+  palette?: string | null,
 ): string {
   const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
   const areaPart = area ? `, площадь ${area} м²` : "";
   const roomNoun = roomLabel(room);
+  const palClause = paletteClause(palette);
   const quadrantDescriptions =
     COLLAGE_QUADRANT_DESCRIPTIONS[room] ?? COLLAGE_QUADRANT_DESCRIPTIONS.bedroom!;
   const overallView = quadrantDescriptions[0];
@@ -449,6 +454,7 @@ function buildHeroViewPrompt(
     return [
       `Интерьерная фотография ${roomNoun}${areaPart} в стиле «${styleClause}»: ${overallView}.`,
       styleLeadClause(style),
+      ...(palClause ? [palClause] : []),
       `Комната ${layout.room.widthCm}×${layout.room.lengthCm} см. ${doorDesc} ${windowDesc}`,
       `Мебель в комнате: ${furnitureDescriptions.join(", ")}.`,
       `Фотореализм, интерьерная съёмка, тёплое мягкое освещение, натуральное дерево, светлые стены, без людей, без текста, без водяных знаков.`,
@@ -459,6 +465,7 @@ function buildHeroViewPrompt(
   return [
     `Интерьерная фотография ${roomNoun}${areaPart} в стиле «${styleClause}»: ${overallView}.`,
     styleLeadClause(style),
+    ...(palClause ? [palClause] : []),
     `Фотореализм, интерьерная съёмка, тёплое мягкое освещение, натуральное дерево, светлые стены, без людей, без текста, без водяных знаков.`,
     NEGATIVE_PROMPT,
   ].join("\n");
@@ -493,15 +500,20 @@ function buildHeroFromPhotoPrompt(
   style: string,
   area: number | null,
   layout?: LayoutJson | null,
+  palette?: string | null,
 ): string {
   const styleClause = STYLE_RU_CLAUSES[style] ?? `современный ${style}`;
   const areaPart = area ? `, площадь ${area} м²` : "";
   const roomNoun = roomLabel(room);
+  const palClause = paletteClause(palette);
   const lines = [
     `Это фото реальной ${roomNoun}${areaPart} пользователя. Переоформи ЭТУ ЖЕ комнату, сохранив её геометрию, окна, дверь и пропорции из reference-фото.`,
     styleLeadClause(style),
     `Сделай дизайн-рендер этой комнаты строго в стиле «${styleClause}».`,
   ];
+  if (palClause) {
+    lines.push(palClause);
+  }
   if (layout && layout.furniture.length > 0) {
     const furnitureDescriptions = layout.furniture.map((f) => {
       const typeLabels: Record<string, string> = {
@@ -597,6 +609,34 @@ function styleLeadClause(style: string): string {
     `Это главный приоритет: все материалы, цвета, мебель и декор должны явно ` +
     `соответствовать стилю «${styleClause}».`
   );
+}
+
+/**
+ * RU описания входных палитр (AI_Design_Flagship). Ключи соответствуют enum
+ * `PALETTES` из `dizajnFormSchema` и колонке `designs.palette`.
+ */
+const PALETTE_RU_CLAUSES: Record<string, string> = {
+  warm_neutral: "тёплые нейтральные тона (бежевый, кремовый, мягкий коричневый)",
+  white_wood: "сочетание белого и натурального светлого дерева",
+  cool_gray: "холодная серая гамма",
+  beige_sand: "бежево-песочная палитра",
+  green_sage: "приглушённые зелёные тона (шалфей)",
+  blue_calm: "спокойные синие тона",
+};
+
+/**
+ * Опциональный клаузис цветовой палитры (AI_Design_Flagship, Requirement
+ * 3.3/3.4). `designs.palette` — входной параметр, выбранный пользователем в
+ * `Flagship_Form`; nullable для обратной совместимости. Возвращает ПУСТУЮ
+ * строку, когда палитра не задана, чтобы промпты для записей без палитры
+ * оставались идентичными прежним. Это чисто аддитивное дополнение к
+ * построению промпта — контракт выбора стратегии/геометрии/cost guard не
+ * затрагивается.
+ */
+function paletteClause(palette: string | null | undefined): string {
+  if (!palette) return "";
+  const desc = PALETTE_RU_CLAUSES[palette] ?? palette;
+  return `Цветовая палитра интерьера — ${desc}. Используй эти цвета для отделки, мебели и декора.`;
 }
 
 /**
@@ -1249,10 +1289,10 @@ async function processDesign(designId: number): Promise<void> {
       heroStrategy.usesUserPhoto || viewStrategy.kind === "primary";
     {
       const heroPrompt = heroStrategy.usesUserPhoto
-        ? buildHeroFromPhotoPrompt(design.roomType, design.style, areaNum, layout)
+        ? buildHeroFromPhotoPrompt(design.roomType, design.style, areaNum, layout, design.palette)
         : viewStrategy.kind === "primary"
-          ? buildHeroViewPrompt(design.roomType, design.style, areaNum, layout)
-          : buildHeroCollagePrompt(design.roomType, design.style, areaNum, layout);
+          ? buildHeroViewPrompt(design.roomType, design.style, areaNum, layout, design.palette)
+          : buildHeroCollagePrompt(design.roomType, design.style, areaNum, layout, design.palette);
       const heroMode = heroStrategy.usesUserPhoto
         ? "edit-image-high-native-1024-user-photo"
         : viewStrategy.kind === "primary"

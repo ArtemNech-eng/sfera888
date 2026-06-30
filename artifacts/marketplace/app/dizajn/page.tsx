@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { fetchCities, fetchRecentDesigns } from "../../lib/api";
+import { fetchRecentDesigns } from "../../lib/api";
 import { publicUrl } from "../../lib/env";
-import { UploadForm } from "../../components/dizajn/UploadForm";
+import { FlagshipForm } from "./_FlagshipForm";
 
 /**
  * `/dizajn` — landing AI-дизайнера с upload-формой прямо в hero.
@@ -26,10 +26,16 @@ export function generateMetadata(): Metadata {
 }
 
 export default async function DizajnLandingPage() {
-  const [cities, recentDesigns] = await Promise.all([
-    fetchCities().catch(() => []),
-    fetchRecentDesigns({ limit: 8 }).catch(() => []),
-  ]);
+  const recentDesigns = await fetchRecentDesigns({ limit: 8 }).catch(() => []);
+
+  // `NEXT_PUBLIC_*` доступен и на сервере, и в клиентском бандле — пробрасываем
+  // его в `Flagship_Form` как prop, чтобы клиентский компонент не обращался к
+  // `process.env` напрямую (упрощает SSR-тесты и чтение конфига).
+  const turnstileSiteKey =
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ??
+    // Cloudflare Turnstile dev/test siteKey — всегда выдаёт valid токен,
+    // используется только когда production env не задан (локальная разработка).
+    "1x00000000000000000000AA";
 
   return (
     <>
@@ -53,7 +59,7 @@ export default async function DizajnLandingPage() {
       <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-20">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy sm:p-8 lg:p-10">
-            <UploadForm cities={cities} />
+            <FlagshipForm turnstileSiteKey={turnstileSiteKey} />
           </div>
         </div>
       </section>

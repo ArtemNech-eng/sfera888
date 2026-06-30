@@ -351,7 +351,7 @@ function EmptyState() {
       </p>
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <Link
-          href="/ai-design"
+          href="/dizajn"
           className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-cta)] px-6 text-sm font-semibold text-[var(--color-on-cta)] shadow-cozy transition hover:bg-[var(--color-cta-hover)]"
         >
           Создать дизайн

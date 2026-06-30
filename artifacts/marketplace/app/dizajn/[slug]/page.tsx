@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { fetchDesign, fetchRecentDesigns } from "../../../lib/api";
-import { publicUrl } from "../../../lib/env";
+import { publicUrl, dizajnRevalidateSeconds } from "../../../lib/env";
 import { DesignBoard } from "../../../components/dizajn/DesignBoard";
 import { DesignBoardPending } from "../../../components/dizajn/DesignBoardPending";
 import { DesignsAggregate } from "../../../components/dizajn/DesignsAggregate";
+import { parseRoute } from "./parseRoute";
+import { buildDesignJsonLd } from "./buildDesignJsonLd";
+import { isIndexableDesignStatus, NOINDEX_ROBOTS } from "../../../lib/dizajnIndexing";
 
 /**
  * `/dizajn/[slug]` — двойного назначения роут (Iter 1 + Iter 2):
@@ -15,13 +18,17 @@ import { DesignsAggregate } from "../../../components/dizajn/DesignsAggregate";
  *
  * 2) **Aggregate combo** (`{room}-{style}`, `{room}` или `{style}`)
  *    — рендер DesignsAggregate с grid'ом дизайнов в этой категории.
- *    Pre-defined SEO-страницы для всех 36 комбинаций room×style + 12
- *    одиночных (6 rooms + 6 styles). Эти URL живут в sitemap.
+ *    Pre-defined SEO-страницы для всех 49 комбинаций room×style (7×7) + 14
+ *    одиночных (7 rooms + 7 styles). Эти URL живут в sitemap.
  *
  * Disambiguation: full slug заканчивается на 8-символьный nanoid (lowercase
  * alphanumeric). Если последний segment не такой — значит это aggregate.
  *
  * Кэширование (ISR): страница статически кэшируется на `revalidate` секунд.
+ * Интервал ревалидации конфигурируется через env `DIZAJN_ISR_REVALIDATE_SECONDS`
+ * (по умолчанию 3600). Значение `0` ⇒ страница становится полностью статической
+ * после первой генерации (`revalidate = false`, кэш бессрочный), а обновление
+ * приходит только через on-demand `revalidatePath` из воркера (Req 9.4/9.5).
  * Персональные данные (save-state, owner-бейдж) НЕ рендерятся на сервере —
  * они догидрируются на клиенте (DesignBoard читает cookie для owner-бейджа,
  * SaveButton дотягивает saved-state по /api/dizajn/[slug]). Завершение
@@ -29,105 +36,24 @@ import { DesignsAggregate } from "../../../components/dizajn/DesignsAggregate";
  * (lib/designWorker.ts), поэтому "generating" не залипает.
  */
 
-export const revalidate = 3600;
+// Сконфигурированный интервал ревалидации (сек). `0` ⇒ полностью статическая.
+const CONFIGURED_REVALIDATE_SECONDS = dizajnRevalidateSeconds();
 
-const DESIGN_REVALIDATE_SECONDS = 3600;
+// Route-segment ISR config (читается Next.js на уровне модуля). При значении
+// `0` экспортируем `false` — Next кэширует страницу бессрочно (полностью
+// статическая после первой генерации), иначе ревалидируем каждые N секунд.
+export const revalidate =
+  CONFIGURED_REVALIDATE_SECONDS === 0 ? false : CONFIGURED_REVALIDATE_SECONDS;
+
+// TTL кэша data-fetch'а дизайна. В полностью статическом режиме (config `0`)
+// данные кэшируются практически бессрочно (1 год), чтобы fetch не переводил
+// статический роут в динамический; обновление приходит через revalidatePath.
+const DESIGN_REVALIDATE_SECONDS =
+  CONFIGURED_REVALIDATE_SECONDS === 0 ? 31_536_000 : CONFIGURED_REVALIDATE_SECONDS;
 
 interface RouteParams {
   slug: string;
 }
-
-const VALID_ROOMS = new Set([
-  "bathroom",
-  "kitchen",
-  "living-room",
-  "living_room",
-  "bedroom",
-  "hallway",
-  "nursery",
-  "apartment",
-]);
-const VALID_STYLES = new Set([
-  "modern",
-  "scandinavian",
-  "loft",
-  "minimalism",
-  "neoclassic",
-  "japandi",
-  "classic",
-]);
-
-interface ParsedRoute {
-  kind: "design" | "aggregate";
-  /** for design: full slug. */
-  slug?: string;
-  /** for aggregate: matched room/style enums, normalized (`living_room`). */
-  room?: string;
-  style?: string;
-}
-
-function parseRoute(combo: string): ParsedRoute | null {
-  const segments = combo.split("-");
-  const last = segments[segments.length - 1] ?? "";
-  // Full design slug: ends with 6-8 char alphanumeric nanoid.
-  if (segments.length >= 3 && /^[a-z0-9]{6,8}$/.test(last)) {
-    return { kind: "design", slug: combo };
-  }
-
-  // Aggregate combo. Try to match room + style (both, or one).
-  // Room may be single segment (`bathroom`) or two segments (`living-room`).
-  // Style is always single segment.
-  let matchedRoom: string | undefined;
-  let matchedStyle: string | undefined;
-
-  // Variant A: 2 segments — `{room}-{style}` or `{style1}-{style2}` (no second style possible, one is always room/style).
-  // Variant B: 3 segments — `{room2-segments}-{style}` (e.g. living-room-modern).
-  // Variant C: 1 segment — only room or only style.
-
-  if (segments.length === 1) {
-    const s = segments[0]!;
-    if (VALID_ROOMS.has(s)) matchedRoom = normalizeRoom(s);
-    else if (VALID_STYLES.has(s)) matchedStyle = s;
-  } else if (segments.length === 2) {
-    const [a, b] = segments;
-    if (VALID_ROOMS.has(a!) && VALID_STYLES.has(b!)) {
-      matchedRoom = normalizeRoom(a!);
-      matchedStyle = b!;
-    } else if (VALID_STYLES.has(a!) && VALID_ROOMS.has(b!)) {
-      matchedRoom = normalizeRoom(b!);
-      matchedStyle = a!;
-    } else if (VALID_ROOMS.has(`${a}-${b}`)) {
-      matchedRoom = normalizeRoom(`${a}-${b}`);
-    }
-  } else if (segments.length === 3) {
-    // living-room-modern
-    const room2 = `${segments[0]}-${segments[1]}`;
-    const stylePart = segments[2]!;
-    if (VALID_ROOMS.has(room2) && VALID_STYLES.has(stylePart)) {
-      matchedRoom = normalizeRoom(room2);
-      matchedStyle = stylePart;
-    }
-  }
-
-  if (matchedRoom || matchedStyle) {
-    return { kind: "aggregate", room: matchedRoom, style: matchedStyle };
-  }
-  return null;
-}
-
-function normalizeRoom(room: string): string {
-  return room.replace(/-/g, "_");
-}
-
-const ROOM_BREADCRUMB: Record<string, string> = {
-  bathroom: "Ванная",
-  kitchen: "Кухня",
-  living_room: "Гостиная",
-  bedroom: "Спальня",
-  hallway: "Прихожая",
-  apartment: "Квартира",
-  nursery: "Детская",
-};
 
 // ── Metadata ────────────────────────────────────────────────────────────────
 
@@ -137,16 +63,16 @@ export async function generateMetadata(
   const { slug } = await params;
   const parsed = parseRoute(slug);
   if (!parsed) {
-    return { robots: { index: false, follow: false } };
+    return { robots: NOINDEX_ROBOTS };
   }
 
   if (parsed.kind === "design" && parsed.slug) {
     const design = await fetchDesign(parsed.slug, null, { revalidate: DESIGN_REVALIDATE_SECONDS });
-    if (!design) return { robots: { index: false, follow: false } };
-    if (design.status !== "completed") {
+    if (!design) return { robots: NOINDEX_ROBOTS };
+    if (!isIndexableDesignStatus(design.status)) {
       return {
         title: { absolute: "Создаём дизайн-проект…" },
-        robots: { index: false, follow: false },
+        robots: NOINDEX_ROBOTS,
       };
     }
     return {
@@ -274,101 +200,8 @@ export default async function DesignSlugPage(
     }
 
     const baseUrl = publicUrl();
-    const pageUrl = `${baseUrl}/dizajn/${slug}`;
-    const aggregateRoomStyleUrl = `${baseUrl}/dizajn/${design.roomType.replace(/_/g, "-")}-${design.style}`;
 
-    const jsonLd = design.status === "completed" && design.resultImageUrl
-      ? {
-          "@context": "https://schema.org",
-          "@graph": [
-            {
-              "@type": "Article",
-              "@id": `${pageUrl}#article`,
-              mainEntityOfPage: pageUrl,
-              headline: design.h1,
-              description: design.description ?? design.seoDescription,
-              image: [
-                design.resultImageUrl,
-                ...(design.views ?? []).map((v) => v.url),
-              ],
-              author: { "@type": "Organization", name: "Честные мастера", url: baseUrl },
-              publisher: {
-                "@type": "Organization",
-                name: "Честные мастера",
-                url: baseUrl,
-              },
-              datePublished: design.createdAt,
-              dateModified: design.createdAt,
-              about: {
-                "@type": "Thing",
-                name: design.h1,
-              },
-              keywords: [design.h1, design.style, design.roomType, design.cityName].filter(Boolean).join(", "),
-            },
-            {
-              "@type": "BreadcrumbList",
-              "@id": `${pageUrl}#breadcrumb`,
-              itemListElement: [
-                {
-                  "@type": "ListItem",
-                  position: 1,
-                  name: "Главная",
-                  item: baseUrl,
-                },
-                {
-                  "@type": "ListItem",
-                  position: 2,
-                  name: "AI-дизайн",
-                  item: `${baseUrl}/dizajn`,
-                },
-                {
-                  "@type": "ListItem",
-                  position: 3,
-                  name: ROOM_BREADCRUMB[design.roomType] ?? "Категория",
-                  item: aggregateRoomStyleUrl,
-                },
-                {
-                  "@type": "ListItem",
-                  position: 4,
-                  name: design.h1 ?? `Проект №${design.id}`,
-                  item: pageUrl,
-                },
-              ],
-            },
-            ...(design.budget
-              ? [
-                  {
-                    "@type": "Service",
-                    "@id": `${pageUrl}#service`,
-                    name: `Реализация дизайн-проекта: ${design.h1}`,
-                    serviceType: "Ремонт и отделка",
-                    areaServed: design.cityName ?? undefined,
-                    provider: {
-                      "@type": "Organization",
-                      name: "Честные мастера",
-                      url: baseUrl,
-                    },
-                    offers: {
-                      "@type": "Offer",
-                      priceCurrency: "RUB",
-                      price: design.budget,
-                      availability: "https://schema.org/InStock",
-                      url: pageUrl,
-                    },
-                  },
-                ]
-              : []),
-            ...(design.views ?? []).map((v, i) => ({
-              "@type": "ImageObject",
-              "@id": `${pageUrl}#image-${i + 1}`,
-              contentUrl: v.url,
-              caption: v.label,
-              width: 1024,
-              height: 768,
-            })),
-          ],
-        }
-      : null;
+    const jsonLd = buildDesignJsonLd(design, baseUrl, slug);
 
     return (
       <>

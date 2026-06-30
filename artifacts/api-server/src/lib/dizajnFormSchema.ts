@@ -17,6 +17,7 @@
  */
 
 import { z } from "zod";
+import { checkMinArea } from "./geometricValidator.js";
 
 // ── enums ───────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,200 @@ export function validateDesignForm(input: unknown): DesignFormValidationResult {
 
   if (parsed.success && violations.length === 0) {
     return { ok: true, data: parsed.data };
+  }
+
+  return { ok: false, violations };
+}
+
+// ── палитра (AI_Design_Flagship, Requirement 2.4) ────────────────────────────
+
+/**
+ * Допустимые цветовые палитры `Flagship_Form` (входной параметр пользователя).
+ * Хранится отдельной nullable-колонкой `designs.palette` (см. design.md → Data
+ * Models). Значение вне whitelist отклоняется с кодом `invalid_palette`.
+ */
+export const PALETTES = [
+  "warm_neutral",
+  "white_wood",
+  "cool_gray",
+  "beige_sand",
+  "green_sage",
+  "blue_calm",
+] as const;
+
+export type Palette = (typeof PALETTES)[number];
+
+// ── фото (AI_Design_Flagship, Requirement 5.5 / 5.6) ─────────────────────────
+
+/** MIME-типы, допустимые для `Room_Photo` (только JPG/PNG). */
+export const ALLOWED_PHOTO_MIME_TYPES = ["image/jpeg", "image/png"] as const;
+
+/** Максимальный размер `Room_Photo` — 8 МБ (Requirement 5.6). */
+export const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Минимальные метаданные загруженного `Room_Photo`, достаточные для валидации.
+ * На backend заполняется из `req.file` (`mimetype` → `mime`, `size` → `sizeBytes`).
+ */
+export interface PhotoMeta {
+  mime: string;
+  sizeBytes: number;
+}
+
+// ── машино-читаемые коды нарушений флагмана ──────────────────────────────────
+
+/** Производная площадь комнаты меньше минимально допустимой (Requirement 5.4). */
+export const ROOM_TOO_SMALL_CODE = "room_too_small" as const;
+/** Тип фото отличен от JPG/PNG (Requirement 5.5). */
+export const INVALID_PHOTO_TYPE_CODE = "invalid_photo_type" as const;
+/** Размер фото превышает 8 МБ (Requirement 5.6). */
+export const PHOTO_TOO_LARGE_CODE = "photo_too_large" as const;
+/** Значение `palette` вне whitelist (Requirement 2.4). */
+export const INVALID_PALETTE_CODE = "invalid_palette" as const;
+
+// ── агрегирующий валидатор запроса генерации ─────────────────────────────────
+
+export type GenerateRequestValidationResult =
+  | { ok: true; data: DesignFormInput & { palette: Palette } }
+  | { ok: false; violations: DesignFormViolation[] };
+
+/** Числовые поля, приходящие из `multipart/form-data` строками. */
+const NUMERIC_MULTIPART_FIELDS = [
+  "widthCm",
+  "lengthCm",
+  "heightCm",
+  "budget",
+  "cityId",
+] as const;
+
+/**
+ * Коэрсия одного multipart-строкового поля в число.
+ * - пустую строку оставляем как есть (Zod сообщит `invalid_type`);
+ * - нечисловую строку оставляем как есть (Zod сообщит `invalid_type`);
+ * - корректное числовое представление → `number`.
+ */
+function coerceNumericField(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (trimmed === "") return value;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : value;
+}
+
+/**
+ * Возвращает поверхностную копию тела с коэрсией числовых multipart-полей.
+ * `cityId` опционален: пустую строку трактуем как отсутствие поля, чтобы
+ * `z.number().optional()` не выдавал `invalid_type` на не выбранном городе.
+ */
+function coerceMultipartBody(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body };
+  for (const key of NUMERIC_MULTIPART_FIELDS) {
+    if (!(key in out)) continue;
+    if (key === "cityId" && typeof out[key] === "string" && out[key].trim() === "") {
+      delete out[key];
+      continue;
+    }
+    out[key] = coerceNumericField(out[key]);
+  }
+  return out;
+}
+
+/**
+ * Единый агрегирующий валидатор тела `POST /api/marketplace/dizajn/generate`
+ * для AI_Design_Flagship. Собирает **все** нарушения формы, палитры и фото в
+ * один список (Requirement 5.7), не останавливаясь на первом.
+ *
+ * Порядок и состав проверок (design.md → «Generation validation module»):
+ *  1. коэрсия multipart-строк в числа (`widthCm/lengthCm/heightCm/budget/cityId`);
+ *  2. `validateDesignForm` — whitelist `roomType`/`style`, диапазоны размеров и
+ *     бюджета (50k..5M), MVP-замок (`mvp_room_locked`);
+ *  3. валидация `palette` по whitelist (`invalid_palette`);
+ *  4. валидация фото: MIME ∈ {image/jpeg, image/png} (`invalid_photo_type`),
+ *     размер ≤ 8 МБ (`photo_too_large`);
+ *  5. `checkMinArea(roomType, widthCm, lengthCm)` → `room_too_small`
+ *     (только когда `roomType`/размеры уже корректны, иначе нарушение уже
+ *     сообщено Zod как `invalid_enum_value`/`too_small`/`too_big`/`invalid_type`).
+ *
+ * @param body  тело запроса (после multer текстовые поля — строки)
+ * @param photo метаданные загруженного `Room_Photo` либо `null`, если фото нет
+ */
+export function validateGenerateRequest(
+  body: unknown,
+  photo: PhotoMeta | null,
+): GenerateRequestValidationResult {
+  const isObject = typeof body === "object" && body !== null;
+  const coerced: unknown = isObject
+    ? coerceMultipartBody(body as Record<string, unknown>)
+    : body;
+  const coercedRecord: Record<string, unknown> = isObject
+    ? (coerced as Record<string, unknown>)
+    : {};
+
+  const violations: DesignFormViolation[] = [];
+
+  // 1–2. Полевая валидация формы (whitelist, диапазоны, MVP-замок).
+  const formResult = validateDesignForm(coerced);
+  if (!formResult.ok) {
+    violations.push(...formResult.violations);
+  }
+
+  // 3. Палитра (Requirement 2.4).
+  const rawPalette = coercedRecord.palette;
+  const paletteValid =
+    typeof rawPalette === "string" &&
+    (PALETTES as readonly string[]).includes(rawPalette);
+  if (!paletteValid) {
+    violations.push({
+      path: "palette",
+      code: INVALID_PALETTE_CODE,
+      message: "Палитра обязательна и должна быть из списка допустимых значений.",
+    });
+  }
+
+  // 4. Фото (Requirement 5.5 / 5.6). Проверяем только при наличии фото —
+  //    отсутствие фото допустимо (Text_To_Image_Mode, Requirement 4.7).
+  if (photo) {
+    if (!(ALLOWED_PHOTO_MIME_TYPES as readonly string[]).includes(photo.mime)) {
+      violations.push({
+        path: "image",
+        code: INVALID_PHOTO_TYPE_CODE,
+        message: "Фото должно быть в формате JPG или PNG.",
+      });
+    }
+    if (photo.sizeBytes > MAX_PHOTO_SIZE_BYTES) {
+      violations.push({
+        path: "image",
+        code: PHOTO_TOO_LARGE_CODE,
+        message: "Размер фото не должен превышать 8 МБ.",
+      });
+    }
+  }
+
+  // 5. Минимальная площадь (Requirement 5.4). Считаем только когда тип и
+  //    размеры уже валидны как числа/enum — иначе нарушение уже в списке.
+  const rawRoomType = coercedRecord.roomType;
+  const rawWidthCm = coercedRecord.widthCm;
+  const rawLengthCm = coercedRecord.lengthCm;
+  if (
+    typeof rawRoomType === "string" &&
+    typeof rawWidthCm === "number" &&
+    typeof rawLengthCm === "number"
+  ) {
+    const area = checkMinArea(rawRoomType, rawWidthCm, rawLengthCm);
+    if (!area.ok) {
+      violations.push({
+        path: "area",
+        code: ROOM_TOO_SMALL_CODE,
+        message: `Площадь ${area.areaSqm} м² меньше минимально допустимой ${area.minSqm} м² для выбранного типа помещения.`,
+      });
+    }
+  }
+
+  if (formResult.ok && violations.length === 0) {
+    return {
+      ok: true,
+      data: { ...formResult.data, palette: rawPalette as Palette },
+    };
   }
 
   return { ok: false, violations };

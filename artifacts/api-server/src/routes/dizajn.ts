@@ -16,6 +16,7 @@
  */
 
 import { Router, type Request, type Response } from "express";
+import multer from "multer";
 import { Readable } from "stream";
 import {
   db,
@@ -27,7 +28,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { s3Client } from "../lib/objectStorage.js";
+import { s3Client, uploadRoomPhoto } from "../lib/objectStorage.js";
 import { verifyTurnstileToken } from "../lib/turnstile.js";
 import {
   checkAndIncrement,
@@ -35,16 +36,37 @@ import {
   type RateLimitKind,
 } from "../lib/designRateLimit.js";
 import {
-  validateDesignForm,
+  validateGenerateRequest,
+  ALLOWED_PHOTO_MIME_TYPES,
   type DesignFormViolation,
+  type PhotoMeta,
 } from "../lib/dizajnFormSchema.js";
-import { checkMinArea } from "../lib/geometricValidator.js";
 import { getOrRenderPdf, PdfRenderError } from "../lib/pdfRenderer.js";
 import { pickUniqueSlug } from "../lib/slug.js";
 
 const router = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ── multipart upload (Requirements 4.1, 4.3) ─────────────────────────────────
+//
+// Единый `Request_Contract` на всей цепочке — `multipart/form-data`. Фото —
+// бинарные данные, переносятся без потери и без base64-раздувания. Backend
+// принимает их через `multer` memory storage: буфер фото остаётся в памяти
+// (`req.file.buffer`) для последующей загрузки в R2 (см. задачу 4.2), а
+// текстовые поля формы (`roomType`, `style`, `palette`, `widthCm`/`lengthCm`/
+// `heightCm`, `budget`, `cityId`, а также токен капчи `cf-turnstile-response`/
+// `turnstileToken`) после парсинга оказываются в `req.body` как строки.
+//
+// `limits.fileSize = 8 МБ + 1 байт`: лимит на единицу больше продуктового
+// порога (8 МБ), чтобы превышение детектировалось как нарушение валидации
+// (`photo_too_large`, Requirement 5.6), а не как обрыв соединения (ECONNRESET)
+// при жёстком отсечении ровно на границе.
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_PHOTO_BYTES + 1 },
+});
 
 // Whitelist of room/style strings used by GET / and GET /:slug — sourced from
 // the historical handler. POST /generate now relies on Zod (`validateDesignForm`)
@@ -118,25 +140,32 @@ async function rollbackRateLimits(
 
 // ── POST /generate ──────────────────────────────────────────────────────────
 //
-// Порядок проверок зафиксирован в `design.md` секция Rate_Limiter
-// (Requirements 1.8, 1.9, 1.10, 2.3, 3.1, 3.2, 3.5, 3.6, 3.7, 4.1):
+// Порядок проверок зафиксирован в `design.md` (flowchart «Порядок проверок в
+// Generate_Endpoint», Requirements 2.7, 3.1, 3.2, 3.4, 3.5, 4.2, 4.4, 4.6,
+// 4.7, 6.2, 7.2, 7.3, 7.4, 7.5):
 //
-//   1. `req.anonId` (заполняется `anonIdMiddleware`, см. app.ts).
-//   2. `verifyTurnstileToken(...)` — fail → 400 `invalid_captcha`.
-//   3. `checkAndIncrement("anon", anonId)` и `checkAndIncrement("ip", ip)` —
-//      fail хотя бы один → 429 `rate_limited` (с откатом другого, если уже
-//      прошёл успешно).
-//   4. Zod-валидация формы (`validateDesignForm`) — fail → 400 + `decrement`
-//      обоих счётчиков.
-//   5. `checkMinArea(roomType, widthCm, lengthCm)` — fail → 400 + `decrement`
-//      обоих.
+//   1. `req.anonId` (заполняется `anonIdMiddleware`, см. app.ts) —
+//      отсутствует → 500 `anon_id_unavailable`.
+//   2. `verifyTurnstileToken(...)` — fail → 400 `invalid_captcha` (Req 7.2:
+//      гейт капчи предшествует любым побочным эффектам).
+//   3. `checkAndIncrement("anon", anonId)` затем `("ip", ip)` (Req 7.3/7.4) —
+//      fail хотя бы один → 429 `rate_limited` + `retryAfterSeconds` (с откатом
+//      уже учтённого счётчика).
+//   4. `validateGenerateRequest(req.body, photoMeta)` — агрегирующая валидация
+//      формы/палитры/фото (Req 5.x, 6.2, 2.4); fail → 400 `validation_error`
+//      + `violations[]` и откат ОБОИХ счётчиков (Req 7.5).
+//   5. Загрузка фото и выбор `Generation_Mode` (Req 3.1/3.2/4.2/4.4/4.6/4.7):
+//      фото есть → `uploadRoomPhoto` → успех: inputImageUrl = R2-ключ
+//      (Image_To_Image_Mode); сбой стораджа: лог + inputImageUrl = null
+//      (Text_To_Image_Mode, НЕ отклоняем); фото нет → inputImageUrl = null.
 //   6. `pickUniqueSlug({ roomType, style })`.
-//   7. `INSERT INTO designs (..., status='generating', progress=0,
-//      anon_id = req.anonId)`.
+//   7. `INSERT INTO designs (..., palette, inputImageUrl, status='generating',
+//      progress=0, anon_id = req.anonId)`.
 //   8. 202 `{ ok: true, design: { slug } }` — фронт делает `router.push`
 //      на `/dizajn/${slug}`.
 
-router.post("/generate", async (req: Request, res: Response) => {
+
+router.post("/generate", upload.single("image"), async (req: Request, res: Response) => {
   // 1. Anon_Id из middleware. Это инвариант: middleware всегда устанавливает
   // req.anonId (либо из cookie, либо свежий UUID + Set-Cookie). Безопасно
   // полагаемся на типы; если поле всё же пустое — отдаём 500, потому что
@@ -200,9 +229,18 @@ router.post("/generate", async (req: Request, res: Response) => {
   }
   incremented.push(["ip", ipKey]);
 
-  // 4. Zod-валидация формы. При нарушениях возвращаем ВСЕ violations
-  // (Requirement 1.10) и откатываем оба счётчика (Requirement 3.6).
-  const validation = validateDesignForm(req.body);
+  // 4. Агрегирующая валидация формы, палитры и фото (Requirements 5.1–5.7,
+  // 6.2, 2.4). `validateGenerateRequest` собирает ВСЕ нарушения в один список
+  // (Requirement 5.7) — whitelist `roomType`/`style`, диапазоны, MVP-замок,
+  // палитра, MIME/размер фото и минимальная площадь (`room_too_small`).
+  // Метаданные фото берём из `req.file` (multer memory storage); отсутствие
+  // фото — допустимое состояние (Text_To_Image_Mode, Requirement 4.7).
+  // Любое нарушение → 400 + откат ОБОИХ счётчиков (Requirement 7.5).
+  const photoMeta: PhotoMeta | null = req.file
+    ? { mime: req.file.mimetype, sizeBytes: req.file.size }
+    : null;
+
+  const validation = validateGenerateRequest(req.body, photoMeta);
   if (!validation.ok) {
     await rollbackRateLimits(incremented);
     const violations: DesignFormViolation[] = validation.violations;
@@ -215,21 +253,29 @@ router.post("/generate", async (req: Request, res: Response) => {
   }
   const form = validation.data;
 
-  // 5. Pre-flight площадь (Requirement 2.3). Откатываем счётчики при отказе.
-  const minArea = checkMinArea(form.roomType, form.widthCm, form.lengthCm);
-  if (!minArea.ok) {
-    await rollbackRateLimits(incremented);
-    res.status(400).json({
-      ok: false,
-      error: "room_too_small",
-      roomType: form.roomType,
-      areaSqm: Number(minArea.areaSqm.toFixed(2)),
-      minSqm: minArea.minSqm,
-      message:
-        `Площадь ${minArea.areaSqm.toFixed(2)} м² меньше минимально допустимой ` +
-        `${minArea.minSqm} м² для типа «${form.roomType}». Увеличьте размеры комнаты.`,
-    });
-    return;
+  // 5. Загрузка фото и выбор `Generation_Mode` (Requirements 3.1, 3.2, 4.2,
+  // 4.4, 4.6, 4.7). Фото уже провалидировано (MIME ∈ {jpeg,png}, размер ≤ 8 МБ)
+  // выше, поэтому здесь только R2-загрузка:
+  //   - фото есть и загрузилось → inputImageUrl = R2-ключ (Image_To_Image_Mode);
+  //   - сбой стораджа → лог + inputImageUrl = null (деградация в
+  //     Text_To_Image_Mode, запрос НЕ отклоняем — Requirement 4.6);
+  //   - фото нет → inputImageUrl = null (Text_To_Image_Mode).
+  let inputImageUrl: string | null = null;
+  if (req.file && (ALLOWED_PHOTO_MIME_TYPES as readonly string[]).includes(req.file.mimetype)) {
+    try {
+      inputImageUrl = await uploadRoomPhoto(
+        req.file.buffer,
+        req.file.mimetype as (typeof ALLOWED_PHOTO_MIME_TYPES)[number],
+      );
+    } catch (e) {
+      // Requirement 4.6: сбой Object_Storage не должен отклонять запрос —
+      // деградируем в Text_To_Image_Mode, оставив inputImageUrl = null.
+      console.error(
+        "[dizajn/generate] uploadRoomPhoto failed, degrading to text-to-image:",
+        e instanceof Error ? e.message : e,
+      );
+      inputImageUrl = null;
+    }
   }
 
   // 6. Уникальный slug под `designs.slug` (Requirements 1.8, 1.9). Сама функция
@@ -274,9 +320,14 @@ router.post("/generate", async (req: Request, res: Response) => {
         anonId,
         roomType: form.roomType,
         style: form.style,
+        // Requirement 2.4: входная палитра пользователя в отдельной колонке.
+        palette: form.palette,
         cityId: form.cityId ?? null,
         area: areaStr,
         budget: form.budget,
+        // Requirements 3.5 / 4.2 / 4.6: R2-ключ фото при Image_To_Image_Mode,
+        // либо null при Text_To_Image_Mode (нет фото или сбой стораджа).
+        inputImageUrl,
         // Requirement 5.2: пайплайн начинает с status='generating', progress=0.
         status: "generating",
         progress: 0,

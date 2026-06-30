@@ -16,6 +16,7 @@ import type {
   DesignFullDTO,
   DesignFeedItemDTO,
 } from "./types";
+import { selectSitemapDesignSlugs, INDEXABLE_DESIGN_STATUS } from "./dizajnIndexing";
 
 /**
  * Server-only marketplace API client.
@@ -453,8 +454,15 @@ export async function fetchDesign(
 }
 
 /**
- * Recent published feed (для homepage HomeAIDesigns + future SEO landings).
+ * Recent published feed (для homepage HomeAIDesigns + future SEO landings +
+ * `Aggregate_Page` listings).
  * Кэшируется 5 минут на стороне marketplace + 5 минут на api-server.
+ *
+ * Возвращает только завершённые проекты: backend `GET /dizajn` фильтрует
+ * `status='completed' AND is_public=true`, поэтому незавершённые проекты не
+ * попадают ни в один `Aggregate_Page` (Req 10.3; Property 14). Эта же гарантия
+ * проверяется чистым предикатом `isIndexableDesignStatus`/`isSitemapEligibleDesign`
+ * в `lib/dizajnIndexing.ts`.
  */
 export async function fetchRecentDesigns(opts: {
   limit?: number;
@@ -484,6 +492,14 @@ export async function fetchRecentDesigns(opts: {
 /**
  * Slugs of all published AI-designs — для sitemap. Возвращает максимум 1000
  * (limit на стороне api-server). После роста — paginate как fetchPublishedMasterSlugs.
+ *
+ * Источник правды по статусу — backend (`GET /dizajn` отдаёт только
+ * `status='completed' AND is_public=true`). Здесь дополнительно прогоняем ответ
+ * через чистый предикат `selectSitemapDesignSlugs`, который закрепляет правило
+ * «в sitemap попадают только завершённые проекты» на стороне marketplace и
+ * отбрасывает пустые slug'и. Предикат зависит только от `slug` + `status`, а не
+ * от доступности ассетов, поэтому завершённый проект остаётся в наборе даже при
+ * временной недоступности `resultImageUrl` (Req 10.1, 10.2, 10.5; Property 14/17).
  */
 export async function fetchPublishedDesignSlugs(): Promise<string[]> {
   try {
@@ -491,9 +507,11 @@ export async function fetchPublishedDesignSlugs(): Promise<string[]> {
       `/dizajn?limit=1000`,
       { revalidate: 3600 },
     );
-    return r.items
-      .map((d) => d.slug)
-      .filter((s): s is string => typeof s === "string" && s.length > 0);
+    // Backend уже фильтрует `status='completed'`; помечаем элементы этим
+    // статусом и пропускаем через общий предикат включения в sitemap.
+    return selectSitemapDesignSlugs(
+      r.items.map((d) => ({ slug: d.slug, status: INDEXABLE_DESIGN_STATUS })),
+    );
   } catch {
     return [];
   }

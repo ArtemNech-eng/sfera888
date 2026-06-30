@@ -87,6 +87,14 @@ export const designsTable = pgTable(
     /** Параметры дизайн-проекта. */
     roomType: varchar("room_type", { length: 50 }).notNull(),
     style: varchar("style", { length: 50 }).notNull(),
+    /**
+     * Входная цветовая палитра, выбранная пользователем в `Flagship_Form`
+     * (AI_Design_Flagship, миграция 2026-XX-XX-ai-design-flagship-palette).
+     * Nullable для обратной совместимости с существующими записями; в отличие
+     * от `colorPalette` (вычисляется worker'ом из результата) — это входной
+     * параметр генерации (Requirement 2.4).
+     */
+    palette: varchar("palette", { length: 40 }),
     cityId: integer("city_id").references(() => citiesTable.id, { onDelete: "set null" }),
     district: varchar("district", { length: 100 }),
     /** м². */

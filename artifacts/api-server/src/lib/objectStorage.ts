@@ -223,6 +223,41 @@ export class ObjectStorageService {
   }
 }
 
+/**
+ * Загружает фото комнаты пользователя в Object_Storage (R2) под ключом
+ * `dizajn/uploads/{uuid}` и возвращает этот R2-ключ при успехе.
+ *
+ * Бросает при любом сбое стораджа (включая отсутствие конфигурации бакета).
+ * Вызывающая сторона (`Generate_Endpoint`) ловит ошибку и деградирует к
+ * `Text_To_Image_Mode` (Req 4.6), не отклоняя запрос.
+ *
+ * @param buf  бинарное содержимое фото
+ * @param mime MIME-тип, уже провалидированный как JPG/PNG
+ * @returns    R2-ключ загруженного объекта (`dizajn/uploads/{uuid}`)
+ */
+export async function uploadRoomPhoto(
+  buf: Buffer,
+  mime: "image/jpeg" | "image/png"
+): Promise<string> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) {
+    throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID is not set");
+  }
+
+  const key = `dizajn/uploads/${randomUUID()}`;
+
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: bucketId,
+      Key: key,
+      Body: buf,
+      ContentType: mime,
+    })
+  );
+
+  return key;
+}
+
 export function parseObjectPath(path: string): {
   bucketName: string;
   objectName: string;
