@@ -26,7 +26,7 @@ import {
   userSavesTable,
   leadsTable,
 } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, uploadRoomPhoto } from "../lib/objectStorage.js";
 import { verifyCaptchaToken } from "../lib/smartCaptcha.js";
@@ -669,6 +669,26 @@ router.get("/", async (req: Request, res: Response) => {
       .orderBy(desc(designsTable.createdAt))
       .limit(limit);
 
+    // Обложка карточки — ГЛАВНОЕ фото (view_1), а не инфографика (она остаётся
+    // og:image на детальной). Подтягиваем view_1 для выбранных дизайнов одним
+    // запросом; если его нет — fallback на resultImageUrl (инфографику).
+    const ids = rows.map((r) => r.id);
+    const heroByDesign = new Map<number, string>();
+    if (ids.length > 0) {
+      const heroRows = await db
+        .select({ designId: designImagesTable.designId, url: designImagesTable.url })
+        .from(designImagesTable)
+        .where(
+          and(
+            inArray(designImagesTable.designId, ids),
+            eq(designImagesTable.type, "view_1"),
+          ),
+        );
+      for (const h of heroRows) {
+        if (!heroByDesign.has(h.designId)) heroByDesign.set(h.designId, h.url);
+      }
+    }
+
     res.set("Cache-Control", "public, max-age=300, s-maxage=300");
     res.json({
       items: rows.map((r) => ({
@@ -677,7 +697,7 @@ router.get("/", async (req: Request, res: Response) => {
         roomType: r.roomType,
         style: r.style,
         h1: r.h1,
-        resultImageUrl: r.resultImageUrl,
+        resultImageUrl: heroByDesign.get(r.id) ?? r.resultImageUrl,
         viewCount: r.viewCount,
         saveCount: r.saveCount,
       })),
