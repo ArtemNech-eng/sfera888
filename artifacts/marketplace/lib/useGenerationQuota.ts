@@ -43,9 +43,24 @@ export const PENDING_MAX = 20;
 export const FREE_ANON = 1;
 export const PRO_GENERATIONS = 100;
 
+/**
+ * Окно автосброса бесплатной анонимной квоты. Модалка пейволла обещает «лимит
+ * периодически обновляется» — это окно делает обещание правдой: спустя
+ * `FREE_RESET_WINDOW_MS` после первой потраченной генерации счётчик `used`
+ * обнуляется, и устройство снова получает бесплатную попытку. Иначе `used=1`
+ * висел бы вечно и навсегда блокировал посетителя. Касается только тира `anon`;
+ * `pro` (оплаченный пакет) по времени не сбрасывается.
+ */
+export const FREE_RESET_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 часа
+
 export interface StoredQuota {
   used: number;
   tier: QuotaTier;
+  /**
+   * Метка времени (ms epoch) первой потраченной генерации в текущем окне.
+   * Якорь для `FREE_RESET_WINDOW_MS`. `undefined`, пока ничего не потрачено.
+   */
+  windowStartedAt?: number;
 }
 
 export interface GenerationQuota {
@@ -102,8 +117,13 @@ export function computeRemaining(limit: number, used: number): number {
  * Вынесен отдельно от хука, чтобы быть детерминированным и тестируемым
  * (Property 12: один успешный старт списывает ровно одну единицу квоты).
  */
-export function recordUsage(state: StoredQuota): StoredQuota {
-  return { ...state, used: state.used + 1 };
+export function recordUsage(state: StoredQuota, nowMs: number = Date.now()): StoredQuota {
+  return {
+    ...state,
+    used: state.used + 1,
+    // Якорим окно автосброса на первой потраченной генерации.
+    windowStartedAt: state.windowStartedAt ?? nowMs,
+  };
 }
 
 /**
@@ -113,6 +133,20 @@ export function recordUsage(state: StoredQuota): StoredQuota {
  */
 export function refundUsage(state: StoredQuota): StoredQuota {
   return { ...state, used: Math.max(0, state.used - 1) };
+}
+
+/**
+ * Чистый автосброс бесплатной квоты по времени. Если тир `anon`, окно уже
+ * запущено (`windowStartedAt`) и с его начала прошло ≥ `FREE_RESET_WINDOW_MS` —
+ * обнуляет `used` и перезапускает окно от `nowMs`. Иначе возвращает состояние
+ * без изменений (тир `pro` по времени не сбрасывается; окно ещё не начато —
+ * нечего сбрасывать). Вынесен отдельно от хука для детерминизма и тестируемости.
+ */
+export function applyWindowReset(state: StoredQuota, nowMs: number): StoredQuota {
+  if (state.tier !== "anon") return state;
+  if (state.windowStartedAt == null) return state;
+  if (nowMs - state.windowStartedAt < FREE_RESET_WINDOW_MS) return state;
+  return { used: 0, tier: state.tier, windowStartedAt: nowMs };
 }
 
 /**
@@ -140,7 +174,19 @@ function readStored(): StoredQuota {
       typeof parsed.used === "number" && Number.isFinite(parsed.used) && parsed.used >= 0
         ? Math.floor(parsed.used)
         : 0;
-    return { used, tier };
+    const windowStartedAt =
+      typeof parsed.windowStartedAt === "number" &&
+      Number.isFinite(parsed.windowStartedAt) &&
+      parsed.windowStartedAt > 0
+        ? parsed.windowStartedAt
+        : undefined;
+    // Применяем автосброс по времени и, если он сработал, персистим — чтобы
+    // обнулённое состояние сохранилось между перезагрузками.
+    const reset = applyWindowReset({ used, tier, windowStartedAt }, Date.now());
+    if (reset.used !== used || reset.windowStartedAt !== windowStartedAt) {
+      writeStored(reset);
+    }
+    return reset;
   } catch {
     return { used: 0, tier: "anon" };
   }
