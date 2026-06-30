@@ -400,9 +400,17 @@ router.get("/home", requireMasterPwa, async (req, res) => {
     return raw.split(",").map(s => s.trim()).filter(Boolean);
   }
 
-  // Smart filter settings from master profile
+  // Smart filter settings from master profile.
+  // NB: эти настройки БОЛЬШЕ НЕ скрывают заявки из списка (раньше `minArea` и
+  // `preferredDistricts` жёстко фильтровали availableOrders, из-за чего
+  // уведомлённый мастер не видел заявку — особенно потому, что `order.district`
+  // хранит свободный адрес, а не название района, и подстрочный матч почти
+  // никогда не срабатывал). Теперь решение принимает оператор: мастер видит
+  // все заявки, на которые ему пришла рассылка (есть `order_dispatches='sent'`),
+  // и может откликнуться. Поля оставлены для возможной мягкой сортировки/меток.
   const minArea = master.minArea ?? 0;
   const preferredDistricts: string[] = (master.preferredDistricts as string[]) ?? [];
+  void minArea; void preferredDistricts;
 
   // Available orders — "sent" dispatches, order still accepting masters
   let availableOrders: any[] = [];
@@ -425,11 +433,9 @@ router.get("/home", requireMasterPwa, async (req, res) => {
           ))
       : [];
 
-    // Apply smart filters
-    if (minArea > 0) orders = orders.filter(o => Number(o.area) >= minArea);
-    if (preferredDistricts.length > 0) {
-      orders = orders.filter(o => !o.district || preferredDistricts.some(d => o.district?.toLowerCase().includes(d.toLowerCase())));
-    }
+    // Smart filters (minArea / preferredDistricts) НЕ применяются: уведомлённый
+    // мастер должен видеть заявку и иметь возможность откликнуться; оператор
+    // решает, принять отклик или нет. См. комментарий выше.
 
     // Fetch lead photos + client phones
     const leadIds = [...new Set(orders.map(o => o.leadId))];
