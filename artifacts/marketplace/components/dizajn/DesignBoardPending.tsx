@@ -9,12 +9,42 @@ import {
 } from "../../lib/useGenerationQuota";
 
 /**
- * Polling state для status='generating'. Каждые 2с пуллит GET /api/dizajn/[slug],
- * перезагружает страницу когда status меняется на completed/failed.
+ * Polling state для status='generating'. Каждые `POLL_INTERVAL_MS` пуллит
+ * GET /api/dizajn/[slug], перезагружает страницу когда status меняется на
+ * completed/failed.
  *
- * Прогресс-бар оценочный — основан на elapsed time и assumed 30s gen time.
- * Реальный прогресс не возвращается провайдерами image gen.
+ * Прогресс-бар оценочный (провайдеры image-gen не отдают реальный прогресс):
+ * плавная асимптотическая кривая, которая всё время ползёт вверх и не «залипает»
+ * на одном числе, пока бэк дорисовывает. Окно ожидания — `MAX_POLLS`.
  */
+
+/** Интервал опроса статуса. */
+const POLL_INTERVAL_MS = 2000;
+
+/**
+ * Окно ожидания: 150 опросов × 2с = 300с (5 минут). Генерация с фото
+ * (image-to-image, 4 ракурса по 40–70с) штатно занимает ~2–3 минуты, поэтому
+ * прежние 120с обрывали ожидание раньше, чем дизайн успевал завершиться, и
+ * пользователь видел «занимает дольше обычного», хотя проект вот-вот готов.
+ */
+const MAX_POLLS = 150;
+
+/**
+ * Характерное время (с) асимптоты прогресс-бара. progress ≈ 100·(1−e^(−t/τ)):
+ * к ~2.5 минутам бар подходит к ~95%, но продолжает медленно ползти и никогда
+ * не замирает на месте до фактического завершения.
+ */
+const PROGRESS_TAU_SECONDS = 70;
+
+/**
+ * Оценочный прогресс по прошедшему времени — плавная асимптота, всегда
+ * растёт, упирается в 98% (последний процент добавляет фактический complete).
+ * Вынесена чистой функцией для детерминизма.
+ */
+export function estimateProgress(elapsedSeconds: number): number {
+  const raw = 100 * (1 - Math.exp(-Math.max(0, elapsedSeconds) / PROGRESS_TAU_SECONDS));
+  return Math.min(98, Math.round(raw));
+}
 
 interface Props {
   slug: string;
@@ -40,7 +70,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
 
   useEffect(() => {
     if (!shouldContinuePolling(design.status)) return;
-    if (pollCount >= 60) return; // 60 polls × 2s = 120s timeout
+    if (pollCount >= MAX_POLLS) return;
 
     const timer = setTimeout(async () => {
       try {
@@ -61,7 +91,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
       } finally {
         setPollCount((c) => c + 1);
       }
-    }, 2000);
+    }, POLL_INTERVAL_MS);
 
     return () => clearTimeout(timer);
   }, [design.status, pollCount, slug]);
@@ -87,7 +117,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
     );
   }
 
-  if (pollCount >= 60) {
+  if (pollCount >= MAX_POLLS) {
     return (
       <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-2xl px-4 py-24 text-center sm:px-6">
@@ -109,7 +139,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
     );
   }
 
-  const progress = Math.max(design.progress, Math.min(95, pollCount * 4));
+  const progress = Math.max(design.progress, estimateProgress(pollCount * (POLL_INTERVAL_MS / 1000)));
 
   return (
     <section className="bg-[var(--color-background)]">
@@ -120,7 +150,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
         </h1>
         <p className="mt-4 text-base leading-relaxed text-[var(--color-muted)]">
           AI сейчас рисует {viewsText(design.roomType)} в {styleText(design.style)} стиле.
-          Обычно занимает 30-60 секунд.
+          Обычно занимает 1–3 минуты — особенно если вы загрузили фото.
         </p>
 
         {/* Прогресс-бар */}
