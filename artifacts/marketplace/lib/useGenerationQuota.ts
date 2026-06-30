@@ -25,7 +25,7 @@ import { useCallback, useEffect, useState } from "react";
 
 export type QuotaTier = "anon" | "pro";
 
-export const STORAGE_KEY = "sfera_design_quota_v1";
+export const STORAGE_KEY = "sfera_design_quota_v2";
 
 /**
  * Отдельный localStorage-ключ: набор slug'ов генераций, которые ЭТО устройство
