@@ -1,95 +1,88 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { fetchRabotyList } from "../../lib/api";
+import { fetchRecentDesigns } from "../../lib/api";
 import { publicUrl } from "../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../lib/jsonLd";
-import { buildRabotyIndexMeta } from "../../lib/seoMeta";
-import type { RabotyListItem } from "../../lib/types";
-import { ROOM_CATEGORIES, DEMO_CASES } from "../../lib/demoCases";
 import { CaseCard } from "../../components/CaseCard";
 
 /**
- * `/raboty` — каталог идей в Pinterest-masonry стиле (план §22.4).
+ * `/raboty` — раздел «Идеи»: каталог сгенерированных AI-дизайнов в
+ * Pinterest-masonry стиле.
  *
- * Главный товар платформы — РЕЗУЛЬТАТ РЕМОНТА (объект). Эта страница —
- * витрина, где пользователь приходит за вдохновением. Поэтому:
+ * Источник — публичные завершённые дизайн-проекты (`designs`,
+ * `status='completed' AND is_public=true`) через `fetchRecentDesigns`.
+ * Работы мастеров здесь НЕ показываем (по продуктовому решению — «Идеи» это
+ * AI-дизайны). Индивидуальные кейсы мастеров остаются доступны напрямую по
+ * `/raboty/[slug]`, но в этот индекс не входят.
  *
- *   • masonry-сетка из CaseCard (порт. 4:5), не utility-таблица
- *   • большие фото на первом плане, текст вторичен
- *   • sticky browse-by chip rails сверху (по комнатам / по стилю), AirBnB-style
- *   • subtle pagination внизу
- *
- * Воронка: visitor browses → opens a case at /raboty/[slug] → reads the
- * story → either keeps browsing or hits "Хочу такой же" lead form.
+ * Воронка: visitor листает идеи → открывает дизайн на `/dizajn/[slug]` →
+ * «Хочу такой же» → подбор мастера.
  */
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 24;
+const FEED_LIMIT = 60;
 
-const STYLE_CHIPS: { slug: string; label: string }[] = [
-  { slug: "sovremennyy", label: "Современный" },
-  { slug: "skandinavskiy", label: "Скандинавский" },
-  { slug: "loft", label: "Лофт" },
-  { slug: "minimalizm", label: "Минимализм" },
-  { slug: "neoklassika", label: "Неоклассика" },
-  { slug: "svetlyy", label: "Светлый" },
+// Слаги комнат/стилей — это значения enum'ов `designs.room_type` / `designs.style`
+// (их понимает backend-фильтр `GET /dizajn?room=&style=`).
+const ROOM_CHIPS: { slug: string; label: string }[] = [
+  { slug: "bedroom", label: "Спальня" },
+  { slug: "living_room", label: "Гостиная" },
+  { slug: "kitchen", label: "Кухня" },
+  { slug: "bathroom", label: "Ванная" },
+  { slug: "hallway", label: "Прихожая" },
+  { slug: "nursery", label: "Детская" },
 ];
 
+const STYLE_CHIPS: { slug: string; label: string }[] = [
+  { slug: "modern", label: "Современный" },
+  { slug: "scandinavian", label: "Скандинавский" },
+  { slug: "loft", label: "Лофт" },
+  { slug: "minimalism", label: "Минимализм" },
+  { slug: "neoclassic", label: "Неоклассика" },
+  { slug: "japandi", label: "Японди" },
+  { slug: "classic", label: "Классика" },
+];
+
+const ROOM_LABELS: Record<string, string> = Object.fromEntries(
+  ROOM_CHIPS.map((r) => [r.slug, r.label]),
+);
+const STYLE_LABELS: Record<string, string> = Object.fromEntries(
+  STYLE_CHIPS.map((s) => [s.slug, s.label]),
+);
+
 interface SearchParams {
-  page?: string;
   room?: string;
   style?: string;
-  q?: string;
 }
 
-export async function generateMetadata(
-  { searchParams }: { searchParams: Promise<SearchParams> },
-): Promise<Metadata> {
-  const sp = await searchParams;
-  const pageRaw = parseInt(String(sp.page ?? "1"), 10);
-  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
-
-  const data = await fetchRabotyList({ page, limit: PAGE_SIZE });
-  const totalPages = Math.max(1, Math.ceil((data.total ?? 0) / data.limit));
-  const meta = buildRabotyIndexMeta({ total: data.total ?? 0, page, totalPages });
-
+export function generateMetadata(): Metadata {
   return {
-    title: { absolute: meta.title },
-    description: meta.description,
-    alternates: {
-      canonical: page > 1 ? `${publicUrl()}/raboty?page=${page}` : `${publicUrl()}/raboty`,
-    },
+    title: { absolute: "Идеи дизайна интерьера — AI-проекты | Честные мастера" },
+    description:
+      "Готовые AI-дизайны интерьеров: спальни, кухни, гостиные в разных стилях — с материалами, сметой и подбором мастера для реализации.",
+    alternates: { canonical: `${publicUrl()}/raboty` },
   };
 }
 
-export default async function RabotyIndexPage(
+export default async function IdeasIndexPage(
   { searchParams }: { searchParams: Promise<SearchParams> },
 ) {
   const sp = await searchParams;
-  const pageRaw = parseInt(String(sp.page ?? "1"), 10);
-  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
-
   const activeRoom = typeof sp.room === "string" ? sp.room : null;
   const activeStyle = typeof sp.style === "string" ? sp.style : null;
 
-  const data = await fetchRabotyList({ page, limit: PAGE_SIZE });
-  const totalPages = Math.max(1, Math.ceil((data.total ?? 0) / data.limit));
-  const isDemoMode = data.items.length < 3 && page === 1;
+  const designs = await fetchRecentDesigns({
+    limit: FEED_LIMIT,
+    room: activeRoom ?? undefined,
+    style: activeStyle ?? undefined,
+  }).catch(() => []);
 
   const breadcrumbsLd = breadcrumbJsonLd([
     { name: "Главная", url: `${publicUrl()}/` },
     { name: "Идеи", url: `${publicUrl()}/raboty` },
   ]);
 
-  const paginationUrl = (p: number) => {
-    const params = new URLSearchParams();
-    if (activeRoom) params.set("room", activeRoom);
-    if (activeStyle) params.set("style", activeStyle);
-    if (p > 1) params.set("page", String(p));
-    const qs = params.toString();
-    return `/raboty${qs ? `?${qs}` : ""}`;
-  };
   const browseUrl = (params: { room?: string | null; style?: string | null }) => {
     const sp2 = new URLSearchParams();
     const r = params.room === undefined ? activeRoom : params.room;
@@ -117,33 +110,34 @@ export default async function RabotyIndexPage(
           </nav>
 
           <h1 className="font-display mt-7 max-w-3xl text-4xl text-[var(--color-text)] sm:text-5xl">
-            Ремонты, которые хочется повторить.
+            Идеи дизайна, созданные ИИ.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
-            Сохраняйте идеи, что зацепили. Подбор мастера, который повторит — на
-            странице каждой работы.
+            Готовые дизайн-проекты с материалами и сметой. Понравился — соберите
+            свой за минуту или найдите мастера, который повторит.
           </p>
+          <Link
+            href="/dizajn"
+            className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-[var(--color-cta)] px-6 text-sm font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)]"
+          >
+            Создать свой дизайн
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+          </Link>
         </div>
       </header>
 
-      {/* ── Sticky browse-by chip rails (AirBnB-style filters) ─── */}
+      {/* ── Sticky browse-by chip rails ─────────────────────────── */}
       <section className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-background)]/95 backdrop-blur">
         <div className="mx-auto max-w-6xl space-y-3 px-4 py-4 sm:px-6 sm:py-5">
           <ChipRail
             label="По комнатам"
-            items={[
-              { slug: null, label: "Все" },
-              ...ROOM_CATEGORIES.map((r) => ({ slug: r.slug, label: r.label })),
-            ]}
+            items={[{ slug: null, label: "Все" }, ...ROOM_CHIPS]}
             active={activeRoom}
             buildHref={(slug) => browseUrl({ room: slug })}
           />
           <ChipRail
             label="По стилю"
-            items={[
-              { slug: null, label: "Любой" },
-              ...STYLE_CHIPS,
-            ]}
+            items={[{ slug: null, label: "Любой" }, ...STYLE_CHIPS]}
             active={activeStyle}
             buildHref={(slug) => browseUrl({ style: slug })}
           />
@@ -153,48 +147,17 @@ export default async function RabotyIndexPage(
       {/* ── Masonry grid (Pinterest-feel) ────────────────────────── */}
       <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          {totalPages > 1 ? (
-            <div className="mb-8 text-sm text-[var(--color-faint)]">
-              Стр. {page} из {totalPages}
-            </div>
-          ) : null}
-
-          {isDemoMode ? <DemoNotice /> : null}
-
-          {data.items.length > 0 ? (
+          {designs.length > 0 ? (
             <div className="masonry">
-              {data.items.map((item) => (
-                <div key={item.id} className="masonry-item">
-                  <CaseCard {...rabotyToCardProps(item)} />
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {isDemoMode ? (
-            <div className={`${data.items.length > 0 ? "mt-12" : ""} masonry`}>
-              {DEMO_CASES.map((d) => (
+              {designs.map((d) => (
                 <div key={d.id} className="masonry-item">
-                  <CaseCard
-                    href="/raboty"
-                    cover={d.imageUrl}
-                    title={d.title}
-                    alt={d.alt}
-                    metaParts={[d.category]}
-                    priceLabel={null}
-                  />
+                  <CaseCard {...designToCardProps(d)} />
                 </div>
               ))}
             </div>
-          ) : null}
-
-          {totalPages > 1 ? (
-            <Pagination
-              currentPage={page}
-              totalPages={totalPages}
-              buildHref={paginationUrl}
-            />
-          ) : null}
+          ) : (
+            <EmptyNotice hasFilter={Boolean(activeRoom || activeStyle)} />
+          )}
         </div>
       </section>
     </>
@@ -203,30 +166,28 @@ export default async function RabotyIndexPage(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function rabotyToCardProps(item: RabotyListItem) {
-  const cover = item.afterPhotos[0] ?? item.beforePhotos[0] ?? null;
-  const priceFrom = parseNumeric(item.priceFrom);
-  const area = parseNumeric(item.area);
-  const cityName = item.city?.name ?? item.master.city ?? null;
-  const masterName =
-    item.master.publicTitle?.trim() ||
-    item.master.alias?.trim() ||
-    `Мастер #${item.master.id}`;
-
+function designToCardProps(d: {
+  slug: string;
+  roomType: string;
+  style: string;
+  h1: string | null;
+  resultImageUrl: string | null;
+  saveCount: number;
+  viewCount: number;
+}) {
+  const roomLabel = ROOM_LABELS[d.roomType] ?? d.roomType;
+  const styleLabel = STYLE_LABELS[d.style] ?? d.style;
+  const title = d.h1 ?? `Дизайн: ${roomLabel}, ${styleLabel.toLowerCase()}`;
   return {
-    href: `/raboty/${item.slug}`,
-    cover,
-    title: item.title,
-    alt: `${item.title}${cityName ? ` в ${cityName}` : ""} — фото ремонта`,
-    metaParts: [
-      cityName,
-      area != null ? `${area} м²` : null,
-      masterName,
-    ],
-    priceLabel: priceFrom != null ? `от ${formatNumber(priceFrom)} ₽` : null,
-    badge: item.isFeatured ? ({ tone: "featured" as const, label: "Топ" }) : null,
-    views: null,
-    saves: item.saveCount,
+    href: `/dizajn/${d.slug}`,
+    cover: d.resultImageUrl,
+    title,
+    alt: `${title} — AI-дизайн интерьера`,
+    metaParts: [roomLabel, styleLabel],
+    priceLabel: null,
+    badge: { tone: "featured" as const, label: "AI-дизайн" },
+    views: d.viewCount,
+    saves: d.saveCount,
   };
 }
 
@@ -269,68 +230,24 @@ function ChipRail({
   );
 }
 
-function DemoNotice() {
+function EmptyNotice({ hasFilter }: { hasFilter: boolean }) {
   return (
-    <div className="mb-12 rounded-2xl border border-[var(--color-border)] bg-[var(--color-cream-deep)] p-6 sm:p-7">
-      <p className="font-eyebrow">Каталог формируется</p>
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-cream-deep)] p-6 sm:p-8">
+      <p className="font-eyebrow">Каталог идей формируется</p>
       <p className="mt-3 text-base font-semibold text-[var(--color-text)]">
-        Пока мастера публикуют работы, мы показываем стилевые референсы.
+        {hasFilter
+          ? "По этому фильтру пока нет дизайнов."
+          : "Пока здесь немного дизайнов — станьте одним из первых."}
       </p>
       <p className="mt-2 text-sm text-[var(--color-muted)]">
-        По мере появления реальных кейсов референсы автоматически вытесняются.
+        Загрузите фото комнаты и соберите свой дизайн-проект за минуту.
       </p>
+      <Link
+        href="/dizajn"
+        className="mt-5 inline-flex h-11 items-center gap-2 rounded-full bg-[var(--color-cta)] px-6 text-sm font-semibold text-[var(--color-on-cta)] shadow-cozy transition hover:bg-[var(--color-cta-hover)]"
+      >
+        Создать дизайн
+      </Link>
     </div>
   );
-}
-
-function Pagination({
-  currentPage,
-  totalPages,
-  buildHref,
-}: {
-  currentPage: number;
-  totalPages: number;
-  buildHref: (page: number) => string;
-}) {
-  const prev = currentPage > 1 ? currentPage - 1 : null;
-  const next = currentPage < totalPages ? currentPage + 1 : null;
-  return (
-    <nav className="mt-16 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-8">
-      {prev ? (
-        <Link
-          href={buildHref(prev)}
-          rel="prev"
-          className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-4 py-2.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-text)]"
-        >
-          ← Назад
-        </Link>
-      ) : (
-        <span />
-      )}
-      <span className="text-sm text-[var(--color-muted)]">
-        Стр. {currentPage} из {totalPages}
-      </span>
-      {next ? (
-        <Link
-          href={buildHref(next)}
-          rel="next"
-          className="inline-flex items-center gap-2 rounded-md bg-[var(--color-cta)] px-4 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)]"
-        >
-          Далее →
-        </Link>
-      ) : (
-        <span />
-      )}
-    </nav>
-  );
-}
-
-function parseNumeric(value: string | null | undefined): number | null {
-  if (value == null) return null;
-  const n = parseFloat(value);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-function formatNumber(n: number): string {
-  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
 }
