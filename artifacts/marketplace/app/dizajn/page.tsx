@@ -38,14 +38,16 @@ export default async function DizajnLandingPage() {
   return (
     <>
       {/* ── Hero with form ─────────────────────────────── */}
-      <section className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-6xl px-4 pb-12 pt-10 sm:px-6 sm:pb-16 sm:pt-14">
+      {/* Премиальный тёмный+золото акцент — ТОЧЕЧНО на hero AI-фичи.
+          Остальная страница (форма, фид, «как работает») — светлая база. */}
+      <section className="surface-premium">
+        <div className="mx-auto max-w-6xl px-4 pb-14 pt-12 sm:px-6 sm:pb-20 sm:pt-16">
           <div className="max-w-3xl">
-            <p className="font-eyebrow">AI-дизайн</p>
-            <h1 className="font-display mt-3 text-4xl text-[var(--color-text)] sm:text-5xl lg:text-[3.5rem]">
+            <span className="badge-gold">AI-дизайн</span>
+            <h1 className="font-display mt-5 text-4xl text-[var(--color-premium-text)] sm:text-5xl lg:text-[3.5rem]">
               Создайте дизайн-проект за минуту.
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
+            <p className="mt-5 max-w-2xl text-base leading-relaxed text-[var(--color-premium-muted)] sm:text-lg">
               Загрузите фото комнаты, выберите стиль — AI нарисует 4 ракурса в
               новом дизайне, подберёт материалы и составит смету. Понравится —
               найдём мастера, который сделает похоже.
@@ -55,7 +57,7 @@ export default async function DizajnLandingPage() {
       </section>
 
       <section className="bg-[var(--color-background)]">
-        <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-20">
+        <div className="mx-auto max-w-6xl px-4 pb-16 pt-12 sm:px-6 sm:pb-20 sm:pt-16">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy sm:p-8 lg:p-10">
             <FlagshipForm captchaSiteKey={captchaSiteKey} />
           </div>

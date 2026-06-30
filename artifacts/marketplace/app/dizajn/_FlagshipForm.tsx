@@ -3,7 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
-import { useGenerationQuota } from "../../lib/useGenerationQuota";
+import { useGenerationQuota, markPendingGeneration } from "../../lib/useGenerationQuota";
 import { PaywallModal } from "../../components/dizajn/PaywallModal";
 import {
   ROOM_TYPES,
@@ -216,6 +216,7 @@ export function FlagshipForm({ captchaSiteKey }: FlagshipFormProps) {
     // перейти на `/dizajn/{slug}` (Requirement 2.7) — ровно по одному разу.
     const navigated = handleGenerateOutcome(res.status, parsed, {
       record: quota.record,
+      markPending: markPendingGeneration,
       navigate: (path) => router.push(path),
     });
     if (navigated) return;

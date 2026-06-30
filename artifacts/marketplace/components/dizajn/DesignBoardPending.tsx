@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import type { DesignFullDTO } from "../../lib/types";
 import { shouldContinuePolling } from "./shouldContinuePolling";
+import {
+  useGenerationQuota,
+  consumePendingGeneration,
+} from "../../lib/useGenerationQuota";
 
 /**
  * Polling state для status='generating'. Каждые 2с пуллит GET /api/dizajn/[slug],
@@ -20,6 +24,19 @@ interface Props {
 export function DesignBoardPending({ slug, initialDesign }: Props) {
   const [design, setDesign] = useState(initialDesign);
   const [pollCount, setPollCount] = useState(0);
+  const { ready: quotaReady, refund: refundQuota } = useGenerationQuota();
+
+  // Возврат бесплатной квоты при падении генерации (только один раз и только
+  // для слага, который ЭТО устройство реально запустило — см. pending-маркер в
+  // useGenerationQuota). Серверная ошибка не должна «съедать» попытку. Ждём
+  // гидрацию квоты (`quotaReady`), иначе refund() прочитал бы дефолтное
+  // состояние и затёр бы реальное значение в localStorage.
+  useEffect(() => {
+    if (design.status !== "failed" || !quotaReady) return;
+    if (consumePendingGeneration(slug)) {
+      refundQuota();
+    }
+  }, [design.status, quotaReady, slug, refundQuota]);
 
   useEffect(() => {
     if (!shouldContinuePolling(design.status)) return;
@@ -33,8 +50,9 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
         if (data.ok && data.design) {
           setDesign(data.design);
           if (data.design.status === "completed") {
-            // Reload так чтобы server-component DesignBoard отрендерился
-            // полностью с meta-tags и SSR data.
+            // Успех — снимаем pending-маркер (без возврата квоты), чтобы он не
+            // накапливался; затем reload для полного SSR-рендера DesignBoard.
+            consumePendingGeneration(slug);
             window.location.reload();
           }
         }

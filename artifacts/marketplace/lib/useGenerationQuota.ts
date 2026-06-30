@@ -27,6 +27,19 @@ export type QuotaTier = "anon" | "pro";
 
 export const STORAGE_KEY = "sfera_design_quota_v1";
 
+/**
+ * Отдельный localStorage-ключ: набор slug'ов генераций, которые ЭТО устройство
+ * реально запустило (HTTP 202) и которые ещё «в полёте». Служит основанием для
+ * возврата квоты, если генерация позже упадёт (status='failed'): возврат
+ * выполняется один раз и только для слага, помеченного этим устройством — это
+ * закрывает абьюз (чужой посетитель страницы падения или повторный refresh не
+ * могут начислить себе бесплатную попытку).
+ */
+export const PENDING_KEY = "sfera_design_pending_v1";
+
+/** Максимум хранимых pending-слагов (защита от неограниченного роста). */
+export const PENDING_MAX = 20;
+
 export const FREE_ANON = 1;
 export const PRO_GENERATIONS = 100;
 
@@ -50,6 +63,12 @@ export interface GenerationQuota {
   ready: boolean;
   /** Зафиксировать потраченную генерацию. Вызывать ПОСЛЕ успешного старта. */
   record: () => void;
+  /**
+   * Вернуть одну единицу квоты обратно (floored на 0). Тир не меняется.
+   * Вызывать, когда генерация, начатая этим устройством, завершилась падением,
+   * чтобы серверная ошибка не «съедала» бесплатную попытку пользователя.
+   */
+  refund: () => void;
   /** Повысить тир до "pro" (после оплаты). */
   upgradeTier: (tier: QuotaTier) => void;
   /** Сбросить счётчик (debug / админ). */
@@ -85,6 +104,15 @@ export function computeRemaining(limit: number, used: number): number {
  */
 export function recordUsage(state: StoredQuota): StoredQuota {
   return { ...state, used: state.used + 1 };
+}
+
+/**
+ * Чистый обратный переход к `recordUsage`: возвращает одну единицу квоты,
+ * никогда не опускаясь ниже нуля; тир не меняет. Вынесен отдельно от хука для
+ * детерминизма и тестируемости (Property: refund(record(s)) === clamp(s)).
+ */
+export function refundUsage(state: StoredQuota): StoredQuota {
+  return { ...state, used: Math.max(0, state.used - 1) };
 }
 
 /**
@@ -128,6 +156,56 @@ function writeStored(value: StoredQuota): void {
   }
 }
 
+function readPending(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(PENDING_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s): s is string => typeof s === "string");
+  } catch {
+    return [];
+  }
+}
+
+function writePending(slugs: string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    // Храним только последние PENDING_MAX — список самоограничивается, даже
+    // если какие-то слаги завершились успехом и не были «погашены».
+    window.localStorage.setItem(PENDING_KEY, JSON.stringify(slugs.slice(-PENDING_MAX)));
+  } catch {
+    // localStorage недоступен — мягко игнорируем.
+  }
+}
+
+/**
+ * Пометить slug как «своя генерация в полёте» — основание для возврата квоты,
+ * если она позже упадёт. Идемпотентно: повторная пометка того же слага не
+ * создаёт дубликат.
+ */
+export function markPendingGeneration(slug: string): void {
+  if (!slug) return;
+  const slugs = readPending();
+  if (slugs.includes(slug)) return;
+  writePending([...slugs, slug]);
+}
+
+/**
+ * Снять slug из набора pending. Возвращает `true`, если slug там был — то есть
+ * генерация принадлежит этому устройству и ещё не была «погашена». Идемпотентно:
+ * повторный вызов вернёт `false`, что исключает двойной возврат квоты при
+ * рефреше страницы падения.
+ */
+export function consumePendingGeneration(slug: string): boolean {
+  if (!slug) return false;
+  const slugs = readPending();
+  if (!slugs.includes(slug)) return false;
+  writePending(slugs.filter((s) => s !== slug));
+  return true;
+}
+
 export function useGenerationQuota(): GenerationQuota {
   const [state, setState] = useState<StoredQuota>({ used: 0, tier: "anon" });
   const [ready, setReady] = useState(false);
@@ -150,6 +228,14 @@ export function useGenerationQuota(): GenerationQuota {
   const record = useCallback(() => {
     setState((prev) => {
       const next = recordUsage(prev);
+      writeStored(next);
+      return next;
+    });
+  }, []);
+
+  const refund = useCallback(() => {
+    setState((prev) => {
+      const next = refundUsage(prev);
       writeStored(next);
       return next;
     });
@@ -182,6 +268,7 @@ export function useGenerationQuota(): GenerationQuota {
     canGenerate,
     ready,
     record,
+    refund,
     upgradeTier,
     reset,
   };

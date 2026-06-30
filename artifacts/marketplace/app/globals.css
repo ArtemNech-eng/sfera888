@@ -67,6 +67,31 @@
   --color-secondary-hover: #C2410C;
   --color-secondary-soft: #FDEBD8;
 
+  /* ─── Premium accent (тёмный + золото) — ТОЧЕЧНО ────────────────────
+     Премиальный акцент для AI-дизайна и hero-моментов. НЕ меняет светлую
+     базу маркетплейса: применяется выборочно (hero-баннер AI-фичи, CTA
+     «Создать дизайн», карточки-промо). Токены лежат в `@theme`, поэтому
+     Tailwind генерит утилиты `bg-premium`, `text-gold`, `border-gold`,
+     `bg-gold` и т.д. — это и есть механизм точечного применения. Для
+     частой связки «тёмная поверхность + золотой бейдж + золотая кнопка»
+     есть composite-классы `.surface-premium` / `.badge-gold` / `.btn-gold`
+     ниже.
+     ──────────────────────────────────────────────────────────────── */
+  --color-premium: #1C1A17;          /* тёмная charcoal-поверхность */
+  --color-premium-soft: #26231E;     /* вложенные карточки на тёмном */
+  --color-premium-border: #2F2B24;   /* hairline на тёмном */
+  --color-premium-text: #F5F0E8;     /* кремовый текст на тёмном */
+  --color-premium-muted: #B9B2A4;    /* приглушённый текст на тёмном */
+  --color-gold: #F5C560;             /* основной золотой акцент */
+  --color-gold-hover: #E0A93E;       /* hover / насыщенный */
+  --color-gold-strong: #C8902F;      /* для текста по светлому, контраст */
+  --color-gold-soft: #3A3219;        /* подложка бейджа на тёмном */
+  --color-on-gold: #1C1A17;          /* тёмный текст на золотой заливке */
+
+  /* Премиальные градиент/тень — для золотых CTA и тёмных hero. */
+  --gradient-gold: linear-gradient(135deg, #F7D27C 0%, #E0A93E 100%);
+  --shadow-gold: 0 8px 30px rgba(224, 169, 62, 0.20);
+
   /* Geometry — softer journal radii. */
   --radius-card: 16px;
   --radius-card-sm: 12px;
@@ -145,6 +170,52 @@ body {
 .hl {
   background-image: linear-gradient(transparent 60%, var(--color-cta) 60%);
   padding: 0 0.12em;
+}
+
+/* ─── Premium accent composites (тёмный + золото) ──────────────────
+   Точечные классы для «премиальной» связки. Применять на отдельных
+   блоках (hero AI-дизайна, промо-баннер, модалка-пейволл), НЕ на всю
+   страницу — светлая база маркетплейса остаётся основной.
+   ──────────────────────────────────────────────────────────────── */
+
+/* Тёмная премиальная поверхность: charcoal-фон + кремовый текст. */
+.surface-premium {
+  background-color: var(--color-premium);
+  color: var(--color-premium-text);
+}
+
+/* Золотой eyebrow-бейдж на тёмном фоне («ЛИМИТ ИСЧЕРПАН», «AI-ДИЗАЙН»). */
+.badge-gold {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--color-gold) 30%, transparent);
+  background-color: color-mix(in srgb, var(--color-gold) 12%, transparent);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-gold);
+}
+
+/* Золотая CTA-заливка (тёмный текст сверху) — для «Создать дизайн» и т.п. */
+.btn-gold {
+  background-image: var(--gradient-gold);
+  color: var(--color-on-gold);
+  box-shadow: var(--shadow-gold);
+  transition: filter 150ms ease, background-color 150ms ease;
+}
+.btn-gold:hover {
+  background-image: none;
+  background-color: var(--color-gold-hover);
+}
+
+/* Золотой текстовый акцент по СВЕТЛОМУ фону (заголовки/цифры на МП).
+   Использует более тёмный оттенок золота ради контраста на креме. */
+.text-gold-on-light {
+  color: var(--color-gold-strong);
 }
 
 .shadow-cozy {

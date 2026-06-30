@@ -171,6 +171,12 @@ export interface GenerateOutcomeActions {
   record: () => void;
   /** Navigate to a path (`router.push`). */
   navigate: (path: string) => void;
+  /**
+   * Optional: mark the started design slug as «this device's pending
+   * generation», so the quota unit can be refunded later if it ends in
+   * `failed`. No-op when omitted (keeps existing callers/tests valid).
+   */
+  markPending?: (slug: string) => void;
 }
 
 /**
@@ -203,6 +209,7 @@ export function handleGenerateOutcome(
   if (isSuccessfulStart(status, body)) {
     const slug = body!.design!.slug as string;
     actions.record();
+    actions.markPending?.(slug);
     actions.navigate(`/dizajn/${slug}`);
     return true;
   }
