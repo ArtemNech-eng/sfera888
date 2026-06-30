@@ -36,18 +36,21 @@ import { isIndexableDesignStatus, NOINDEX_ROBOTS } from "../../../lib/dizajnInde
  * (lib/designWorker.ts), поэтому "generating" не залипает.
  */
 
-// Сконфигурированный интервал ревалидации (сек). `0` ⇒ полностью статическая.
+// Route-segment ISR config. Next.js requires this export to be a STATICALLY
+// analyzable literal — a ternary or env-derived value fails the build with
+// "Unsupported node type ConditionalExpression at revalidate". We therefore fix
+// the background ISR window to a literal default (1 час). Freshness on
+// generation-completion is driven by on-demand `revalidatePath()` from the
+// worker (lib/designWorker.ts), not by this interval, so a "generating" page
+// never залипает независимо от значения здесь.
+export const revalidate = 3600;
+
+// TTL кэша data-fetch'а дизайна (runtime-значение, не segment config — Next
+// допускает здесь вычисляемое значение). Конфигурируется env
+// `DIZAJN_ISR_REVALIDATE_SECONDS`: `0` ⇒ практически бессрочный кэш (1 год),
+// чтобы fetch не переводил статический роут в динамический; обновление
+// приходит через `revalidatePath` из воркера.
 const CONFIGURED_REVALIDATE_SECONDS = dizajnRevalidateSeconds();
-
-// Route-segment ISR config (читается Next.js на уровне модуля). При значении
-// `0` экспортируем `false` — Next кэширует страницу бессрочно (полностью
-// статическая после первой генерации), иначе ревалидируем каждые N секунд.
-export const revalidate =
-  CONFIGURED_REVALIDATE_SECONDS === 0 ? false : CONFIGURED_REVALIDATE_SECONDS;
-
-// TTL кэша data-fetch'а дизайна. В полностью статическом режиме (config `0`)
-// данные кэшируются практически бессрочно (1 год), чтобы fetch не переводил
-// статический роут в динамический; обновление приходит через revalidatePath.
 const DESIGN_REVALIDATE_SECONDS =
   CONFIGURED_REVALIDATE_SECONDS === 0 ? 31_536_000 : CONFIGURED_REVALIDATE_SECONDS;
 
