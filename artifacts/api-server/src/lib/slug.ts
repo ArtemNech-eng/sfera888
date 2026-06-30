@@ -16,6 +16,7 @@
 
 import { db, designsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
 
 // GOST-7.79 system B (simplified) — same table as scripts/.
 const TRANSLIT: Record<string, string> = {
@@ -190,11 +191,26 @@ export function buildDesignSlugBase(input: DesignSlugInput): string {
 
 /**
  * `pickUniqueSlug({ roomType, style, extraSegments })` — внутренняя реализация
- * для object-overload. Делает `SELECT slug FROM designs WHERE slug = ?` через
- * Drizzle и возвращает уникальный slug.
+ * для object-overload. Возвращает уникальный slug ВСЕГДА с хвостовым
+ * токеном-нанокодом (6–8 символов [a-z0-9]).
+ *
+ * Почему обязателен токен: `app/dizajn/[slug]/parseRoute.ts` различает
+ * страницу дизайна и страницу-категорию по ФОРМАТУ слага — полный дизайн-слаг
+ * заканчивается нанокодом (`{room}-{style}-{nanoid}`), а двухсегментный
+ * `{room}-{style}` трактуется как агрегат (`/dizajn/bedroom-loft`).
+ * Раньше первый проект для пары комната+стиль получал «голый» слаг
+ * `bedroom-loft` и его страница перекрывалась категорией (проект становился
+ * недоступен). Теперь нанокод добавляется всегда — коллизия с маршрутом
+ * категории невозможна, а уникальность практически гарантируется самим
+ * токеном.
  */
 async function pickUniqueDesignSlug(input: DesignSlugInput): Promise<string> {
-  const base = buildDesignSlugBase(input);
+  const core0 = buildDesignSlugBase(input) || DESIGN_SLUG_FALLBACK;
+  // Резервируем место под "-" + 8 символов токена в пределах 160.
+  const core =
+    core0.length > DESIGN_SLUG_MAX_LEN - 9
+      ? core0.slice(0, DESIGN_SLUG_MAX_LEN - 9).replace(/-+$/g, "")
+      : core0;
 
   const isTaken = async (candidate: string): Promise<boolean> => {
     const rows = await db
@@ -205,20 +221,27 @@ async function pickUniqueDesignSlug(input: DesignSlugInput): Promise<string> {
     return rows.length > 0;
   };
 
-  const slug = await uniqueWithChecker(
-    base,
-    isTaken,
-    DESIGN_SLUG_FALLBACK,
-    DESIGN_SLUG_MAX_LEN,
-    DESIGN_SLUG_MAX_ATTEMPTS,
-  );
-
-  // Финальный sanity-check: slug всегда удовлетворяет regex и длине.
-  if (!DESIGN_SLUG_VALID_RE.test(slug) || slug.length > DESIGN_SLUG_MAX_LEN) {
-    throw new Error(
-      `[slug] generated design slug "${slug}" violates well-formedness contract`,
-    );
+  for (let attempt = 0; attempt < DESIGN_SLUG_MAX_ATTEMPTS; attempt++) {
+    const slug = `${core}-${designNanoId()}`;
+    if (
+      DESIGN_SLUG_VALID_RE.test(slug) &&
+      slug.length <= DESIGN_SLUG_MAX_LEN &&
+      !(await isTaken(slug))
+    ) {
+      return slug;
+    }
   }
 
-  return slug;
+  throw new Error(
+    `[slug] could not generate unique design slug for base "${core}"`,
+  );
+}
+
+/** 8-символьный нанокод [a-z0-9] (совпадает с ожиданием parseRoute: 6–8 символов). */
+const NANO_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+function designNanoId(len = 8): string {
+  const bytes = randomBytes(len);
+  let out = "";
+  for (let i = 0; i < len; i++) out += NANO_ALPHABET[bytes[i]! % NANO_ALPHABET.length];
+  return out;
 }
