@@ -1367,6 +1367,72 @@ async function processDesign(designId: number): Promise<void> {
           }
         }
       }
+      // ── Graceful degradation §F (robustness, Req 14.x) ──────────────
+      //
+      // Если hero строился ИЗ ФОТО пользователя (edit-image) и ВСЕ попытки
+      // упали (частая причина: Fal не может фетчнуть фото — не задан/битый
+      // `R2_PUBLIC_URL`, приватный бакет, недоступный edit-провайдер), НЕ
+      // валим весь проект. Откатываемся на надёжный text2img-native 1024
+      // (тот же путь, что у заявок без фото — он стабильно завершается).
+      // Дизайн получит валидный ракурс в выбранном стиле; единственный
+      // компромисс — он не «по точному фото», но это несравнимо лучше, чем
+      // полный `failed`. Шаг остаётся required (нужен хотя бы один hero).
+      if (
+        (!heroBuffer || !heroPublicUrl || !heroResult) &&
+        heroStrategy.usesUserPhoto
+      ) {
+        const fbPrompt = buildHeroViewPrompt(
+          design.roomType,
+          design.style,
+          areaNum,
+          layout,
+          design.palette,
+        );
+        const fbModel = process.env.FAL_MODEL_GPT_IMAGE ?? "fal-ai/gpt-image-1.5";
+        for (let attempt = 0; attempt <= SINGLE_RETRY; attempt++) {
+          try {
+            const res = await withCostGuard(
+              designId,
+              () =>
+                falGenerateGptImage({
+                  prompt: fbPrompt,
+                  imageSize: "1024x1024",
+                  quality: "high",
+                }),
+              (r) =>
+                recordGenerationSuccess(designId, {
+                  model: fbModel,
+                  prompt: fbPrompt,
+                  roomType: design.roomType,
+                  style: design.style,
+                  costKopeks: r.costKopeks,
+                  providerResponse: {
+                    generationMs: r.generationMs,
+                    view: "view_1_native",
+                    mode: "text2img-high-native-1024-photo-fallback",
+                    imageSize: `${r.width}x${r.height}`,
+                  },
+                }),
+            );
+            heroResult = res;
+            heroBuffer = await downloadImage(res.imageUrl);
+            heroPublicUrl = await uploadJpegToR2(
+              bucketId,
+              `dizajn/results/${designId}_view_1.jpg`,
+              heroBuffer,
+            );
+            console.warn(
+              `[designWorker] design ${designId}: user-photo hero failed `
+              + "— degraded to text2img native hero (project preserved)",
+            );
+            break;
+          } catch (e) {
+            if (e instanceof BudgetExceededError) throw e;
+            lastError = e;
+            if (attempt < SINGLE_RETRY) continue;
+          }
+        }
+      }
       if (!heroBuffer || !heroPublicUrl || !heroResult) {
         throw new RequiredStepFailedError(
           STEP_HERO_RENDER,
