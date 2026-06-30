@@ -1102,10 +1102,51 @@ async function withCostGuard<T extends { costKopeks: number }>(
   recordResult: (res: T) => Promise<void>,
 ): Promise<T> {
   await enforceCostCeiling(designId);
-  const result = await call();
+  // Таймаут на КАЖДЫЙ AI-вызов. Без него зависший Fal-запрос (ответ не
+  // приходит) блокирует await навсегда: «опциональность» ракурсов 2..4 спасает
+  // только когда вызов БРОСАЕТ ошибку, а не когда висит — и тогда весь проект
+  // стоит до 10-минутного watchdog'а и падает с «не удалось сгенерировать
+  // ракурс». Таймаут превращает зависание в обычную ошибку: опциональный шаг
+  // пропускается, обязательный — уходит в retry/fail штатно, без 10-мин залипа.
+  const result = await withAiCallTimeout(call(), designId);
   await recordResult(result);
   await enforceCostCeiling(designId);
   return result;
+}
+
+/**
+ * Верхняя граница ожидания одного внешнего AI-вызова (мс). Нормальная
+ * генерация ракурса — 15..75с; 180с с запасом покрывают медленный, но живой
+ * ответ, при этом ограничивают истинное зависание. Меньше 10-мин watchdog'а,
+ * поэтому даже required-шаг с одним повтором (2×180с) падает штатно, а не висит.
+ */
+const AI_CALL_TIMEOUT_MS = 180_000;
+
+/**
+ * Ограничивает промис AI-вызова по времени. При превышении реджектит ошибкой
+ * (зависший сетевой запрос продолжит фоном, но await пайплайна освобождается —
+ * этого достаточно, чтобы FSM не залипал). Чистая обёртка без сайд-эффектов.
+ */
+function withAiCallTimeout<T>(p: Promise<T>, designId: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new Error(
+          `[design ${designId}] AI call timed out after ${AI_CALL_TIMEOUT_MS}ms`,
+        ),
+      );
+    }, AI_CALL_TIMEOUT_MS);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
 }
 
 // ─── Main pipeline ───────────────────────────────────────────────────────────
