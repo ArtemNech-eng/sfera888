@@ -6,6 +6,7 @@ import type { DesignFullDTO, DesignFeedItemDTO, DesignStatus } from "../../lib/t
 import { SaveButton } from "./SaveButton";
 import { DesignLeadForm } from "./DesignLeadForm";
 import { ShareButton } from "./ShareButton";
+import { BeforeAfterSlider } from "./BeforeAfterSlider";
 import {
   viewsGridClass,
   row2TemplateClass,
@@ -336,26 +337,22 @@ export function DesignBoard({
         <section className="bg-[var(--color-background)]">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
 
-            {/* ФОТО ДО — исходная комната пользователя (image-to-image).
-                Рендерим только когда есть `inputImageUrl` (для text2img/seed —
-                null, и блок скрыт). Даёт паре «Было → Стало» опору. */}
-            {design.inputImageUrl && (
-              <div className="mb-5">
+            {/* ПАРА «БЫЛО → СТАЛО» — слайдер с перетаскиваемым разделителем
+                поверх hero. Рендерим только когда есть и фото «до»
+                (`inputImageUrl`, image-to-image), и hero «после». */}
+            {design.inputImageUrl && (mainViews[0]?.url ?? design.resultImageUrl) && (
+              <div className="mb-5 max-w-xl">
                 <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">
-                  Фото до
+                  Было → Стало
                 </h3>
-                <figure className="relative w-full max-w-sm overflow-hidden rounded-xl border border-[var(--color-border)]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={design.inputImageUrl}
-                    alt={`Фото комнаты до ремонта — ${shareTitle}`}
-                    className="aspect-[4/3] w-full object-cover"
-                    loading="lazy"
-                  />
-                  <figcaption className="absolute bottom-1.5 left-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                    Было
-                  </figcaption>
-                </figure>
+                <BeforeAfterSlider
+                  beforeUrl={design.inputImageUrl}
+                  afterUrl={(mainViews[0]?.url ?? design.resultImageUrl) as string}
+                  alt={shareTitle}
+                />
+                <p className="mt-1.5 text-[11px] text-[var(--color-faint)]">
+                  Перетащите разделитель, чтобы сравнить вашу комнату с дизайном.
+                </p>
               </div>
             )}
 
