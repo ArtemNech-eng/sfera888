@@ -229,6 +229,26 @@ export function DesignBoard({
   const designUrl = `${baseUrl.replace(/\/+$/, "")}/dizajn/${design.slug}`;
   const shareTitle = design.h1 ?? `Дизайн ${roomGen} в стиле ${styleLabel}`;
 
+  // Верхний блок: если есть фото «до» и hero «после» — рендерим пару «Было →
+  // Стало» рядом с ракурсами 2×2 (заполняет ширину, без пустот). Иначе —
+  // обычная адаптивная сетка ракурсов во всю ширину.
+  const heroAfterUrl = mainViews[0]?.url ?? design.resultImageUrl ?? null;
+  const showBeforeAfter = Boolean(design.inputImageUrl && heroAfterUrl);
+  const renderViewFigure = (v: { url: string; label: string }, i: number) => (
+    <figure key={v.url} className="relative overflow-hidden rounded-xl">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={v.url}
+        alt={`${v.label} — ${shareTitle}`}
+        className="aspect-[4/3] w-full object-cover"
+        loading={i === 0 ? "eager" : "lazy"}
+      />
+      <figcaption className="absolute bottom-1.5 left-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+        {i + 1}. {v.label}
+      </figcaption>
+    </figure>
+  );
+
   const totalEstimateRub = design.estimate
     ? Math.round(design.estimate.reduce((s, e) => s + e.amountKopeks, 0) / 100)
     : null;
@@ -337,42 +357,33 @@ export function DesignBoard({
         <section className="bg-[var(--color-background)]">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
 
-            {/* ПАРА «БЫЛО → СТАЛО» — слайдер с перетаскиваемым разделителем
-                поверх hero. Рендерим только когда есть и фото «до»
-                (`inputImageUrl`, image-to-image), и hero «после». */}
-            {design.inputImageUrl && (mainViews[0]?.url ?? design.resultImageUrl) && (
-              <div className="mb-5 max-w-xl">
-                <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">
-                  Было → Стало
-                </h3>
-                <BeforeAfterSlider
-                  beforeUrl={design.inputImageUrl}
-                  afterUrl={(mainViews[0]?.url ?? design.resultImageUrl) as string}
-                  alt={shareTitle}
-                />
-                <p className="mt-1.5 text-[11px] text-[var(--color-faint)]">
-                  Перетащите разделитель, чтобы сравнить вашу комнату с дизайном.
-                </p>
+            {/* ВЕРХНИЙ БЛОК ракурсов. С фото «до» — пара «Было → Стало» слева
+                и 4 ракурса сеткой 2×2 справа (заполняет всю ширину). Без фото —
+                обычная адаптивная сетка ракурсов. */}
+            {showBeforeAfter ? (
+              <div className="grid gap-3 sm:gap-4 lg:grid-cols-2 lg:items-stretch">
+                <div className="flex flex-col">
+                  <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">
+                    Было → Стало
+                  </h3>
+                  <BeforeAfterSlider
+                    beforeUrl={design.inputImageUrl as string}
+                    afterUrl={heroAfterUrl as string}
+                    alt={shareTitle}
+                  />
+                  <p className="mt-1.5 text-[11px] text-[var(--color-faint)]">
+                    Перетащите разделитель, чтобы сравнить вашу комнату с дизайном.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                  {mainViews.map(renderViewFigure)}
+                </div>
+              </div>
+            ) : (
+              <div className={row1Class}>
+                {mainViews.map(renderViewFigure)}
               </div>
             )}
-
-            {/* ROW 1: основные ракурсы — адаптивная сетка под их число */}
-            <div className={row1Class}>
-              {mainViews.map((v, i) => (
-                <figure key={v.url} className="relative overflow-hidden rounded-xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={v.url}
-                    alt={`${v.label} — ${shareTitle}`}
-                    className="aspect-[4/3] w-full object-cover"
-                    loading={i === 0 ? "eager" : "lazy"}
-                  />
-                  <figcaption className="absolute bottom-1.5 left-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                    {i + 1}. {v.label}
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
 
             {/* ROW 2: Изометрия + Параметры/Материалы/Смета + Палитра */}
             <div className={row2Class}>
