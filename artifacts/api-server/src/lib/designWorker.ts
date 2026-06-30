@@ -482,10 +482,12 @@ function buildAngleEditPrompt(room: string, style: string, position: number): st
   // position 2..4 → subjects index 1..3 (subjects[0] — общий вид = hero).
   const subject = subjects[position - 1] ?? subjects[subjects.length - 1]!;
   return [
-    `Same interior room as the reference image: same finishes, same furniture, same color palette, same «${styleClause}» style — identical room, only a different camera angle.`,
-    `Strictly preserve the «${styleClause}» interior style of the reference — do not drift into any other style.`,
-    `Show this view: ${subject}.`,
-    `Keep wall colors, flooring, furniture models, materials and lighting consistent with the reference. Photorealistic interior photography, warm soft lighting, no people, no text, no watermark. No mixing with other interior styles, no foreign-style decor, no distorted room geometry.`,
+    `This is the SAME physical interior room shown in the reference image, photographed from a different camera position. Do NOT redesign, reimagine or regenerate the room.`,
+    `Everything must stay identical to the reference: wall finishes and colours, flooring, ceiling, window and door placement, the exact same furniture (same models, materials, sizes and positions), the color palette, and the lighting mood.`,
+    `Strictly keep the «${styleClause}» interior style of the reference — do not drift into any other style.`,
+    `The ONLY change is the camera viewpoint: ${subject}.`,
+    `Do NOT add, remove, move or resize any furniture; do NOT change the room layout, geometry or proportions; do NOT introduce new colours, materials or decor. It must read as the same room as the reference, just seen from another angle.`,
+    `Photorealistic interior photography, warm soft lighting, no people, no text, no watermark. No mixing with other interior styles, no foreign-style decor, no distorted room geometry.`,
   ].join(" ");
 }
 
