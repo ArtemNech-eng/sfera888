@@ -2014,13 +2014,11 @@ async function processDesign(designId: number): Promise<void> {
         estimate,
         solutions: content!.solutions,
         colorPalette,
-        // Анонимные пользовательские проекты: владение через `anon_id`,
-        // публичность по знанию URL (Requirement 4.6) — поле `is_public`
-        // разруливает админский `Showcase_Project` (там поле задаётся
-        // оператором). Не перезаписываем `is_public` тут, чтобы не
-        // менять семантику админских записей.
-        publicConsentAt:
-          design.publicConsentAt ?? (design.isPublic ? new Date() : null),
+        // Авто-публикация завершённых дизайнов в галерею «Идеи» (продуктовое
+        // решение): любой успешно собранный проект становится публичным.
+        // Сид/Showcase-записи и так публичны — флаг идемпотентен.
+        isPublic: true,
+        publicConsentAt: design.publicConsentAt ?? new Date(),
         updatedAt: new Date(),
       })
       .where(eq(designsTable.id, designId));
