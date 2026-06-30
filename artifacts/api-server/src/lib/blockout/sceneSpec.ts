@@ -441,8 +441,17 @@ export function computeRoomDimensions(
     );
   }
 
-  const L = Math.sqrt(areaM2 / ratio);
-  const W = ratio * L; // эквивалентно Math.sqrt(areaM2 * ratio)
+  // Берём корень ДО деления/умножения на соотношение сторон. Математически
+  // L = sqrt(areaM2 / ratio) = sqrt(areaM2) / sqrt(ratio), а
+  // W = sqrt(areaM2 * ratio) = sqrt(areaM2) * sqrt(ratio). Но промежуточное
+  // `areaM2 / ratio` для очень малых площадей (близких к Number.MIN_VALUE) при
+  // ratio > 1 теряет точность вплоть до underflow в 0, из-за чего L обнулялся и
+  // нарушал контракт строгой положительности (Requirement 2.4). Разложение через
+  // sqrt(areaM2) сохраняет положительность для любой положительной конечной площади.
+  const sqrtArea = Math.sqrt(areaM2);
+  const sqrtRatio = Math.sqrt(ratio);
+  const L = sqrtArea / sqrtRatio;
+  const W = sqrtArea * sqrtRatio; // эквивалентно Math.sqrt(areaM2 * ratio)
   const H = FIXED_CEILING_HEIGHT_M;
 
   return { W, L, H };
