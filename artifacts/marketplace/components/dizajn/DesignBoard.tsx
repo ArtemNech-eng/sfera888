@@ -336,6 +336,29 @@ export function DesignBoard({
         <section className="bg-[var(--color-background)]">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
 
+            {/* ФОТО ДО — исходная комната пользователя (image-to-image).
+                Рендерим только когда есть `inputImageUrl` (для text2img/seed —
+                null, и блок скрыт). Даёт паре «Было → Стало» опору. */}
+            {design.inputImageUrl && (
+              <div className="mb-5">
+                <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">
+                  Фото до
+                </h3>
+                <figure className="relative w-full max-w-sm overflow-hidden rounded-xl border border-[var(--color-border)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={design.inputImageUrl}
+                    alt={`Фото комнаты до ремонта — ${shareTitle}`}
+                    className="aspect-[4/3] w-full object-cover"
+                    loading="lazy"
+                  />
+                  <figcaption className="absolute bottom-1.5 left-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                    Было
+                  </figcaption>
+                </figure>
+              </div>
+            )}
+
             {/* ROW 1: основные ракурсы — адаптивная сетка под их число */}
             <div className={row1Class}>
               {mainViews.map((v, i) => (
