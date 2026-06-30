@@ -379,7 +379,7 @@ export function DesignBoard({
 
               {/* LEFT: Isometric + Top-down plan — только при наличии */}
               {hasLeftColumn && (
-                <div className="space-y-3">
+                <div className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-cozy sm:p-4">
                   {isometricView && (
                     <figure className="overflow-hidden rounded-xl">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -398,7 +398,7 @@ export function DesignBoard({
               )}
 
               {/* CENTER: params + materials + estimate */}
-              <div className="space-y-4">
+              <div className="space-y-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-cozy sm:p-5">
                 {/* Параметры проекта */}
                 <div>
                   <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Параметры проекта</h3>
@@ -487,16 +487,25 @@ export function DesignBoard({
 
               {/* RIGHT: palette — только при наличии данных (без плейсхолдера) */}
               {hasPalette && (
-                <div>
+                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-cozy sm:p-5 lg:min-w-[180px]">
                   <h3 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-muted)]">Цветовая палитра</h3>
-                  <div className="mt-3 flex flex-wrap gap-2 lg:flex-col lg:items-start">
+                  <ul className="mt-3 space-y-2.5">
                     {design.colorPalette!.slice(0, 5).map((swatch) => (
-                      <div key={swatch.hex} className="text-center">
-                        <div className="h-10 w-10 rounded-full border border-[var(--color-border)]" style={{ backgroundColor: swatch.hex }} title={swatch.name ?? swatch.hex} />
-                        <span className="mt-1 block text-[9px] text-[var(--color-muted)]">{swatch.hex}</span>
-                      </div>
+                      <li key={swatch.hex} className="flex items-center gap-2.5">
+                        <span
+                          className="h-7 w-7 shrink-0 rounded-full border border-[var(--color-border)] shadow-cozy"
+                          style={{ backgroundColor: swatch.hex }}
+                          title={swatch.name ?? swatch.hex}
+                        />
+                        <span className="min-w-0 leading-tight">
+                          {swatch.name && (
+                            <span className="block truncate text-xs font-medium text-[var(--color-text)]">{swatch.name}</span>
+                          )}
+                          <span className="block text-[10px] uppercase tracking-wide text-[var(--color-faint)]">{swatch.hex}</span>
+                        </span>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
 
