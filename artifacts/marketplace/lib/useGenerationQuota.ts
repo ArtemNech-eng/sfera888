@@ -144,7 +144,13 @@ export function refundUsage(state: StoredQuota): StoredQuota {
  */
 export function applyWindowReset(state: StoredQuota, nowMs: number): StoredQuota {
   if (state.tier !== "anon") return state;
-  if (state.windowStartedAt == null) return state;
+  // Окно ещё не заякорено. Если квота уже потрачена (в т.ч. legacy-состояние
+  // `{used:1}` из сборок до появления окна) — якорим окно СЕЙЧАС, иначе сброс
+  // никогда не сработает: record() уже не вызовется (пользователь заблокирован),
+  // и used завис бы навсегда. Если ничего не потрачено — якорить нечего.
+  if (state.windowStartedAt == null) {
+    return state.used > 0 ? { ...state, windowStartedAt: nowMs } : state;
+  }
   if (nowMs - state.windowStartedAt < FREE_RESET_WINDOW_MS) return state;
   return { used: 0, tier: state.tier, windowStartedAt: nowMs };
 }
