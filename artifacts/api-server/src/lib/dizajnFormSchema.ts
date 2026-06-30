@@ -11,8 +11,8 @@
  *   - 1.6  диапазон бюджета 50_000..5_000_000 ₽
  *   - 1.10 при выходе за границы — 400 со списком всех нарушений (не только первого)
  *
- * Используется HTTP-обработчиком `POST /generate` (задача 16.2). Сам Turnstile-токен
- * валидируется отдельно (`lib/turnstile.ts`), но включён в схему как опциональное поле,
+ * Используется HTTP-обработчиком `POST /generate` (задача 16.2). Сам токен капчи
+ * валидируется отдельно (`lib/smartCaptcha.ts`), но включён в схему как опциональное поле,
  * чтобы клиентский payload проходил парсинг как единое целое.
  */
 
@@ -101,11 +101,12 @@ export const designFormSchema = z.object({
   features: z.array(z.string().min(1).max(64)).max(20).optional(),
   cityId: z.number().int().positive().optional(),
   /**
-   * Cloudflare Turnstile token. Для удобства тестов и интеграции с локальным dev
-   * (`lib/turnstile.ts` пропускает запрос, если `TURNSTILE_SECRET_KEY` не задан)
-   * поле объявлено опциональным; обязательность форсится в HTTP-обработчике.
+   * Yandex SmartCaptcha token (`smart-token`). Для удобства тестов и локального
+   * dev (`lib/smartCaptcha.ts` пропускает запрос, если `SMARTCAPTCHA_SERVER_KEY`
+   * не задан) поле объявлено опциональным; обязательность форсится в
+   * HTTP-обработчике (`verifyCaptchaToken`).
    */
-  turnstileToken: z.string().min(1).optional(),
+  smartToken: z.string().min(1).optional(),
 });
 
 export type DesignFormInput = z.infer<typeof designFormSchema>;

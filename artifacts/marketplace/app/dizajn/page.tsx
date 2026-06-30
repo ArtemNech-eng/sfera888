@@ -31,11 +31,9 @@ export default async function DizajnLandingPage() {
   // `NEXT_PUBLIC_*` доступен и на сервере, и в клиентском бандле — пробрасываем
   // его в `Flagship_Form` как prop, чтобы клиентский компонент не обращался к
   // `process.env` напрямую (упрощает SSR-тесты и чтение конфига).
-  const turnstileSiteKey =
-    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ??
-    // Cloudflare Turnstile dev/test siteKey — всегда выдаёт valid токен,
-    // используется только когда production env не задан (локальная разработка).
-    "1x00000000000000000000AA";
+  // ВНИМАНИЕ: `NEXT_PUBLIC_*` вшивается в бандл на этапе СБОРКИ — при смене
+  // ключа нужно пересобрать marketplace, иначе в клиенте останется старое значение.
+  const captchaSiteKey = process.env.NEXT_PUBLIC_SMARTCAPTCHA_SITE_KEY ?? "";
 
   return (
     <>
@@ -59,7 +57,7 @@ export default async function DizajnLandingPage() {
       <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-20">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy sm:p-8 lg:p-10">
-            <FlagshipForm turnstileSiteKey={turnstileSiteKey} />
+            <FlagshipForm captchaSiteKey={captchaSiteKey} />
           </div>
         </div>
       </section>

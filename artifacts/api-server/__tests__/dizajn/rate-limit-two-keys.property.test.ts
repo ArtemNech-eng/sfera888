@@ -39,7 +39,7 @@ import assert from "node:assert/strict";
 import fc from "fast-check";
 
 // Fake env *before* any production import so module-load-time checks
-// (S3 client, pg.Pool) don't trip. A non-empty TURNSTILE_SECRET_KEY ensures
+// (S3 client, pg.Pool) don't trip. A non-empty SMARTCAPTCHA_SERVER_KEY ensures
 // the captcha branch is actually exercised (not the dev-mode bypass).
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://fake:fake@localhost:5432/fake";
@@ -47,7 +47,7 @@ process.env.R2_ENDPOINT = process.env.R2_ENDPOINT ?? "https://fake.r2.dev";
 process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "fake-key";
 process.env.R2_SECRET_ACCESS_KEY =
   process.env.R2_SECRET_ACCESS_KEY ?? "fake-secret";
-process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";
 
 const dbModule = await import("@workspace/db");
 const { db } = dbModule;
@@ -227,10 +227,8 @@ const passingFetch = (async () =>
   ({
     ok: true,
     json: async () => ({
-      success: true,
-      action: "ai_design_submit",
-      challenge_ts: "2025-01-01T00:00:00Z",
-      hostname: "sfera.test",
+      status: "ok",
+      host: "sfera.test",
     }),
   }) as unknown as Response) as typeof fetch;
 
@@ -321,7 +319,7 @@ function validBody(token: string): Record<string, unknown> {
     lengthCm: 500,
     heightCm: 270,
     budget: 1_000_000,
-    "cf-turnstile-response": token,
+    "smart-token": token,
   };
 }
 
@@ -337,7 +335,7 @@ describe("dizajn POST /generate — Property 9: rate limiting checks both keys a
   // Validates: Requirements 7.3, 7.4
 
   before(() => {
-    process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+    process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";
     globalThis.fetch = passingFetch;
   });
 

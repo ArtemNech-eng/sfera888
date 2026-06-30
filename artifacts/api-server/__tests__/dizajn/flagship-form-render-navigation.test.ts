@@ -111,8 +111,8 @@ describe("Task 7.6 — exactly one Flagship_Form with all controls", () => {
     // controls; the tile catalogs are asserted from the real config below.
     assert.match(FORM_SRC, /type="file"/, "must expose a photo file input");
     assert.match(FORM_SRC, /accept="image\/jpeg,image\/png"/, "photo input limited to JPG/PNG");
-    assert.match(FORM_SRC, /cf-turnstile/, "must include the Turnstile widget");
-    assert.match(FORM_SRC, /data-action="ai_design_submit"/, "Turnstile action must be set");
+    assert.match(FORM_SRC, /smart-captcha/, "must include the SmartCaptcha widget");
+    assert.match(FORM_SRC, /data-sitekey/, "captcha sitekey must be wired");
     assert.match(FORM_SRC, /aria-label="Бюджет/, "must expose a budget input");
     assert.match(FORM_SRC, /aria-label="Площадь/, "must expose an area (м²) input");
     assert.match(FORM_SRC, /type="submit"/, "must expose a submit control");

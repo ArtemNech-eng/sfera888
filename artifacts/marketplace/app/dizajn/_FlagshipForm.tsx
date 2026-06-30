@@ -33,7 +33,7 @@ export { deriveRoomDims } from "./_flagshipFormConfig";
  * `Flagship_Form` — единая публичная форма AI_Design_Flagship на канонической
  * странице `/dizajn`. Консолидирует лучшее из трёх исторических форм:
  *   • загрузку фото + preview — из `UploadForm` (`/dizajn` legacy);
- *   • Turnstile + per-field/top-level ошибки по `violations`/`error` — из
+ *   • SmartCaptcha + per-field/top-level ошибки по `violations`/`error` — из
  *     `_AiDesignForm` (`/ai-design`);
  *   • визуальные плитки (тип/стиль/палитра/сегмент), клиентскую квоту и
  *     `Paywall_Modal` — из `DesignConfigurator` (`/hochu-takzhe`).
@@ -46,15 +46,15 @@ export { deriveRoomDims } from "./_flagshipFormConfig";
  * Поведение submit (design.md → «Flagship_Form (клиент)»):
  *   1. клиентская предвалидация (площадь, бюджет, тип/размер фото, MVP-замок);
  *   2. `Free_Quota.canGenerate === false` → открыть `Paywall_Modal`, не слать;
- *   3. собрать `FormData` (+ опц. `image`, `cf-turnstile-response`) →
+ *   3. собрать `FormData` (+ опц. `image`, `smart-token`) →
  *      `POST /api/dizajn/generate`;
  *   4. `202 {slug}` → `record()` (списать 1 квоту) → `router.push('/dizajn/'+slug)`;
- *   5. `400/429` → top-level + per-field сообщения; сброс Turnstile-токена.
+ *   5. `400/429` → top-level + per-field сообщения; сброс токена капчи.
  */
 
 interface FlagshipFormProps {
-  /** Cloudflare Turnstile site key (требуется backend для anti-abuse). */
-  turnstileSiteKey: string;
+  /** Yandex SmartCaptcha client (site) key — требуется backend для anti-abuse. */
+  captchaSiteKey: string;
 }
 
 // ── ответы API ────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ interface ApiBody {
   retryAfterSeconds?: number;
 }
 
-export function FlagshipForm({ turnstileSiteKey }: FlagshipFormProps) {
+export function FlagshipForm({ captchaSiteKey }: FlagshipFormProps) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -136,11 +136,12 @@ export function FlagshipForm({ turnstileSiteKey }: FlagshipFormProps) {
     clearFieldError("budget");
   }
 
-  function resetTurnstile() {
+  function resetCaptcha() {
     try {
-      (window as unknown as { turnstile?: { reset?: () => void } }).turnstile?.reset?.();
+      // SmartCaptcha: reset без widgetId сбрасывает первый отрисованный виджет.
+      (window as unknown as { smartCaptcha?: { reset?: (id?: unknown) => void } }).smartCaptcha?.reset?.();
     } catch {
-      /* ignore — повтор инициализации Turnstile не должен ломать UI */
+      /* ignore — повтор инициализации капчи не должен ломать UI */
     }
   }
 
@@ -165,13 +166,13 @@ export function FlagshipForm({ turnstileSiteKey }: FlagshipFormProps) {
     }
 
     const formEl = formRef.current ?? (e.currentTarget as HTMLFormElement);
-    // Turnstile-виджет кладёт одноразовый токен в hidden input внутри формы.
-    const turnstileToken = String(
-      new FormData(formEl).get("cf-turnstile-response") ?? "",
+    // SmartCaptcha-виджет кладёт одноразовый токен в hidden input `smart-token`.
+    const captchaToken = String(
+      new FormData(formEl).get("smart-token") ?? "",
     ).trim();
-    if (!turnstileToken) {
+    if (!captchaToken) {
       setTopError(
-        "Проверка Cloudflare ещё не завершилась — подождите пару секунд и попробуйте снова.",
+        "Проверка не завершилась — подождите пару секунд и попробуйте снова.",
       );
       return;
     }
@@ -188,7 +189,7 @@ export function FlagshipForm({ turnstileSiteKey }: FlagshipFormProps) {
     fd.append("heightCm", String(dims.heightCm));
     fd.append("budget", String(Number(budget)));
     fd.append("area", String(Number(area)));
-    fd.append("cf-turnstile-response", turnstileToken);
+    fd.append("smart-token", captchaToken);
     if (file) fd.append("image", file);
 
     setSubmitting(true);
@@ -199,7 +200,7 @@ export function FlagshipForm({ turnstileSiteKey }: FlagshipFormProps) {
     } catch {
       setTopError("Сеть недоступна. Проверьте подключение и попробуйте ещё раз.");
       setSubmitting(false);
-      resetTurnstile();
+      resetCaptcha();
       return;
     }
 
@@ -222,7 +223,7 @@ export function FlagshipForm({ turnstileSiteKey }: FlagshipFormProps) {
     // ── 5. Ошибки: per-field по violations[] + top-level по error ───────────
     applyServerErrors(res.status, parsed);
     setSubmitting(false);
-    resetTurnstile(); // одноразовый токен сгорел — сбрасываем для повтора
+    resetCaptcha(); // одноразовый токен сгорел — сбрасываем для повтора
   }
 
   /** Раскладывает серверные нарушения по полям формы + общий текст ошибки. */
@@ -251,9 +252,8 @@ export function FlagshipForm({ turnstileSiteKey }: FlagshipFormProps) {
   return (
     <>
       <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        src="https://smartcaptcha.yandexcloud.net/captcha.js"
         strategy="afterInteractive"
-        async
         defer
       />
 
@@ -503,19 +503,20 @@ export function FlagshipForm({ turnstileSiteKey }: FlagshipFormProps) {
           />
         </Field>
 
-        {/* ── Cloudflare Turnstile ─────────────────────────────────── */}
+        {/* ── Yandex SmartCaptcha ──────────────────────────────────── */}
         <div>
           <span className="block text-sm font-semibold text-[var(--color-text)]">
             Подтверждение
           </span>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
-            Cloudflare убеждается, что вы человек — просто подождите пару секунд.
+            Капча убеждается, что вы человек — обычно проходит автоматически за пару секунд.
           </p>
+          {/* captcha.js автоматически рендерит виджет в .smart-captcha и кладёт
+              одноразовый токен в hidden input `smart-token` внутри формы. */}
           <div
-            className="cf-turnstile mt-3"
-            data-sitekey={turnstileSiteKey}
-            data-action="ai_design_submit"
-            data-theme="light"
+            className="smart-captcha mt-3"
+            data-sitekey={captchaSiteKey}
+            data-hl="ru"
           />
         </div>
 
@@ -645,7 +646,7 @@ function Chip({
 
 /**
  * Клиентская предвалидация (Requirement 6.1 + 5.x на стороне UX): ловит
- * очевидно невалидный ввод, чтобы не сжигать одноразовый Turnstile-токен.
+ * очевидно невалидный ввод, чтобы не сжигать одноразовый токен капчи.
  * Backend остаётся источником истины.
  */
 function collectClientErrors(input: {

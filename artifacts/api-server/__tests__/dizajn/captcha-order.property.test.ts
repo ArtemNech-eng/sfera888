@@ -12,7 +12,7 @@
  * `INSERT INTO designs`. This test pins that order down behaviourally.
  *
  * Strategy — drive the inline handler directly:
- *   1. Set fake env (`DATABASE_URL`, `R2_*`, `TURNSTILE_SECRET_KEY`) before
+ *   1. Set fake env (`DATABASE_URL`, `R2_*`, `SMARTCAPTCHA_SERVER_KEY`) before
  *      importing any production module — `objectStorage.ts` builds an
  *      `S3Client` at module load and refuses to start without R2 creds, and
  *      `@workspace/db` instantiates a `pg.Pool` from `DATABASE_URL`.
@@ -27,7 +27,7 @@
  *      function avoids spinning a full Express app + supertest just to
  *      assert call counts, which is overkill for this property.
  *
- * Captcha success/failure is steered through `TURNSTILE_SECRET_KEY`:
+ * Captcha success/failure is steered through `SMARTCAPTCHA_SERVER_KEY`:
  *   - Empty / missing → `verifyTurnstileToken` short-circuits to
  *     `success: true` (dev-mode bypass; see `lib/turnstile.ts`). The
  *     network is never touched.
@@ -55,7 +55,7 @@ process.env.R2_SECRET_ACCESS_KEY =
 // Default to a non-empty secret so the captcha branch is exercised
 // (rather than dev-mode bypass). Individual tests below flip this for
 // the success-path case.
-process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";
 
 // `@workspace/db` exposes a singleton `db` whose method bag we mutate to
 // observe what the handler tries to do behind the captcha gate.
@@ -241,7 +241,7 @@ const invalidFormArb = fc.oneof(
     lengthCm: fc.integer({ min: 1, max: 199 }),
     heightCm: fc.integer({ min: 220, max: 350 }),
     budget: fc.integer({ min: 50_000, max: 5_000_000 }),
-    "cf-turnstile-response": fc.constant(""),
+    "smart-token": fc.constant(""),
   }),
   // (2) MVP-locked room with otherwise valid input — would fail with
   // `mvp_room_locked` if it reached the validator. Captcha must still
@@ -253,7 +253,7 @@ const invalidFormArb = fc.oneof(
     lengthCm: fc.integer({ min: 200, max: 800 }),
     heightCm: fc.integer({ min: 220, max: 350 }),
     budget: fc.integer({ min: 50_000, max: 5_000_000 }),
-    "cf-turnstile-response": fc.constant(""),
+    "smart-token": fc.constant(""),
   }),
   // (3) Sub-min-area bedroom — would trip `checkMinArea` if reached
   // (200 × 200 = 4 m² vs bedroom-min 6 m²).
@@ -264,7 +264,7 @@ const invalidFormArb = fc.oneof(
     lengthCm: fc.constant(200),
     heightCm: fc.integer({ min: 220, max: 350 }),
     budget: fc.integer({ min: 50_000, max: 5_000_000 }),
-    "cf-turnstile-response": fc.constant(""),
+    "smart-token": fc.constant(""),
   }),
   // (4) Wrong types: string instead of number
   fc.record({
@@ -274,11 +274,11 @@ const invalidFormArb = fc.oneof(
     lengthCm: fc.string(),
     heightCm: fc.string(),
     budget: fc.string(),
-    "cf-turnstile-response": fc.constant(""),
+    "smart-token": fc.constant(""),
   }),
   // (5) Empty / object body — captcha must still reject without crashing
   fc.constant({}),
-  fc.constant({ "cf-turnstile-response": "" }),
+  fc.constant({ "smart-token": "" }),
 );
 
 /**
@@ -309,11 +309,11 @@ describe("dizajn POST /generate — Property 4: captcha first", () => {
   before(() => {
     // Force the captcha branch (non-empty secret) by default. Individual
     // tests reset this if they need the dev-mode bypass.
-    process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+    process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";
   });
 
   it("4.1 invalid captcha → 400 invalid_captcha and zero downstream side effects", async () => {
-    process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+    process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";
 
     await fc.assert(
       fc.asyncProperty(
@@ -356,7 +356,7 @@ describe("dizajn POST /generate — Property 4: captcha first", () => {
     // Dev-mode bypass: empty secret makes verifyTurnstileToken return
     // success: true without touching the network. Tracks "captcha
     // succeeded" without standing up an HTTP mock.
-    process.env.TURNSTILE_SECRET_KEY = "";
+    process.env.SMARTCAPTCHA_SERVER_KEY = "";
 
     await fc.assert(
       fc.asyncProperty(
@@ -407,4 +407,4 @@ describe("dizajn POST /generate — Property 4: captcha first", () => {
 });
 
 // Restore env for any subsequent tests in the same suite run.
-process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";

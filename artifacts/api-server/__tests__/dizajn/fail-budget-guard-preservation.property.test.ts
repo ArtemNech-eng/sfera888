@@ -81,8 +81,8 @@ process.env.R2_ENDPOINT =
 process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "fake";
 process.env.R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY ?? "fake";
 // Non-empty secret forces the real captcha branch (rather than dev-bypass).
-process.env.TURNSTILE_SECRET_KEY =
-  process.env.TURNSTILE_SECRET_KEY ?? "test_turnstile_secret";
+process.env.SMARTCAPTCHA_SERVER_KEY =
+  process.env.SMARTCAPTCHA_SERVER_KEY ?? "test_smartcaptcha_secret";
 
 // ─── Swappable db dispatcher ─────────────────────────────────────────────────
 //
@@ -604,14 +604,14 @@ describe("Property 11 (Preservation) — captcha / rate-limit guard (3.4)", () =
       lengthCm: fc.integer({ min: 1, max: 199 }),
       heightCm: fc.integer({ min: 220, max: 350 }),
       budget: fc.integer({ min: 50_000, max: 5_000_000 }),
-      "cf-turnstile-response": fc.constant(""),
+      "smart-token": fc.constant(""),
     }),
     fc.constant({}),
-    fc.constant({ "cf-turnstile-response": "" }),
+    fc.constant({ "smart-token": "" }),
   );
 
   it("3.4 — невалидная captcha → 400 invalid_captcha без побочных эффектов в db", async () => {
-    process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+    process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";
     await fc.assert(
       fc.asyncProperty(
         invalidFormArb,

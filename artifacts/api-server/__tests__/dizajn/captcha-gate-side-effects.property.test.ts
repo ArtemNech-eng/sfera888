@@ -44,7 +44,7 @@ import assert from "node:assert/strict";
 import fc from "fast-check";
 
 // Fake env *before* any production import so module-load-time checks
-// (S3 client, pg.Pool) don't trip. A non-empty TURNSTILE_SECRET_KEY ensures
+// (S3 client, pg.Pool) don't trip. A non-empty SMARTCAPTCHA_SERVER_KEY ensures
 // the captcha branch is actually exercised (not dev-mode bypass).
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://fake:fake@localhost:5432/fake";
@@ -52,7 +52,7 @@ process.env.R2_ENDPOINT = process.env.R2_ENDPOINT ?? "https://fake.r2.dev";
 process.env.R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID ?? "fake-key";
 process.env.R2_SECRET_ACCESS_KEY =
   process.env.R2_SECRET_ACCESS_KEY ?? "fake-secret";
-process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";
 
 // `@workspace/db` exposes a singleton `db` whose method bag we mutate to
 // observe what the handler tries to do behind the captcha gate.
@@ -127,8 +127,8 @@ globalThis.fetch = (async () => {
   return {
     ok: true,
     json: async () => ({
-      success: false,
-      "error-codes": ["invalid-input-response"],
+      status: "failed",
+      message: "Invalid or expired Token",
     }),
   } as unknown as Response;
 }) as typeof fetch;
@@ -242,8 +242,8 @@ const PALETTES = [
 ] as const;
 
 /**
- * Generator of "missing / empty / garbage" Turnstile tokens. The handler
- * pulls the token from `cf-turnstile-response` (preferred) or `turnstileToken`
+ * Generator of "missing / empty / garbage" SmartCaptcha tokens. The handler
+ * pulls the token from `smart-token` (preferred) or `smartToken`/`captchaToken`
  * (fallback); `undefined` models the field being entirely absent.
  *
  *   - missing  → field omitted (undefined)
@@ -283,8 +283,8 @@ const bodyArb = fc
   .map(({ token, useFallbackField, ...form }) => {
     const body: Record<string, unknown> = { ...form };
     if (token !== undefined) {
-      if (useFallbackField) body["turnstileToken"] = token;
-      else body["cf-turnstile-response"] = token;
+      if (useFallbackField) body["smartToken"] = token;
+      else body["smart-token"] = token;
     }
     return body;
   });
@@ -298,7 +298,7 @@ describe("dizajn POST /generate — Property 8: captcha gate precedes and gates 
   // Validates: Requirements 7.2
 
   before(() => {
-    process.env.TURNSTILE_SECRET_KEY = "test_turnstile_secret";
+    process.env.SMARTCAPTCHA_SERVER_KEY = "test_smartcaptcha_secret";
   });
 
   after(() => {

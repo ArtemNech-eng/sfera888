@@ -6,7 +6,7 @@
  * Endpoints:
  *   POST /generate          — JSON-форма {roomType, style, widthCm, lengthCm,
  *                             heightCm, budget, features?, cityId?,
- *                             cf-turnstile-response} → 202 {slug}
+ *                             smart-token} → 202 {slug}
  *   GET  /:slug             — статус + полная инфа дизайн-проекта (для polling)
  *   GET  /                  — recent successful designs (для homepage feed)
  *
@@ -29,7 +29,7 @@ import {
 import { and, desc, eq, sql } from "drizzle-orm";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, uploadRoomPhoto } from "../lib/objectStorage.js";
-import { verifyTurnstileToken } from "../lib/turnstile.js";
+import { verifyCaptchaToken } from "../lib/smartCaptcha.js";
 import {
   checkAndIncrement,
   decrement,
@@ -55,8 +55,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // принимает их через `multer` memory storage: буфер фото остаётся в памяти
 // (`req.file.buffer`) для последующей загрузки в R2 (см. задачу 4.2), а
 // текстовые поля формы (`roomType`, `style`, `palette`, `widthCm`/`lengthCm`/
-// `heightCm`, `budget`, `cityId`, а также токен капчи `cf-turnstile-response`/
-// `turnstileToken`) после парсинга оказываются в `req.body` как строки.
+// `heightCm`, `budget`, `cityId`, а также токен капчи `smart-token`)
+// после парсинга оказываются в `req.body` как строки.
 //
 // `limits.fileSize = 8 МБ + 1 байт`: лимит на единицу больше продуктового
 // порога (8 МБ), чтобы превышение детектировалось как нарушение валидации
@@ -100,16 +100,16 @@ function getClientIp(req: Request): string | null {
   return req.socket.remoteAddress ?? null;
 }
 
-/** Бёзопасно вытащить токен капчи из тела запроса. Cloudflare Turnstile widget
- *  по соглашению присылает `cf-turnstile-response`; для удобства тестов и
- *  программного клиента также принимаем `turnstileToken`. */
-function extractTurnstileToken(body: unknown): string {
+/** Бёзопасно вытащить токен капчи из тела запроса. Yandex SmartCaptcha widget
+ *  по соглашению присылает скрытое поле `smart-token`; для удобства тестов и
+ *  программного клиента также принимаем `smartToken`/`captchaToken`. */
+function extractCaptchaToken(body: unknown): string {
   if (typeof body !== "object" || body === null) return "";
   const b = body as Record<string, unknown>;
-  const cf = b["cf-turnstile-response"];
-  if (typeof cf === "string" && cf.length > 0) return cf;
-  const fallback = b["turnstileToken"];
-  if (typeof fallback === "string" && fallback.length > 0) return fallback;
+  for (const field of ["smart-token", "smartToken", "captchaToken"] as const) {
+    const v = b[field];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
   return "";
 }
 
@@ -146,7 +146,7 @@ async function rollbackRateLimits(
 //
 //   1. `req.anonId` (заполняется `anonIdMiddleware`, см. app.ts) —
 //      отсутствует → 500 `anon_id_unavailable`.
-//   2. `verifyTurnstileToken(...)` — fail → 400 `invalid_captcha` (Req 7.2:
+//   2. `verifyCaptchaToken(...)` — fail → 400 `invalid_captcha` (Req 7.2:
 //      гейт капчи предшествует любым побочным эффектам).
 //   3. `checkAndIncrement("anon", anonId)` затем `("ip", ip)` (Req 7.3/7.4) —
 //      fail хотя бы один → 429 `rate_limited` + `retryAfterSeconds` (с откатом
@@ -186,12 +186,11 @@ router.post("/generate", upload.single("image"), async (req: Request, res: Respo
 
   // 2. Captcha verify — ПЕРВАЯ блокирующая проверка перед любыми внутренними
   // вызовами (Requirement 3.2 / Property 4). Никаких rate-limit/Zod/min-area
-  // быть не должно до успешного `verifyTurnstileToken`.
-  const turnstileToken = extractTurnstileToken(req.body);
-  const captcha = await verifyTurnstileToken({
-    token: turnstileToken,
+  // быть не должно до успешного `verifyCaptchaToken` (Yandex SmartCaptcha).
+  const captchaToken = extractCaptchaToken(req.body);
+  const captcha = await verifyCaptchaToken({
+    token: captchaToken,
     remoteIp: clientIp,
-    expectedAction: "ai_design_submit",
   });
   if (!captcha.success) {
     res.status(400).json({ ok: false, error: "invalid_captcha" });
