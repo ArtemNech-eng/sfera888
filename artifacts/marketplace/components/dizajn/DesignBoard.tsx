@@ -93,7 +93,6 @@ export function DesignBoard({
   design,
   similar,
   baseUrl,
-  topDownPlanUrl = null,
   pickedFurniture = null,
   currentStep: initialCurrentStep = null,
   designAnonId = null,
@@ -210,7 +209,7 @@ export function DesignBoard({
   const detailCrops = design.detailCrops ?? [];
 
   // ── Адаптивная раскладка инфографики (чистые хелперы §A) ────────────────────
-  const hasLeftColumn = Boolean(isometricView || topDownPlanUrl);
+  const hasLeftColumn = Boolean(isometricView);
   const hasPalette = Boolean(design.colorPalette && design.colorPalette.length > 0);
   const hasSolutions = Boolean(design.solutions && design.solutions.length > 0);
   const hasCrops = detailCrops.length > 0;
@@ -396,13 +395,6 @@ export function DesignBoard({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={isometricView.url} alt="3D-планировка" className="w-full rounded-xl" loading="lazy" />
                       <figcaption className="mt-1 text-[10px] text-center text-[var(--color-muted)]">3D-планировка</figcaption>
-                    </figure>
-                  )}
-                  {topDownPlanUrl && (
-                    <figure className="overflow-hidden rounded-xl border border-[var(--color-border)]">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={topDownPlanUrl} alt="План помещения" className="w-full" loading="lazy" />
-                      <figcaption className="mt-1 text-[10px] text-center text-[var(--color-muted)]">Вид сверху</figcaption>
                     </figure>
                   )}
                 </div>
