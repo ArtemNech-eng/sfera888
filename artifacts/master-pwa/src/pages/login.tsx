@@ -1,7 +1,8 @@
 import { useState, useCallback, memo, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Eye, EyeOff, HardHat, ChevronLeft, RussianRuble } from "lucide-react";
+import { Eye, EyeOff, HardHat, ChevronLeft, RussianRuble, RefreshCw } from "lucide-react";
+import { isNetworkError, friendlyErrorMessage, hardReset } from "@/lib/net";
 
 
 function normalizePhone(raw: string): string {
@@ -182,6 +183,16 @@ export default function LoginPage() {
   const [forgotDone, setForgotDone] = useState<{ login: string; customPass: boolean } | null>(null);
   const [forgotLoading, setForgotLoading] = useState(false);
 
+  // Сетевой сбой (нет ответа от сервера) — показываем баннер с кнопкой
+  // «обновить приложение», которая лечит застрявший PWA-кэш.
+  const [netTrouble, setNetTrouble] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const handleHardReset = async () => {
+    setResetting(true);
+    try { await hardReset(); } catch { setResetting(false); }
+  };
+
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotPhone) { toast.error("Введите номер телефона"); return; }
@@ -198,8 +209,10 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Ошибка");
       setForgotDone({ login: data.login, customPass: !!forgotNewPass });
+      setNetTrouble(false);
     } catch (err: any) {
-      toast.error(err.message ?? "Ошибка сброса пароля");
+      if (isNetworkError(err)) setNetTrouble(true);
+      toast.error(friendlyErrorMessage(err, "Ошибка сброса пароля"));
     } finally {
       setForgotLoading(false);
     }
@@ -236,8 +249,10 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(form.login, form.password, maxChatId);
+      setNetTrouble(false);
     } catch (err: any) {
-      toast.error(err.message ?? "Ошибка входа");
+      if (isNetworkError(err) || err?.isNetworkError) setNetTrouble(true);
+      toast.error(friendlyErrorMessage(err, "Ошибка входа"));
     } finally {
       setLoading(false);
     }
@@ -300,7 +315,8 @@ export default function LoginPage() {
         ...(maxChatId ? { maxChatId } : {}),
       });
     } catch (err: any) {
-      toast.error(err.message ?? "Ошибка регистрации");
+      if (isNetworkError(err) || err?.isNetworkError) setNetTrouble(true);
+      toast.error(friendlyErrorMessage(err, "Ошибка регистрации"));
       setRegStep("info");
     } finally {
       setLoading(false);
@@ -335,6 +351,27 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold tracking-tight">Честный мастер</h1>
           <p className="text-sm text-muted-foreground">Приложение для мастеров</p>
         </div>
+
+        {/* Сетевой сбой: понятное объяснение + самолечение застрявшего PWA */}
+        {netTrouble && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 space-y-3">
+            <p className="text-sm text-amber-800 dark:text-amber-300 leading-snug">
+              Не удалось связаться с сервером. Проверьте интернет. Если связь есть,
+              а вход не проходит — обновите приложение (сбросит устаревший кэш):
+            </p>
+            <button
+              type="button"
+              onClick={handleHardReset}
+              disabled={resetting}
+              className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-amber-500 text-white font-semibold text-sm disabled:opacity-60 active:opacity-80 transition-opacity"
+            >
+              {resetting
+                ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                : <RefreshCw size={16} />}
+              Обновить приложение
+            </button>
+          </div>
+        )}
 
         {/* Forgot password view */}
         {forgotView ? (

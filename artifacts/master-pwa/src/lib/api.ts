@@ -1,5 +1,8 @@
 const BASE = "/api/master-pwa";
 
+import { NETWORK_ERROR_MESSAGE } from "./net";
+
+
 export interface PendingAction {
   orderId: number;
   leadId: number | null;
@@ -13,12 +16,22 @@ export interface PendingAction {
 }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      credentials: "include",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (netErr) {
+    // fetch отклонился до получения ответа: нет сети / DNS / VPN / застрявший
+    // service worker. Отдаём распознаваемую ошибку с дружелюбным текстом.
+    const e: any = new Error(NETWORK_ERROR_MESSAGE);
+    e.isNetworkError = true;
+    e.cause = netErr;
+    throw e;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     const e: any = new Error(err.message ?? err.error ?? "Ошибка запроса");
