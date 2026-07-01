@@ -48,11 +48,13 @@ export const STYLES = [
 export type DesignStyle = (typeof STYLES)[number];
 
 /**
- * Список типов помещений, доступных на MVP (Requirement 1.3).
- * Все остальные валидные значения `roomType` блокируются с кодом `mvp_room_locked`.
- * Для расширения после MVP — добавлять сюда новые значения.
+ * Список типов помещений, доступных пользователю. Изначально на MVP был только
+ * `bedroom`; теперь открыты все типы (продуктовое решение). Значения не из
+ * `ROOM_TYPES` по-прежнему отклоняются как `invalid_enum_value`; гейт
+ * `mvp_room_locked` фактически больше не срабатывает (оставлен для обратной
+ * совместимости API/тестов на случай повторного сужения списка).
  */
-export const MVP_ALLOWED_ROOM_TYPES: readonly RoomType[] = ["bedroom"] as const;
+export const MVP_ALLOWED_ROOM_TYPES: readonly RoomType[] = ROOM_TYPES;
 
 // ── ranges ──────────────────────────────────────────────────────────────────
 

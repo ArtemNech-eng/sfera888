@@ -40,7 +40,6 @@ import {
   type DesignFormViolation,
   STYLES,
   PALETTES,
-  ROOM_TYPES,
   MAX_PHOTO_SIZE_BYTES,
   BUDGET_MIN_RUB,
   BUDGET_MAX_RUB,
@@ -49,7 +48,6 @@ import {
   INVALID_PALETTE_CODE,
   INVALID_PHOTO_TYPE_CODE,
   PHOTO_TOO_LARGE_CODE,
-  MVP_ROOM_LOCKED_CODE,
 } from "../../src/lib/dizajnFormSchema.js";
 
 // ─── Baseline (fully valid) request ──────────────────────────────────────────
@@ -114,12 +112,6 @@ const oversizedBytesArb = fc.integer({
   max: MAX_PHOTO_SIZE_BYTES * 4,
 });
 
-// Valid-by-whitelist room types that are NOT in the MVP-allowed subset
-// (everything except "bedroom") → drive the `mvp_room_locked` code.
-const lockedRoomArb = fc.constantFrom(
-  ...(ROOM_TYPES as readonly string[]).filter((r) => r !== "bedroom"),
-);
-
 // ─── Violation injectors ─────────────────────────────────────────────────────
 //
 // Each injector mutates exactly ONE orthogonal aspect of the request and knows
@@ -141,7 +133,6 @@ interface GeneratedParams {
   badHeight: number;
   badMime: string;
   oversized: number;
-  lockedRoom: string;
 }
 
 const INJECTORS: Injector[] = [
@@ -173,13 +164,6 @@ const INJECTORS: Injector[] = [
       req.body.palette = p.badPalette;
     },
     matches: (v) => v.code === INVALID_PALETTE_CODE,
-  },
-  {
-    key: "mvpRoom",
-    apply: (req, p) => {
-      req.body.roomType = p.lockedRoom;
-    },
-    matches: (v) => v.code === MVP_ROOM_LOCKED_CODE,
   },
   {
     key: "photoType",
@@ -214,7 +198,6 @@ describe("Flagship Property 6: All violations are reported together", () => {
         outOfRangeHeightArb,
         badMimeArb,
         oversizedBytesArb,
-        lockedRoomArb,
         (
           selectedKeys,
           badStyle,
@@ -223,7 +206,6 @@ describe("Flagship Property 6: All violations are reported together", () => {
           badHeight,
           badMime,
           oversized,
-          lockedRoom,
         ) => {
           const params: GeneratedParams = {
             badStyle,
@@ -232,7 +214,6 @@ describe("Flagship Property 6: All violations are reported together", () => {
             badHeight,
             badMime,
             oversized,
-            lockedRoom,
           };
 
           const req = baselineRequest();

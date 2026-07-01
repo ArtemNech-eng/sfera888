@@ -186,34 +186,28 @@ describe("Task 7.6 — exactly one Flagship_Form with all controls", () => {
 });
 
 // ===========================================================================
-// 2. MVP_Room_Lock: non-bedroom room tiles are flagged «скоро».
-//    Validates: Requirements 6.1
+// 2. All room tiles are now enabled (MVP lock retired): no «скоро» badge.
+//    Validates: Requirements 6.1 (superseded — all rooms open by product decision)
 // ===========================================================================
-describe("Task 7.6 — locked (non-bedroom) room tiles are flagged «скоро»", () => {
-  it("exactly one room type is enabled, and it is `bedroom`", () => {
+describe("Task 7.6 — all room tiles are enabled (no «скоро» badge)", () => {
+  it("every room type is enabled", () => {
     const enabled = ROOM_TYPES.filter((o) => o.enabled);
-    assert.equal(enabled.length, 1, "MVP unlocks exactly one room type");
-    assert.equal(enabled[0].value, "bedroom", "the unlocked room type is the bedroom");
+    assert.equal(
+      enabled.length,
+      ROOM_TYPES.length,
+      "all room types must be selectable now",
+    );
   });
 
-  it("every non-bedroom tile is disabled and badged «скоро»; bedroom has no badge", () => {
+  it("no tile carries a «скоро» badge", () => {
     assert.equal(MVP_ROOM_LOCK_BADGE, "скоро");
     for (const opt of ROOM_TYPES) {
-      if (opt.value === "bedroom") {
-        assert.equal(opt.enabled, true, "bedroom must be selectable");
-        assert.equal(
-          mvpRoomLockBadge(opt),
-          undefined,
-          "the unlocked bedroom tile must carry no «скоро» badge",
-        );
-      } else {
-        assert.equal(opt.enabled, false, `${opt.value} must be locked on MVP`);
-        assert.equal(
-          mvpRoomLockBadge(opt),
-          "скоро",
-          `${opt.value} must be flagged «скоро»`,
-        );
-      }
+      assert.equal(opt.enabled, true, `${opt.value} must be selectable`);
+      assert.equal(
+        mvpRoomLockBadge(opt),
+        undefined,
+        `${opt.value} must carry no «скоро» badge now that all rooms are open`,
+      );
     }
   });
 

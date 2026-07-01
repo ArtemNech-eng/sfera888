@@ -51,12 +51,12 @@ export interface PriceSegmentOption {
  */
 export const ROOM_TYPES: ReadonlyArray<RoomTypeOption> = [
   { value: "bedroom", label: "Спальня", enabled: true },
-  { value: "living_room", label: "Гостиная", enabled: false },
-  { value: "kitchen", label: "Кухня", enabled: false },
-  { value: "bathroom", label: "Ванная", enabled: false },
-  { value: "hallway", label: "Прихожая", enabled: false },
-  { value: "nursery", label: "Детская", enabled: false },
-  { value: "apartment", label: "Квартира", enabled: false },
+  { value: "living_room", label: "Гостиная", enabled: true },
+  { value: "kitchen", label: "Кухня", enabled: true },
+  { value: "bathroom", label: "Ванная", enabled: true },
+  { value: "hallway", label: "Прихожая", enabled: true },
+  { value: "nursery", label: "Детская", enabled: true },
+  { value: "apartment", label: "Квартира", enabled: true },
 ];
 
 /** 7 styles (backend `STYLES` whitelist). */

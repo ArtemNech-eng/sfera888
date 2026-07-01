@@ -355,64 +355,45 @@ describe("Property 1.4: unknown roomType yields invalid_enum_value, not other co
   });
 });
 
-// ─── Property 3.1 — MVP room gating ──────────────────────────────────────────
+// ─── Property 3.1 — all room types are allowed (MVP gate retired) ────────────
 
-describe("Property 3.1: MVP room gating", () => {
-  /** All `ROOM_TYPES` minus the MVP-allowed set. Today this is everything except "bedroom". */
-  const NON_MVP_ROOMS = (ROOM_TYPES as readonly string[]).filter(
-    (rt) => !(MVP_ALLOWED_ROOM_TYPES as readonly string[]).includes(rt),
-  );
-
-  // Self-check: the test only makes sense if the MVP gate is non-trivially
-  // restrictive. If product later expands `MVP_ALLOWED_ROOM_TYPES` to all
-  // ROOM_TYPES, this property becomes vacuous and we want to know.
-  assert.ok(
-    NON_MVP_ROOMS.length > 0,
-    "MVP_ALLOWED_ROOM_TYPES covers every ROOM_TYPES — Property 3.1 is vacuous; revisit the gate or this test",
-  );
-
-  it("non-bedroom roomType (kitchen, bathroom, …) emits mvp_room_locked at path roomType", () => {
+describe("Property 3.1: all room types are allowed (no mvp_room_locked)", () => {
+  it("every valid ROOM_TYPES value passes with no mvp_room_locked", () => {
     fc.assert(
       fc.property(
-        fc.constantFrom(...NON_MVP_ROOMS),
+        fc.constantFrom(...(ROOM_TYPES as readonly string[])),
         validStyleArb,
         validWidthArb,
         validLengthArb,
         validHeightArb,
         validBudgetArb,
         (roomType, style, widthCm, lengthCm, heightCm, budget) => {
-          const input = { roomType, style, widthCm, lengthCm, heightCm, budget };
-          const { violations } = expectFail(validateDesignForm(input));
-          const mvpV = findViolation(
-            violations,
-            (v) => v.code === MVP_ROOM_LOCKED_CODE,
+          const result = validateDesignForm({
+            roomType,
+            style,
+            widthCm,
+            lengthCm,
+            heightCm,
+            budget,
+          });
+          assert.equal(
+            result.ok,
+            true,
+            `every valid room must be accepted now; roomType=${roomType} was not`,
           );
-          assert.ok(
-            mvpV,
-            `expected mvp_room_locked violation for roomType=${roomType}, got: ${JSON.stringify(
-              violations,
-            )}`,
-          );
-          assert.equal(mvpV?.path, "roomType");
         },
       ),
-      { numRuns: 60 },
+      { numRuns: 80 },
     );
   });
 
-  it("bedroom (the MVP-allowed room) with otherwise-valid input → no MVP violation", () => {
-    fc.assert(
-      fc.property(validBedroomInputArb, (input) => {
-        const result = validateDesignForm(input);
-        assert.equal(result.ok, true);
-        // Even if we look at the schema's safeParse output there are no
-        // violations to inspect: it must be ok=true and `data.roomType === "bedroom"`.
-        if (result.ok) {
-          assert.equal(result.data.roomType, "bedroom");
-        }
-      }),
-      { numRuns: 50 },
-    );
+  it("MVP_ALLOWED_ROOM_TYPES now covers all ROOM_TYPES (gate retired)", () => {
+    for (const rt of ROOM_TYPES) {
+      assert.ok(
+        (MVP_ALLOWED_ROOM_TYPES as readonly string[]).includes(rt),
+        `${rt} must be allowed`,
+      );
+    }
   });
 });
 
@@ -480,23 +461,18 @@ describe("Property 3.2: invalid (non-enum) roomType does not trigger mvp_room_lo
   });
 });
 
-// ─── Property 3.3 — MVP gate combines with other field violations ────────────
+// ─── Property 3.3 — field violations still surface for any allowed room ──────
 
-describe("Property 3.3: MVP gate combines with other field violations", () => {
+describe("Property 3.3: field violations surface for any allowed room", () => {
   /**
-   * For roomType ∈ NON_MVP_ROOMS *and* an otherwise-invalid field
-   * (e.g. widthCm=100), the violations array must contain BOTH the
-   * mvp_room_locked code (Requirement 1.3) AND a range violation on the
-   * other field (Requirement 1.10: surface every violation).
+   * All rooms are now allowed, so `mvp_room_locked` never fires. But other
+   * field violations must still surface (Requirement 1.10: report every
+   * violation) for ANY room type.
    */
-  const NON_MVP_ROOMS = (ROOM_TYPES as readonly string[]).filter(
-    (rt) => !(MVP_ALLOWED_ROOM_TYPES as readonly string[]).includes(rt),
-  );
-
-  it("non-MVP roomType + bad widthCm → both mvp_room_locked and a range violation", () => {
+  it("any room + bad widthCm → widthCm range violation, no mvp_room_locked", () => {
     fc.assert(
       fc.property(
-        fc.constantFrom(...NON_MVP_ROOMS),
+        fc.constantFrom(...(ROOM_TYPES as readonly string[])),
         fc.oneof(
           fc.integer({ min: -10_000, max: WIDTH_CM_MIN - 1 }),
           fc.integer({ min: WIDTH_CM_MAX + 1, max: 100_000 }),
@@ -512,26 +488,23 @@ describe("Property 3.3: MVP gate combines with other field violations", () => {
           });
           const { violations } = expectFail(result);
 
-          const hasMvp = violations.some(
-            (v) => v.path === "roomType" && v.code === MVP_ROOM_LOCKED_CODE,
-          );
           const hasWidth = violations.some(
             (v) =>
               v.path === "widthCm" &&
               (v.code === "too_small" || v.code === "too_big"),
           );
+          const hasMvp = violations.some((v) => v.code === MVP_ROOM_LOCKED_CODE);
 
-          assert.ok(
-            hasMvp,
-            `missing mvp_room_locked for roomType=${roomType}: ${JSON.stringify(
-              violations,
-            )}`,
-          );
           assert.ok(
             hasWidth,
             `missing widthCm range violation for widthCm=${badWidth}: ${JSON.stringify(
               violations,
             )}`,
+          );
+          assert.equal(
+            hasMvp,
+            false,
+            "mvp_room_locked must not fire now that all rooms are allowed",
           );
         },
       ),
@@ -539,7 +512,7 @@ describe("Property 3.3: MVP gate combines with other field violations", () => {
     );
   });
 
-  it("kitchen + widthCm=100 (the doc example) yields both violations", () => {
+  it("kitchen + widthCm=100 → widthCm too_small, no mvp lock", () => {
     const result = validateDesignForm({
       roomType: "kitchen",
       style: "modern",
@@ -550,16 +523,13 @@ describe("Property 3.3: MVP gate combines with other field violations", () => {
     });
     const { violations } = expectFail(result);
     assert.ok(
-      violations.some(
-        (v) => v.path === "roomType" && v.code === MVP_ROOM_LOCKED_CODE,
-      ),
-      "expected mvp_room_locked on roomType",
-    );
-    assert.ok(
-      violations.some(
-        (v) => v.path === "widthCm" && v.code === "too_small",
-      ),
+      violations.some((v) => v.path === "widthCm" && v.code === "too_small"),
       "expected too_small on widthCm",
+    );
+    assert.equal(
+      violations.some((v) => v.code === MVP_ROOM_LOCKED_CODE),
+      false,
+      "mvp_room_locked must not fire",
     );
   });
 });
