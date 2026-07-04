@@ -377,3 +377,22 @@ body {
 .zen-back { display: inline-block; margin-top: 20px; font-size: 14px; font-weight: 600; color: var(--z-accent); }
 .zen-back:hover { text-decoration: underline; }
 .zen-article-body { margin-top: 16px; font-size: 17px; line-height: 1.65; white-space: pre-wrap; color: #24242a; }
+
+/* ── Zen: каталог услуг (масштаб на сотни позиций) ── */
+.zen-search { position: relative; }
+.zen-search input { padding-left: 40px; }
+.zen-search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--z-faint); }
+.zen-azbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
+.zen-azbar a { min-width: 32px; height: 32px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 13px; font-weight: 700; color: var(--z-muted); background: #fff; border: 1px solid var(--z-line); }
+.zen-azbar a:hover { color: var(--z-accent); border-color: var(--z-accent); }
+.zen-letter { font-weight: 800; font-size: 20px; margin: 26px 0 8px; scroll-margin-top: 84px; }
+.zen-svc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2px; }
+.zen-svc { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 10px; transition: background .1s ease; }
+.zen-svc:hover { background: #eef0f2; }
+.zen-svc:hover .zen-svc-name { color: var(--z-accent); }
+.zen-svc-name { font-size: 15px; font-weight: 500; }
+.zen-svc-price { font-size: 13px; color: var(--z-muted); white-space: nowrap; }
+.zen-popular { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.zen-pill { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--z-line); border-radius: 999px; padding: 8px 14px; font-size: 14px; font-weight: 600; box-shadow: var(--z-shadow); transition: box-shadow .12s ease, transform .12s ease; }
+.zen-pill:hover { box-shadow: var(--z-shadow-h); transform: translateY(-1px); color: var(--z-accent); }
+.zen-count { font-size: 13px; color: var(--z-muted); }

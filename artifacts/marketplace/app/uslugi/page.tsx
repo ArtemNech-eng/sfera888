@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { fetchCities, fetchServices } from "../../lib/api";
 import { publicUrl } from "../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../lib/jsonLd";
-import type { City, Service } from "../../lib/types";
+import type { City } from "../../lib/types";
+import { ServicesCatalog } from "../../components/ServicesCatalog";
 
 // Same reason as `/` — this page calls the marketplace API at request time.
 export const dynamic = "force-dynamic";
@@ -22,10 +23,6 @@ function pickCitySlug(cities: City[]): string | null {
   if (krd) return krd.slug;
   const first = cities[0];
   return first ? first.slug : null;
-}
-
-function formatNumber(n: number): string {
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
 }
 
 export default async function ServicesPage() {
@@ -82,7 +79,7 @@ export default async function ServicesPage() {
         </div>
       </section>
 
-      {/* ── Services grid ── */}
+      {/* ── Services catalog (масштаб на сотни услуг: поиск + А–Я + компактно) ── */}
       <section className="bg-[var(--color-background)]">
         <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-20">
           {services.length === 0 ? (
@@ -95,41 +92,7 @@ export default async function ServicesPage() {
               </p>
             </div>
           ) : (
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {services.map((service: Service) => {
-                const href = fallbackCity ? `/${service.slug}/${fallbackCity}` : `/uslugi`;
-                return (
-                  <li key={service.id}>
-                    <Link
-                      href={href}
-                      className="group flex h-full flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-cozy transition hover:-translate-y-0.5 hover:border-[var(--color-text)] hover:shadow-cozy-md"
-                    >
-                      <h2 className="font-display text-xl leading-snug text-[var(--color-text)] transition group-hover:text-[var(--color-primary)] sm:text-2xl">
-                        {service.name}
-                      </h2>
-                      {service.description ? (
-                        <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-[var(--color-muted)]">
-                          {service.description}
-                        </p>
-                      ) : null}
-                      <div className="mt-auto flex items-end justify-between gap-3 pt-6">
-                        {service.priceFrom != null && service.priceFrom > 0 ? (
-                          <span className="text-sm text-[var(--color-muted)]">
-                            от{" "}
-                            <span className="font-semibold text-[var(--color-text)]">
-                              {formatNumber(service.priceFrom)} ₽
-                            </span>
-                          </span>
-                        ) : <span />}
-                        <span className="inline-flex items-center text-sm font-medium text-[var(--color-text)] transition group-hover:translate-x-1 group-hover:text-[var(--color-primary)]">
-                          Подобрать →
-                        </span>
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            <ServicesCatalog services={services} fallbackCity={fallbackCity} />
           )}
         </div>
       </section>
