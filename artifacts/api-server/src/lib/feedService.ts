@@ -143,6 +143,58 @@ export function validateTopicInput(input: TopicInput): TopicValidation {
 }
 
 /**
+ * Ввод «народного вопроса» (Ask_Anything) — SEO/UGC-поток низкого трения.
+ * В отличие от `TopicInput`, категория здесь НЕОБЯЗАТЕЛЬНА: пользователь может
+ * задать любой вопрос без выбора рубрики (Reddit-подобный «спроси что угодно»).
+ */
+export interface PublicQuestionInput {
+  /** Категория; необязательна. Если задана непустой строкой — должна быть валидной. */
+  category?: string | null;
+  /** Заголовок вопроса; после trim — 1..200 символов. */
+  title?: string | null;
+  /** Тело вопроса; ≤ 5000 символов (может быть пустым). */
+  body?: string | null;
+}
+
+/**
+ * Мягкая валидация «народного вопроса» (Ask_Anything). Отличается от
+ * `validateTopicInput` тем, что категория ОПЦИОНАЛЬНА (отсутствие/пустая строка
+ * допустимы). Если категория задана — она обязана входить в
+ * `LOCAL_FEED_CATEGORIES`, иначе `invalid_category`. Заголовок/тело — те же
+ * границы, что и у обычной темы.
+ *
+ * Смягчение сделано намеренно ради максимизации объёма UGC для SEO: любой
+ * посетитель может задать вопрос, не выбирая рубрику и не проходя верификацию
+ * (гейт публикации снят на уровне маршрута `/ask`).
+ */
+export function validatePublicQuestionInput(input: PublicQuestionInput): TopicValidation {
+  const violations: TopicViolation[] = [];
+
+  const category = input?.category;
+  // Категория опциональна: null/undefined/пустая строка — допустимо.
+  if (category != null && category !== "") {
+    if (
+      typeof category !== "string" ||
+      !LOCAL_FEED_CATEGORIES.includes(category as LocalFeedCategory)
+    ) {
+      violations.push("invalid_category");
+    }
+  }
+
+  const title = typeof input?.title === "string" ? input.title.trim() : "";
+  if (title.length < TITLE_MIN_LEN || title.length > TITLE_MAX_LEN) {
+    violations.push("invalid_title");
+  }
+
+  const body = typeof input?.body === "string" ? input.body : "";
+  if (body.length > BODY_MAX_LEN) {
+    violations.push("invalid_body");
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
+/**
  * Свести перечень нарушений к единственному «первичному» коду причины для
  * дискриминированного результата и колонки `reason` черновика. Приоритет:
  * категория → заголовок → тело.
@@ -349,6 +401,28 @@ export type CreateLocalTopicResult =
   | { status: "created"; thread: CommunityThread }
   | { status: "rejected"; reason: CreateTopicRejectReason; draftId?: number };
 
+/** Вход анонимного «народного вопроса» (Ask_Anything, уровень доступа 1). */
+export interface CreatePublicQuestionInput {
+  /** ЖК-адресат вопроса (Local_Feed). Приоритетнее города, если задан. */
+  zhkId?: number | null;
+  /** Город-адресат вопроса (City_Feed), когда ЖК не выбран. */
+  cityId?: number | null;
+  /** Категория; необязательна (Ask_Anything). */
+  category?: string | null;
+  /** Заголовок вопроса. */
+  title?: string | null;
+  /** Тело вопроса (может быть пустым). */
+  body?: string | null;
+}
+
+/** Причина отклонения анонимного вопроса. */
+export type CreatePublicQuestionReason = TopicViolation | "no_target";
+
+/** Результат создания анонимного «народного вопроса». */
+export type CreatePublicQuestionResult =
+  | { status: "created"; thread: CommunityThread }
+  | { status: "rejected"; reason: CreatePublicQuestionReason };
+
 /** Внутреннее представление курсора: значение сортировки + tie-breaker по id. */
 interface CursorPayload {
   /** Эпоха в миллисекундах значения сортировки (lastActivityAt или createdAt). */
@@ -525,10 +599,61 @@ export class FeedService {
   }
 
   /**
-   * Сохранить отклонённый ввод как черновик (`community_thread_drafts`), чтобы
-   * данные пользователя не были потеряны (Requirements 3.4, 3.5). Возвращает id
-   * созданного черновика.
+   * Создать анонимный «народный вопрос» (Ask_Anything) — поток низкого трения
+   * для SEO/UGC. В отличие от `createLocalTopic`, здесь:
+   *   • НЕ требуется подтверждённый аккаунт — `authorAccountId = null` (гейт
+   *     публикации снят на уровне маршрута `/ask`, анти-спам — rate limit по IP);
+   *   • категория ОПЦИОНАЛЬНА (`validatePublicQuestionInput`);
+   *   • адресатом может быть ЖК (Local_Feed) ИЛИ город (City_Feed).
+   *
+   * При невалидном вводе или отсутствии адресата — `rejected` (черновик здесь не
+   * пишется: анонимный поток без сессии, сохранять нечего под аккаунт).
    */
+  async createPublicQuestion(
+    input: CreatePublicQuestionInput,
+  ): Promise<CreatePublicQuestionResult> {
+    const validation = validatePublicQuestionInput(input);
+    if (!validation.ok) {
+      return { status: "rejected", reason: primaryViolation(validation.violations) };
+    }
+
+    const zhkId =
+      input.zhkId != null && Number.isInteger(input.zhkId) && input.zhkId > 0
+        ? input.zhkId
+        : null;
+    const cityId =
+      input.cityId != null && Number.isInteger(input.cityId) && input.cityId > 0
+        ? input.cityId
+        : null;
+
+    if (zhkId == null && cityId == null) {
+      return { status: "rejected", reason: "no_target" };
+    }
+
+    const category =
+      typeof input.category === "string" && input.category.trim().length > 0
+        ? input.category.trim()
+        : null;
+
+    const [thread] = await this.database
+      .insert(communityThreadsTable)
+      .values({
+        zone: SOSEDI_ZONE,
+        // ЖК-вопрос → Local_Feed (scope=zhk); иначе городской → City_Feed (scope=city).
+        scope: zhkId != null ? SCOPE_ZHK : SCOPE_CITY,
+        zhkId: zhkId ?? undefined,
+        cityId: zhkId != null ? undefined : cityId ?? undefined,
+        category,
+        title: (input.title as string).trim(),
+        body: typeof input.body === "string" ? input.body : "",
+        authorAccountId: null,
+        isSeeded: false,
+        visibility: PUBLIC_VISIBILITY,
+      })
+      .returning();
+
+    return { status: "created", thread: thread! };
+  }
   private async saveDraft(
     input: CreateLocalTopicInput,
     reason: CreateTopicRejectReason,

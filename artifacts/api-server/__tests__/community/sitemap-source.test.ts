@@ -44,7 +44,12 @@ describe("toCommunitySitemap (Requirements 16.1, 16.3, 5.2, 6.5)", () => {
 
   it("пустой вход → пустые списки (валидная деградация sitemap)", () => {
     const out = toCommunitySitemap([], [], []);
-    assert.deepEqual(out, { cities: [], zhk: [], specialties: [] });
+    assert.deepEqual(out, { cities: [], zhk: [], specialties: [], threads: [] });
+  });
+
+  it("включает id публичных тем для страниц /t/[id]", () => {
+    const out = toCommunitySitemap([], [], [], [{ id: 12 }, { id: 7 }]);
+    assert.deepEqual(out.threads, [12, 7]);
   });
 
   it("тримит окружающие пробелы у валидных слагов", () => {

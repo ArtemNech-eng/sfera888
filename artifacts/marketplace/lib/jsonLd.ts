@@ -117,6 +117,81 @@ export function faqJsonLd(items: FaqItem[]): Record<string, unknown> {
 }
 
 /* ──────────────────────────────────────────────────────────────────────── */
+/* QAPage (форум-тема «вопрос → ответы» — SEO-основа UGC)                   */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+export interface QaAnswerInput {
+  /** Текст ответа (тело комментария). */
+  text: string;
+  /** ISO-дата ответа. */
+  dateCreated?: string | null;
+  /** Публичное имя автора; по умолчанию «Участник сообщества». */
+  author?: string | null;
+}
+
+export interface QaPageJsonLdInput {
+  /** Заголовок вопроса — становится `Question.name` и H1 страницы. */
+  question: string;
+  /** Развёрнутый текст вопроса (тело темы); при отсутствии берётся заголовок. */
+  questionBody?: string | null;
+  /** Канонический URL страницы вопроса. */
+  url: string;
+  /** ISO-дата создания вопроса. */
+  dateCreated?: string | null;
+  /**
+   * Ответы (комментарии верхнего уровня), от лучшего/первого к последнему.
+   * Первый трактуется как `acceptedAnswer`, остальные — `suggestedAnswer[]`.
+   */
+  answers: QaAnswerInput[];
+}
+
+/**
+ * Построить schema.org `QAPage` для страницы форум-темы `/t/[id]`.
+ *
+ * Даёт поисковикам понять, что страница — это вопрос пользователя с ответами
+ * сообщества (аналог Reddit/Stack Overflow), что повышает шансы на rich-результат
+ * и приток long-tail SEO-трафика. Все значения приходят с сервера (api-server),
+ * пользовательский ввод здесь не принимается напрямую.
+ */
+export function qaPageJsonLd(input: QaPageJsonLdInput): Record<string, unknown> {
+  const answerNodes = input.answers
+    .filter((a) => a && typeof a.text === "string" && a.text.trim().length > 0)
+    .map((a) => ({
+      "@type": "Answer",
+      text: a.text,
+      ...(a.dateCreated ? { dateCreated: a.dateCreated } : {}),
+      author: {
+        "@type": "Person",
+        name: a.author && a.author.trim() ? a.author : "Участник сообщества",
+      },
+    }));
+
+  const question: Record<string, unknown> = {
+    "@type": "Question",
+    name: input.question,
+    text:
+      input.questionBody && input.questionBody.trim().length > 0
+        ? input.questionBody
+        : input.question,
+    answerCount: answerNodes.length,
+    ...(input.dateCreated ? { dateCreated: input.dateCreated } : {}),
+  };
+  if (answerNodes.length > 0) {
+    question.acceptedAnswer = answerNodes[0];
+    if (answerNodes.length > 1) {
+      question.suggestedAnswer = answerNodes.slice(1);
+    }
+  }
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "QAPage",
+    url: input.url,
+    mainEntity: question,
+  };
+}
+
+/* ──────────────────────────────────────────────────────────────────────── */
 /* Master profile (ProfessionalService + AggregateRating + Review)          */
 /* ──────────────────────────────────────────────────────────────────────── */
 

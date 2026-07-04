@@ -5,7 +5,7 @@ import { fetchCommunityZhk } from "../../../lib/communityApi";
 import { publicUrl } from "../../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../../lib/jsonLd";
 import { FeedList } from "../../../components/community/FeedList";
-import { CreateTopicForm } from "../../../components/community/CreateTopicForm";
+import { AskForm } from "../../../components/community/AskForm";
 import { CommunityRail } from "../../../components/community/CommunityRail";
 import type { CommunityZhk } from "../../../lib/types";
 
@@ -77,10 +77,19 @@ export default async function ZhkPage({ params }: { params: Promise<RouteParams>
               </section>
               <aside className="lg:sticky lg:top-24 lg:self-start" style={{ marginTop: 52 }}>
                 <div className="zen-panel">
-                  <div className="zen-panel-title">Новая тема</div>
-                  <p className="zen-panel-sub">Спросите соседей или поделитесь полезным.</p>
+                  <div className="zen-panel-title">Спросить соседей</div>
+                  <p className="zen-panel-sub">Задайте вопрос или поделитесь полезным — без регистрации.</p>
                   <div style={{ marginTop: 16 }}>
-                    <CreateTopicForm zhkName={zhk.name} />
+                    <AskForm
+                      zhkSlug={zhk.slug}
+                      placeholder={`Спросите жителей ЖК «${zhk.name}»…`}
+                      suggestions={[
+                        "Как принимали квартиру — на что смотреть?",
+                        "Кто делал ремонт в нашем ЖК — посоветуйте бригаду",
+                        "Проблемы с застройщиком — как решали?",
+                        "Как обстоят дела со звукоизоляцией?",
+                      ]}
+                    />
                   </div>
                 </div>
               </aside>

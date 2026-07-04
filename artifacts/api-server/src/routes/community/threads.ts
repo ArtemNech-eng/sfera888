@@ -49,33 +49,32 @@ interface CommunityRequest extends Request {
 }
 
 /**
- * Уровень доступа 3: резолвит Community_Account и проверяет права публикации
- * (завершённая Phone_Verification). Нет id → 401; не подтверждён → 403.
+ * Мягкий уровень доступа: пытается резолвить Community_Account, но НЕ гейтит.
+ * Если id передан и аккаунт подтверждён — привязываем автора; иначе комментарий
+ * публикуется анонимно (`authorAccountId = null`). Верификация телефона больше
+ * не требуется — SEO/UGC-поток низкого трения, анти-спам обеспечивает rate limit.
  */
-async function requireCommunityPublisher(
+async function resolveOptionalPublisher(
   req: CommunityRequest,
   res: Response,
   next: NextFunction,
 ) {
   const accountId = resolveAccountId(req);
-  if (accountId === null) {
-    return res.status(401).json({ error: "account_required" });
+  if (accountId !== null) {
+    try {
+      const [account] = await db
+        .select()
+        .from(communityAccountsTable)
+        .where(eq(communityAccountsTable.id, accountId))
+        .limit(1);
+      if (hasPublishingRights(account)) {
+        req.communityAccount = account;
+      }
+    } catch (err) {
+      // Ошибка резолва аккаунта не должна блокировать анонимную публикацию.
+      console.error("[community/threads] optional account lookup failed:", err);
+    }
   }
-  let account: CommunityAccount | undefined;
-  try {
-    [account] = await db
-      .select()
-      .from(communityAccountsTable)
-      .where(eq(communityAccountsTable.id, accountId))
-      .limit(1);
-  } catch (err) {
-    console.error("[community/threads] account lookup failed:", err);
-    return res.status(500).json({ error: "internal_error" });
-  }
-  if (!hasPublishingRights(account)) {
-    return res.status(403).json({ error: "verification_required" });
-  }
-  req.communityAccount = account;
   next();
 }
 
@@ -100,11 +99,11 @@ router.get("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// ── POST /:id/comments — публикация комментария (уровень 3) ──────────────────
+// ── POST /:id/comments — публикация комментария (анонимно разрешено) ─────────
 router.post(
   "/:id/comments",
   checkRateLimit,
-  requireCommunityPublisher,
+  resolveOptionalPublisher,
   async (req: CommunityRequest, res: Response) => {
     const id = parseId(req.params.id);
     if (id === null) return res.status(404).json({ notFound: true });
@@ -118,7 +117,7 @@ router.post(
       const result = await createComment({
         threadId: id,
         parentCommentId,
-        authorAccountId: req.communityAccount!.id,
+        authorAccountId: req.communityAccount?.id ?? null,
         body: text,
       });
       switch (result.status) {

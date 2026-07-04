@@ -238,6 +238,8 @@ export interface CommunitySitemapSlugs {
   zhk: string[];
   /** Специальности PRO_Public_Layer, страницы `/pro/[slug]`. */
   specialties: string[];
+  /** Id публичных тем/вопросов, страницы `/t/[id]` (SEO-основа UGC). */
+  threads: number[];
 }
 
 /**
@@ -256,7 +258,7 @@ export async function fetchCommunitySitemap(
       revalidate: opts.revalidate ?? 3600,
     });
   } catch {
-    return { cities: [], zhk: [], specialties: [] };
+    return { cities: [], zhk: [], specialties: [], threads: [] };
   }
 }
 

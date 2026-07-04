@@ -3,13 +3,14 @@ import { cookies } from "next/headers";
 import { internalApiBase, internalApiToken } from "../../../../../../lib/env";
 
 /**
- * POST /api/community/threads/[id]/comments — публикация комментария к теме
- * (уровень доступа 3).
+ * POST /api/community/threads/[id]/comments — публикация комментария к теме.
  *
  * Браузер POST'ит `{ body, parentCommentId? }`; форвардим на
  * `${INTERNAL_API_BASE_URL}/community/threads/:id/comments` с Bearer-токеном
- * (остаётся на сервере — Requirement 20.6) и `X-Community-Account-Id` из cookie
- * `kiro_community_account_id` (Phone_Verification). Нет cookie → 401.
+ * (остаётся на сервере — Requirement 20.6). Cookie `kiro_community_account_id`
+ * НЕОБЯЗАТЕЛЬНА: если есть — прокидываем `X-Community-Account-Id` (авторство
+ * привяжется к аккаунту), если нет — комментарий публикуется анонимно.
+ * Верификация телефона больше не требуется (SEO/UGC-поток низкого трения).
  *
  * Стабильный JSON-контракт (всегда `Cache-Control: no-store`):
  *   • 201 { ok: true, status: "created", comment }
@@ -37,9 +38,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const store = await cookies();
   const accountId = store.get(ACCOUNT_COOKIE)?.value;
-  if (!accountId || !/^\d+$/.test(accountId)) {
-    return jsonError(401, "verification_required");
-  }
+  const hasAccount = !!accountId && /^\d+$/.test(accountId);
 
   let payload: ClientPayload;
   try {
@@ -66,7 +65,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${internalApiToken()}`,
-          "X-Community-Account-Id": accountId,
+          ...(hasAccount ? { "X-Community-Account-Id": accountId! } : {}),
         },
         body: JSON.stringify({ body, parentCommentId }),
         cache: "no-store",
@@ -84,11 +83,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const label =
-    parsed && typeof parsed.error === "string"
-      ? parsed.error
-      : res.status === 403
-        ? "verification_required"
-        : "upstream_error";
+    parsed && typeof parsed.error === "string" ? parsed.error : "upstream_error";
   const extra: Record<string, unknown> = {};
   if (parsed && typeof parsed.reason === "string") extra.reason = parsed.reason;
   return jsonError(res.status, label, extra);

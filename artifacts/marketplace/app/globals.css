@@ -331,6 +331,8 @@ body {
 /* ── Чип категории ── */
 .zen-chip { display: inline-flex; align-items: center; background: var(--z-accent-soft); color: var(--z-accent); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
 .zen-chip--muted { background: #eef0f2; color: var(--z-muted); }
+.zen-chip--btn { background: #eef0f2; color: var(--z-ink); border: 1px solid var(--z-border, #e4e7ec); cursor: pointer; transition: background .15s, color .15s; text-align: left; }
+.zen-chip--btn:hover { background: var(--z-accent-soft); color: var(--z-accent); }
 
 /* ── Пустое состояние ── */
 .zen-empty { background: var(--z-surface); border: 1px dashed #dcdfe3; border-radius: var(--z-radius); padding: 34px 24px; text-align: center; color: var(--z-muted); font-size: 15px; }

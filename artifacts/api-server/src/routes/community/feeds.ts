@@ -30,7 +30,7 @@
  * Spec: .kiro/specs/hochu-takzhe-community/
  */
 
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { db, communityAccountsTable, type CommunityAccount } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
@@ -39,6 +39,7 @@ import {
   type FeedResult,
   type ProFeedResult,
   type CreateLocalTopicResult,
+  type CreatePublicQuestionResult,
   type FeedService,
 } from "../../lib/feedService.js";
 import {
@@ -54,13 +55,40 @@ declare const console: { error: (...args: unknown[]) => void };
 /** Заголовок, несущий идентификатор публикующего Community_Account (уровень 3). */
 export const ACCOUNT_ID_HEADER = "x-community-account-id";
 
+// ── Rate limiting по IP для анонимного «народного вопроса» (Ask_Anything) ────
+// Анти-спам заменяет снятый гейт верификации: не более N вопросов с одного IP
+// в скользящем окне. Не блокирует публичное чтение (GET).
+const askRateStore = new Map<string, { count: number; resetTime: number }>();
+const ASK_RATE_WINDOW_MS = 60 * 1000;
+const ASK_RATE_MAX = 8;
+
+export function askRateLimit(req: Request, res: Response, next: NextFunction): void {
+  const ip = req.ip || req.socket.remoteAddress;
+  if (!ip) return next();
+  const now = Date.now();
+  const record = askRateStore.get(ip);
+  if (record && record.resetTime > now) {
+    if (record.count >= ASK_RATE_MAX) {
+      res.status(429).json({ error: "rate_limited" });
+      return;
+    }
+    record.count += 1;
+  } else {
+    askRateStore.set(ip, { count: 1, resetTime: now + ASK_RATE_WINDOW_MS });
+  }
+  next();
+}
+
 /**
  * Инъектируемые зависимости роутера. Все — с прод-дефолтами; тесты подставляют
  * фейки, чтобы прогонять маршруты без БД.
  */
 export interface FeedsRouterDeps {
   /** Сервис чтения/создания лент (по умолчанию — singleton поверх пула БД). */
-  feedService: Pick<FeedService, "getCityFeed" | "getLocalFeed" | "createLocalTopic">;
+  feedService: Pick<
+    FeedService,
+    "getCityFeed" | "getLocalFeed" | "createLocalTopic" | "createPublicQuestion"
+  >;
   /** Резолвер City по slug (по умолчанию — GeoService). */
   getCityBySlug: (slug: string) => Promise<CityView | null>;
   /** Резолвер ZhK по slug (по умолчанию — GeoService). */
@@ -262,7 +290,68 @@ export function makeHandlers(deps: FeedsRouterDeps) {
     }
   }
 
-  return { getCityFeed, getLocalFeed, createLocalTopic };
+  return { getCityFeed, getLocalFeed, createLocalTopic, askQuestion };
+
+  /**
+   * POST /ask — анонимный «народный вопрос» (Ask_Anything, уровень доступа 1).
+   *
+   * SEO/UGC-поток низкого трения: любой посетитель задаёт вопрос без выбора
+   * категории и БЕЗ подтверждения телефона. Тело `{ zhkSlug | citySlug,
+   * category?, title, body? }`. Адресат резолвится по slug (ЖК приоритетнее
+   * города). Тема пишется с `authorAccountId = null`, `visibility = public`.
+   * Анти-спам — rate limit по IP (`askRateLimit`, применяется в роутере).
+   */
+  async function askQuestion(req: Request, res: Response): Promise<void> {
+    try {
+      const body = (req.body ?? {}) as {
+        zhkSlug?: unknown;
+        citySlug?: unknown;
+        category?: unknown;
+        title?: unknown;
+        body?: unknown;
+      };
+      const zhkSlug = typeof body.zhkSlug === "string" ? body.zhkSlug.trim() : "";
+      const citySlug = typeof body.citySlug === "string" ? body.citySlug.trim() : "";
+
+      let zhkId: number | null = null;
+      let cityId: number | null = null;
+      if (zhkSlug) {
+        const zhk = await deps.getZhkBySlug(zhkSlug);
+        if (!zhk) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        zhkId = zhk.id;
+      } else if (citySlug) {
+        const city = await deps.getCityBySlug(citySlug);
+        if (!city) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        cityId = city.id;
+      } else {
+        res.status(400).json({ status: "rejected", reason: "no_target" });
+        return;
+      }
+
+      const result: CreatePublicQuestionResult = await deps.feedService.createPublicQuestion({
+        zhkId,
+        cityId,
+        category: typeof body.category === "string" ? body.category : null,
+        title: typeof body.title === "string" ? body.title : null,
+        body: typeof body.body === "string" ? body.body : null,
+      });
+
+      if (result.status === "created") {
+        res.status(201).json({ status: "created", thread: result.thread });
+        return;
+      }
+      res.status(400).json({ status: "rejected", reason: result.reason });
+    } catch (e: unknown) {
+      console.error("[community/feeds/ask]", e instanceof Error ? e.message : e);
+      res.status(500).json({ error: "internal_error" });
+    }
+  }
 }
 
 /**
@@ -281,6 +370,8 @@ export function createFeedsRouter(deps: Partial<FeedsRouterDeps> = {}): Router {
   router.get("/zhk/:zhkSlug", handlers.getLocalFeed);
   // Публикация темы Local_Feed (уровень 3).
   router.post("/zhk", handlers.createLocalTopic);
+  // Анонимный «народный вопрос» (уровень 1, rate limit по IP).
+  router.post("/ask", askRateLimit, handlers.askQuestion);
   return router;
 }
 

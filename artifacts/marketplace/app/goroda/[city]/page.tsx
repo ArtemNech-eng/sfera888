@@ -6,6 +6,7 @@ import { publicUrl } from "../../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../../lib/jsonLd";
 import { FeedList } from "../../../components/community/FeedList";
 import { CreateZhkForm } from "../../../components/community/CreateZhkForm";
+import { AskForm } from "../../../components/community/AskForm";
 import { CommunityRail } from "../../../components/community/CommunityRail";
 
 /**
@@ -65,6 +66,23 @@ export default async function CityPage({ params }: { params: Promise<RouteParams
               Общегородские темы: где купить материалы, отзывы о магазинах, поиск
               проверенных бригад. Выберите свой ЖК ниже.
             </p>
+
+            <div className="zen-panel" style={{ marginTop: 8 }}>
+              <div className="zen-panel-title">Спросите жителей {city.name}</div>
+              <p className="zen-panel-sub">Любой вопрос о ремонте, ЖКХ, застройщиках и жизни в городе — без регистрации.</p>
+              <div style={{ marginTop: 14 }}>
+                <AskForm
+                  citySlug={city.slug}
+                  placeholder={`Задайте вопрос о жизни в ${city.name}…`}
+                  suggestions={[
+                    "Где заказать надёжный ремонт под ключ?",
+                    "Как оспорить перерасчёт за ЖКХ?",
+                    "Посоветуйте проверенного электрика",
+                    "Какие ЖК лучше по качеству постройки?",
+                  ]}
+                />
+              </div>
+            </div>
 
             {zhk.length > 0 ? (
               <>

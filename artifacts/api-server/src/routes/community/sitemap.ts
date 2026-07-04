@@ -22,10 +22,13 @@
  */
 
 import { Router, type Request, type Response } from "express";
-import { db, citiesTable, zhkTable, specialtiesTable } from "@workspace/db";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { db, citiesTable, zhkTable, specialtiesTable, communityThreadsTable } from "@workspace/db";
+import { and, eq, isNotNull, desc } from "drizzle-orm";
 
 declare const console: { error: (...args: unknown[]) => void };
+
+/** Максимум тем в sitemap — ограничиваем свежими, чтобы не раздувать XML. */
+const MAX_SITEMAP_THREADS = 5000;
 
 /** Минимальная строка со слагом. */
 export interface SlugRow {
@@ -40,6 +43,8 @@ export interface CommunitySitemapResponse {
   zhk: string[];
   /** Слаги специальностей PRO_Public_Layer (Requirement 6.5). */
   specialties: string[];
+  /** Id публичных тем/вопросов для страниц `/t/[id]` (SEO-основа UGC). */
+  threads: number[];
 }
 
 /**
@@ -50,6 +55,7 @@ export function toCommunitySitemap(
   cities: SlugRow[],
   zhk: SlugRow[],
   specialties: SlugRow[],
+  threads: { id: number }[] = [],
 ): CommunitySitemapResponse {
   const pick = (rows: SlugRow[]): string[] =>
     rows
@@ -59,6 +65,9 @@ export function toCommunitySitemap(
     cities: pick(cities),
     zhk: pick(zhk),
     specialties: pick(specialties),
+    threads: threads
+      .map((t) => t.id)
+      .filter((id) => Number.isInteger(id) && id > 0),
   };
 }
 
@@ -70,7 +79,7 @@ const router = Router();
  */
 router.get("/", async (_req: Request, res: Response) => {
   try {
-    const [cities, zhk, specialties] = await Promise.all([
+    const [cities, zhk, specialties, threads] = await Promise.all([
       // Города целевого SEO-набора (≥400k, ~40) и активные (Requirement 16.1).
       db
         .select({ slug: citiesTable.slug })
@@ -86,14 +95,21 @@ router.get("/", async (_req: Request, res: Response) => {
         .select({ slug: specialtiesTable.slug })
         .from(specialtiesTable)
         .where(isNotNull(specialtiesTable.slug)),
+      // Публичные темы/вопросы для страниц /t/[id] — свежие, ограниченный объём.
+      db
+        .select({ id: communityThreadsTable.id })
+        .from(communityThreadsTable)
+        .where(eq(communityThreadsTable.visibility, "public"))
+        .orderBy(desc(communityThreadsTable.createdAt))
+        .limit(MAX_SITEMAP_THREADS),
     ]);
 
     res.setHeader("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
-    res.json(toCommunitySitemap(cities, zhk, specialties));
+    res.json(toCommunitySitemap(cities, zhk, specialties, threads));
   } catch (e: unknown) {
     console.error("[community/sitemap]", e instanceof Error ? e.message : e);
     // Деградация: пустые списки, чтобы фасадный sitemap не падал (Req 16.3-safe).
-    res.status(200).json({ cities: [], zhk: [], specialties: [] });
+    res.status(200).json({ cities: [], zhk: [], specialties: [], threads: [] });
   }
 });
 

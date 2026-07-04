@@ -120,6 +120,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "weekly" as const,
       priority: 0.7,
     })),
+    // /t/[id] — страницы вопросов/тем (UGC). Главный long-tail SEO-актив
+    // «спроси что угодно» (Reddit-модель): каждый вопрос — отдельная страница.
+    ...community.threads.map((id) => ({
+      url: `${base}/t/${id}`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.6,
+    })),
   ];
 
   return [...top, ...masters, ...raboty, ...pairs, ...designs, ...designAggregates, ...communityEntries];

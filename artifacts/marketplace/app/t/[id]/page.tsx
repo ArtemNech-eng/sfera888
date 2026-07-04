@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { fetchThread } from "../../../lib/communityApi";
 import { publicUrl } from "../../../lib/env";
 import { localFeedCategoryLabel } from "../../../lib/types";
-import { breadcrumbJsonLd, toJsonLdScript } from "../../../lib/jsonLd";
+import { breadcrumbJsonLd, qaPageJsonLd, toJsonLdScript } from "../../../lib/jsonLd";
 import { CommentSection } from "../../../components/community/CommentSection";
 
 /**
@@ -61,9 +61,23 @@ export default async function ThreadPage({ params }: { params: Promise<RoutePara
     { name: thread.title, url: `${publicUrl()}/t/${thread.id}` },
   ]);
 
+  // QAPage — вопрос пользователя + ответы сообщества (комментарии верхнего
+  // уровня). Основа SEO-трафика по long-tail запросам (Reddit-модель).
+  const topLevelAnswers = comments
+    .filter((c) => c.parentCommentId == null)
+    .map((c) => ({ text: c.body, dateCreated: c.createdAt, author: "Сосед" }));
+  const qaLd = qaPageJsonLd({
+    question: thread.title,
+    questionBody: thread.body || thread.title,
+    url: `${publicUrl()}/t/${thread.id}`,
+    dateCreated: thread.createdAt,
+    answers: topLevelAnswers,
+  });
+
   return (
     <div className="zen">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLdScript(breadcrumbsLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLdScript(qaLd) }} />
       <div className="zen-shell" style={{ maxWidth: 760 }}>
         <nav className="zen-crumbs">
           <Link href="/">Главная</Link> · <Link href={zoneHref}>{zoneLabel}</Link> · <Link href={parent.href}>{parent.label}</Link>

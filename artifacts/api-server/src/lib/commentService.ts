@@ -155,11 +155,11 @@ export async function listComments(threadId: number): Promise<CommentView[]> {
   }));
 }
 
-/** Вход для создания комментария (уровень доступа 3). */
+/** Вход для создания комментария (автор опционален — анонимный поток). */
 export interface CreateCommentInput {
   threadId: number;
   parentCommentId?: number | null;
-  authorAccountId: number;
+  authorAccountId: number | null;
   body: string;
 }
 
@@ -211,7 +211,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     .values({
       threadId: input.threadId,
       parentCommentId: parentId,
-      authorAccountId: input.authorAccountId,
+      authorAccountId: input.authorAccountId ?? null,
       body: input.body.trim(),
       visibility: PUBLIC_VISIBILITY,
     })

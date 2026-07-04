@@ -17,7 +17,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import type { FeedsRouterDeps } from "../../src/routes/community/feeds.js";
-import type { FeedResult, CreateLocalTopicResult } from "../../src/lib/feedService.js";
+import type { FeedResult, CreateLocalTopicResult, CreatePublicQuestionResult } from "../../src/lib/feedService.js";
 import type { CityView, ZhkView } from "../../src/lib/geoService.js";
 import type { CommunityAccount } from "@workspace/db";
 
@@ -142,6 +142,9 @@ function makeDeps(overrides: Partial<FeedsRouterDeps> = {}): FeedsRouterDeps {
       async createLocalTopic(): Promise<CreateLocalTopicResult> {
         return { status: "created", thread: { id: 555 } as any };
       },
+      async createPublicQuestion(): Promise<CreatePublicQuestionResult> {
+        return { status: "created", thread: { id: 556 } as any };
+      },
     },
     async getCityBySlug(slug) {
       return slug === CITY.slug ? CITY : null;
@@ -204,6 +207,7 @@ describe("GET /city/:citySlug — City_Feed (R2.1)", () => {
         async getCityFeed() { return EMPTY_FEED; },
         async getLocalFeed() { return EMPTY_FEED; },
         async createLocalTopic() { return { status: "created", thread: {} as any }; },
+        async createPublicQuestion() { return { status: "created", thread: {} as any }; },
       },
     }));
     const res = mockRes();
@@ -224,6 +228,7 @@ describe("GET /zhk/:zhkSlug — Local_Feed (R3.3)", () => {
         async getCityFeed() { return EMPTY_FEED; },
         async getLocalFeed(zhkId) { captured.push(zhkId); return EMPTY_FEED; },
         async createLocalTopic() { return { status: "created", thread: {} as any }; },
+        async createPublicQuestion() { return { status: "created", thread: {} as any }; },
       },
     }));
     const res = mockRes();
@@ -298,6 +303,7 @@ describe("POST /zhk — создание темы Local_Feed (уровень 3)"
           received = input;
           return { status: "created", thread: { id: 777 } as any };
         },
+        async createPublicQuestion() { return { status: "created", thread: {} as any }; },
       },
     }));
     const res = mockRes();
@@ -324,6 +330,7 @@ describe("POST /zhk — создание темы Local_Feed (уровень 3)"
         async createLocalTopic() {
           return { status: "rejected", reason: "invalid_category", draftId: 9 };
         },
+        async createPublicQuestion() { return { status: "created", thread: {} as any }; },
       },
     }));
     const res = mockRes();
@@ -349,6 +356,7 @@ describe("POST /zhk — создание темы Local_Feed (уровень 3)"
         async createLocalTopic() {
           return { status: "rejected", reason: "no_zhk_binding", draftId: 12 };
         },
+        async createPublicQuestion() { return { status: "created", thread: {} as any }; },
       },
     }));
     const res = mockRes();
