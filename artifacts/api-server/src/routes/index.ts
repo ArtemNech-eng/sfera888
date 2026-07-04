@@ -38,6 +38,14 @@ import systemRouter from "./system.js";
 import marketplaceRouter from "./marketplace.js";
 import dizajnRouter from "./dizajn.js";
 import dizajnShowcaseAdminRouter from "./admin/dizajnShowcase.js";
+// ── Гео-сообщество «ХочуТакже» (spec: hochu-takzhe-community) ────────────────
+import communityGeoRouter from "./community/geo.js";
+import communityFeedsRouter from "./community/feeds.js";
+import communityProRouter from "./community/pro.js";
+import communityAuthRouter from "./community/auth.js";
+import communityModerationRouter from "./community/moderation.js";
+import communityAiUtilityRouter from "./community/ai-utility.js";
+import communitySitemapRouter from "./community/sitemap.js";
 import { sendPushToAllOperators } from "../lib/operatorPush.js";
 import { buildItems } from "./dashboard-action-items.js";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -91,6 +99,17 @@ router.use("/marketplace", marketplaceRouter);
 // Feature-flag gate (env AI_DESIGN_SHOWCASE_ADMIN_ENABLED) и `requireRole("admin")`
 // внутри самого роутера; здесь просто mount без дополнительной авторизации.
 router.use("/admin/dizajn", dizajnShowcaseAdminRouter);
+// ── Гео-сообщество «ХочуТакже» (spec: hochu-takzhe-community) ────────────────
+// Публичные (уровень 1) чтение лент/PRO/гео и AI-утилита; уровень 2/3
+// (телефон+Captcha / Phone_Verification) — внутри самих роутеров; модерация —
+// под ролевым requireRole внутри community/moderation.
+router.use("/community/geo", communityGeoRouter);
+router.use("/community/feeds", communityFeedsRouter);
+router.use("/community/pro", communityProRouter);
+router.use("/community/auth", communityAuthRouter);
+router.use("/community/moderation", communityModerationRouter);
+router.use("/community/ai-utility", communityAiUtilityRouter);
+router.use("/community/sitemap", communitySitemapRouter);
 // Push subscription endpoint for operators (CRM)
 router.post("/push/operator-subscribe", ops, async (req: any, res: any) => {
   const { endpoint, p256dh, auth } = req.body ?? {};

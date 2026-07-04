@@ -479,3 +479,98 @@ export interface DesignFeedItemDTO {
   viewCount: number;
   saveCount: number;
 }
+
+// ── Community DTOs — Sosedi_Zone (см. .kiro/specs/hochu-takzhe-community) ─────
+// Returned by the api-server community endpoints. Keep in sync with
+// artifacts/api-server/src/lib/geoService.ts (CityView, ZhkView) and
+// artifacts/api-server/src/lib/feedService.ts (FeedItem, FeedResult).
+
+/** Публичный DTO города для страницы `/goroda/[city]` (Geo_Service.CityView). */
+export interface CommunityCity {
+  id: number;
+  slug: string;
+  name: string;
+  region: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  h1: string | null;
+  bodyMd: string | null;
+}
+
+/** Один корпус ЖК — отображается только при заполнении (Requirement 1.7). */
+export interface CommunityZhkBuilding {
+  name: string;
+  completionDate?: string | null;
+}
+
+/**
+ * Публичный DTO ЖК для страницы `/zhk/[zhk]` (Geo_Service.ZhkView).
+ *
+ * Атрибуты `developer`, `completionDate`, `buildings` присутствуют ТОЛЬКО когда
+ * заполнены — незаполненные не отображаются (Requirement 1.7).
+ */
+export interface CommunityZhk {
+  id: number;
+  slug: string;
+  name: string;
+  cityId: number;
+  status: string;
+  developer?: string;
+  completionDate?: string;
+  buildings?: CommunityZhkBuilding[];
+}
+
+/**
+ * Элемент ленты сообщества (Feed_Service.FeedItem). Даты приходят по проводу
+ * строками ISO (сериализация Date в JSON).
+ */
+export interface CommunityFeedItem {
+  id: number;
+  title: string;
+  body: string;
+  category: string | null;
+  cityId: number | null;
+  zhkId: number | null;
+  authorAccountId: number | null;
+  isSeeded: boolean;
+  lastActivityAt: string;
+  createdAt: string;
+}
+
+/**
+ * Ответ ленты (Feed_Service.FeedResult). `emptyState = true`, когда на первой
+ * странице нет тем (Requirements 1.3, 3.6). `nextCursor` — курсор следующей
+ * страницы либо `null`.
+ */
+export interface CommunityFeedResult {
+  items: CommunityFeedItem[];
+  emptyState: boolean;
+  nextCursor: string | null;
+}
+
+/** Ответ GET /api/community/geo/city/:citySlug (Requirements 1.2, 1.5). */
+export interface CommunityCityResponse {
+  city: CommunityCity;
+  cityFeed: CommunityFeedResult;
+}
+
+/** Ответ GET /api/community/geo/zhk/:zhkSlug (Requirements 1.4, 1.5, 1.7). */
+export interface CommunityZhkResponse {
+  zhk: CommunityZhk;
+  localFeed: CommunityFeedResult;
+}
+
+/** Допустимые категории тем Local_Feed (Requirement 3.1). */
+export const LOCAL_FEED_CATEGORIES = [
+  { value: "utility_incident", label: "Аварии ЖКХ" },
+  { value: "developer_defect", label: "Дефекты застройщика" },
+  { value: "tool_sharing", label: "Обмен инструментом" },
+  { value: "local_recommendation", label: "Локальные рекомендации" },
+] as const;
+
+/** Человекочитаемая подпись категории Local_Feed по её коду. */
+export function localFeedCategoryLabel(value: string | null): string | null {
+  if (!value) return null;
+  const found = LOCAL_FEED_CATEGORIES.find((c) => c.value === value);
+  return found ? found.label : null;
+}

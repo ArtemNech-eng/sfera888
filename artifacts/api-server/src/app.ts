@@ -21,6 +21,7 @@ import { handleMaxUpdate, registerWebhook, sendMaxMessage, sendMaxWithButtons } 
 import { handleManagerUpdate, registerManagerWebhook, notifyManagerReceiptPaid } from "./managerBot.js";
 import { errorLoggerMiddleware } from "./middlewares/errorLogger.js";
 import { anonIdMiddleware } from "./middlewares/anonIdMiddleware.js";
+import { PROTECTED_NOINDEX_PATTERNS } from "./lib/communitySeo.js";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
@@ -182,6 +183,16 @@ app.get("/robots.txt", (_req, res) => {
     "Disallow: /support",
     "Disallow: /zayavka",
     "Disallow: /zayavka/",
+    // PRO_Protected_Layer (hochu-takzhe-community): verified-only sensitive
+    // content must never be indexed (Requirement 7.2/7.3). Only the /protected
+    // suffix is disallowed so public Sosedi and PRO_Public paths stay crawlable.
+    // These are already covered by the /api block above but are listed
+    // explicitly for clarity and forward-compatibility with the facade paths
+    // once the protected URL scheme is finalised in the community routes.
+    "Disallow: /api/community/pro/protected",
+    "Disallow: /api/community/pro/protected/",
+    "Disallow: /marketplace/pro/*/protected",
+    "Disallow: /pro/*/protected",
     "Allow: /",
     "",
     "Host: sfera-master.ru",
@@ -203,6 +214,19 @@ const NOINDEX_PATH_PATTERNS: RegExp[] = [
   /^\/my-orders(\/|$)/,
   /^\/support(\/|$)/,
   /^\/zayavka(\/|$)/,
+  // ── PRO_Protected_Layer (hochu-takzhe-community) ────────────────────────────
+  // Requirement 7.2/7.3: every PRO_Protected_Layer response (verified-only
+  // sensitive content: client black-lists, PII, object disputes) must always
+  // emit X-Robots-Tag: noindex and be excluded from the sitemap. Only the
+  // `/protected` segment is tagged so public Sosedi (indexable) and
+  // PRO_Public_Layer (indexable) paths remain crawlable — existing public
+  // patterns are untouched.
+  //
+  // These patterns live in `src/lib/communitySeo.ts` as the single source of
+  // truth (also consumed by the community routes / sitemap generator and the
+  // Property 4 test) so the noindex guarantee can never diverge between the
+  // middleware and the community layer.
+  ...PROTECTED_NOINDEX_PATTERNS,
 ];
 app.use((req, res, next) => {
   if (NOINDEX_PATH_PATTERNS.some((rx) => rx.test(req.path))) {

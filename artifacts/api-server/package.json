@@ -9,7 +9,7 @@
     "start": "node dist/index.cjs",
     "cleanup:r2": "tsx ./src/scripts/cleanup-orphaned-r2.ts",
     "cleanup:r2:apply": "tsx ./src/scripts/cleanup-orphaned-r2.ts --apply",
-    "test": "tsx --test ./__tests__/**/*.test.ts",
+    "test": "cross-env DATABASE_URL=postgres://test:test@localhost:5432/test tsx --test ./__tests__/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

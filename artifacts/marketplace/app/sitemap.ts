@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { fetchCities, fetchPublishedCaseSlugs, fetchPublishedDesignSlugs, fetchPublishedMasterSlugs, fetchServices } from "../lib/api";
+import { fetchCommunitySitemap } from "../lib/communityApi";
 import { publicUrl } from "../lib/env";
 
 // Generated at runtime, not at build time:
@@ -93,7 +94,35 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // появления реальных дизайнов; пустые отдают «empty state + CTA».
   const designAggregates = buildDesignAggregateEntries(base, now);
 
-  return [...top, ...masters, ...raboty, ...pairs, ...designs, ...designAggregates];
+  // ── Гео-сообщество «ХочуТакже» (task 11.2, Requirements 5.2, 6.5, 16.1, 16.3) ──
+  // Включаем ТОЛЬКО индексируемые страницы: города целевого SEO-набора
+  // (`is_geo_covered`), ЖК выше порога контента (`is_indexable`) и специальности
+  // PRO_Public_Layer. Бэкенд уже исключил «тонкие» страницы (Requirement 16.3),
+  // поэтому фасаду не нужно повторно фильтровать. Деградирует к пустым спискам
+  // при недоступности апстрима — sitemap остаётся валидным.
+  const community = await fetchCommunitySitemap();
+  const communityEntries: MetadataRoute.Sitemap = [
+    ...community.cities.map((slug) => ({
+      url: `${base}/goroda/${slug}`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.7,
+    })),
+    ...community.zhk.map((slug) => ({
+      url: `${base}/zhk/${slug}`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.65,
+    })),
+    ...community.specialties.map((slug) => ({
+      url: `${base}/pro/${slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    })),
+  ];
+
+  return [...top, ...masters, ...raboty, ...pairs, ...designs, ...designAggregates, ...communityEntries];
 }
 
 // ── AI-designer sitemap entries ─────────────────────────────────────────────

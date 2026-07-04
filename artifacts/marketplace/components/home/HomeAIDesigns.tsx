@@ -39,7 +39,7 @@ export async function HomeAIDesigns() {
     <section className="bg-[var(--color-background)]">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="max-w-2xl">
-          <p className="font-eyebrow">AI-дизайн</p>
+          <p className="font-eyebrow">AI-дизайн · вдохновение</p>
           <h2 className="font-display mt-3 text-3xl text-[var(--color-text)] sm:text-4xl">
             Создайте свой дизайн комнаты.
           </h2>
@@ -48,9 +48,21 @@ export async function HomeAIDesigns() {
             стиле, подберёт материалы и составит смету. Сохраните дизайн и
             подберите мастера, который его повторит.
           </p>
+          {/* Requirements 14.2, 14.3: AI-контент — вспомогательный слой
+              (вдохновение и платная утилита), а НЕ основное доказательство
+              доверия. Доверие формирует живое сообщество и реальные работы
+              (см. HomeTrustBlock / реальные кейсы), а не галерея AI-изображений. */}
+          <p className="mt-4 inline-flex items-start gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-muted)]">
+            <span aria-hidden className="mt-0.5 text-[var(--color-primary)]">✨</span>
+            <span>
+              AI-дизайн — это <strong className="font-semibold text-[var(--color-text)]">вдохновение</strong> и платная
+              утилита, а не доказательство качества. Доверие подтверждают реальные
+              работы мастеров и живое сообщество соседей.
+            </span>
+          </p>
         </div>
 
-        <ul className="mt-10 grid gap-4 sm:grid-cols-3">
+        <ul aria-label="Примеры AI-дизайна (вдохновение)" className="mt-10 grid gap-4 sm:grid-cols-3">
           {showLive
             ? recent.slice(0, 3).map((d) => (
                 <li key={d.id}>

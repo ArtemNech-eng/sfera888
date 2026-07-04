@@ -73,3 +73,11 @@ export * from "./master-publication-log";
 
 // ── Anonymous saves of marketplace cases (added in 0009_user_saves) ────────
 export * from "./user-saves";
+
+// ── ХочуТакже gео-сообщество (migration 2026-01-20-community-baseline) ──────
+export * from "./community-accounts";
+export * from "./zhk";
+export * from "./specialties";
+export * from "./community-threads";
+export * from "./community-moderation-log";
+export * from "./zhk-weekly-activity";

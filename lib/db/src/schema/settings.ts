@@ -29,6 +29,19 @@ export const citiesTable = pgTable("cities", {
    * (`DEFAULT_WORK_COEFF_KOPEKS_PER_SQM = 800000`).
    */
   workCoefficientKopeksPerSqm: integer("work_coefficient_kopeks_per_sqm"),
+
+  // ── hochu-takzhe-community (migration 2026-01-20-community-baseline) ────────
+  /**
+   * Стартовый город приоритетного развития сообщества (1..3 города). Новостройки
+   * в стартовых городах приоритизируются для сидирования до статуса Living_ZhK
+   * (Requirement 17.1, 17.4). Additive, safe default.
+   */
+  isStarter: boolean("is_starter").notNull().default(false),
+  /**
+   * Город входит в целевой набор SEO-покрытия (~40 городов РФ с населением
+   * ≥ 400 000) для программной генерации публичных страниц (Requirement 16.1).
+   */
+  isGeoCovered: boolean("is_geo_covered").notNull().default(false),
 });
 
 // ── service_types ────────────────────────────────────────────────────────────
