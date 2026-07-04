@@ -24,13 +24,13 @@
   --color-muted: #57534E;
   --color-faint: #A8A29E;
 
-  /* Surfaces — warm cream paper. */
-  --color-background: #F5F0E8;       /* page bg, тёплый кремовый */
-  --color-cream-deep: #EFE7DA;       /* alt section accent, warm */
+  /* Surfaces — светлый нейтральный (Zen-направление, не кремовый). */
+  --color-background: #F6F7F8;       /* page bg, светло-серый нейтральный */
+  --color-cream-deep: #EEF0F2;       /* alt section accent, нейтральный */
   --color-surface: #FFFFFF;
   --color-surface-elevated: #FFFFFF;
-  --color-border: #E7E0D4;           /* warm hairline */
-  --color-border-strong: #D8CFBC;
+  --color-border: #ECECEC;           /* нейтральный hairline */
+  --color-border-strong: #DFE1E4;
 
   /* Primary — warm orange. Используется для ТЕКСТА/ссылок/иконок/цифр/
      прогресс-баров/focus (читается на креме, в отличие от жёлтого). */
@@ -132,21 +132,21 @@ body {
   flex-direction: column;
 }
 
-/* Display heading — Lora serif. Used on H1 of главная,
-   /raboty, /raboty/[slug], section titles in homepage. */
+/* Display heading — гротеск (Zen-направление). Раньше был serif Lora;
+   заменён на Manrope bold во всём сайте по требованию (без серифа). */
 .font-display {
-  font-family: var(--font-display-stack);
-  font-weight: 500;
-  letter-spacing: -0.015em;
+  font-family: var(--font-sans);
+  font-weight: 800;
+  letter-spacing: -0.02em;
   line-height: 1.05;
 }
 
-/* Legacy alias — kept for back-compat. Now also Lora. */
+/* Legacy alias — тоже гротеск. */
 .font-editorial {
-  font-family: var(--font-display-stack);
-  font-weight: 500;
-  letter-spacing: -0.015em;
-  line-height: 1.1;
+  font-family: var(--font-sans);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
 }
 
 /* Eyebrow label — MBK-style mono caps with tracking. Used as section
