@@ -121,36 +121,30 @@ export function CreateTopicForm({ zhkName }: Props) {
   const submitting = status === "submitting";
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-4">
-      <p className="text-xs text-[var(--color-faint)]">ЖК: {zhkName}</p>
+    <form onSubmit={onSubmit} style={{ display: "grid", gap: 14 }}>
+      <p style={{ fontSize: 12, color: "var(--p-muted)" }}>ЖК: {zhkName}</p>
 
-      <label className="grid gap-1 text-sm">
-        <span className="text-[var(--color-text)]">
-          Категория <span className="text-red-600">*</span>
-        </span>
+      <div>
+        <label className="portal-label" htmlFor="topic-cat">Категория *</label>
         <select
+          id="topic-cat"
           name="category"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           required
-          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-base outline-none focus:border-[var(--color-primary)]"
+          className="portal-select"
         >
-          <option value="" disabled>
-            Выберите категорию
-          </option>
+          <option value="" disabled>Выберите категорию</option>
           {LOCAL_FEED_CATEGORIES.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
+            <option key={c.value} value={c.value}>{c.label}</option>
           ))}
         </select>
-      </label>
+      </div>
 
-      <label className="grid gap-1 text-sm">
-        <span className="text-[var(--color-text)]">
-          Заголовок <span className="text-red-600">*</span>
-        </span>
+      <div>
+        <label className="portal-label" htmlFor="topic-title">Заголовок *</label>
         <input
+          id="topic-title"
           type="text"
           name="title"
           value={title}
@@ -159,49 +153,34 @@ export function CreateTopicForm({ zhkName }: Props) {
           minLength={1}
           maxLength={200}
           placeholder="Коротко о теме"
-          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-base outline-none focus:border-[var(--color-primary)]"
+          className="portal-input"
         />
-      </label>
+      </div>
 
-      <label className="grid gap-1 text-sm">
-        <span className="text-[var(--color-text)]">Текст</span>
+      <div>
+        <label className="portal-label" htmlFor="topic-body">Текст</label>
         <textarea
+          id="topic-body"
           name="body"
           value={body}
           onChange={(e) => setBody(e.target.value)}
           maxLength={5000}
           rows={4}
           placeholder="Опишите подробнее — соседям будет проще помочь."
-          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-base outline-none focus:border-[var(--color-primary)]"
+          className="portal-textarea"
         />
-      </label>
+      </div>
 
       {message ? (
-        <div
-          role="alert"
-          className={`rounded-xl px-3 py-2 text-sm ${
-            status === "success"
-              ? "bg-green-50 text-green-700"
-              : "bg-red-50 text-red-700"
-          }`}
-        >
+        <div role="alert" className={`portal-alert ${status === "success" ? "portal-alert--ok" : "portal-alert--err"}`}>
           {message}
           {needsVerification ? (
-            <>
-              {" "}
-              <Link href="/login" className="font-medium underline">
-                Подтвердить телефон
-              </Link>
-            </>
+            <> <Link href="/login" style={{ fontWeight: 700, textDecoration: "underline" }}>Подтвердить телефон</Link></>
           ) : null}
         </div>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="inline-flex items-center justify-center rounded-xl bg-[var(--color-cta)] px-5 py-3 text-base font-medium text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] disabled:opacity-60"
-      >
+      <button type="submit" disabled={submitting} className="portal-btn portal-btn--block">
         {submitting ? "Публикуем…" : "Опубликовать тему"}
       </button>
     </form>

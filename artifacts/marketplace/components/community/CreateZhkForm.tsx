@@ -110,15 +110,11 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
   const submitting = status === "submitting";
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-4">
-      <p className="text-xs text-[var(--color-faint)]">
-        Город: {cityName}
-      </p>
-      <label className="grid gap-1 text-sm">
-        <span className="text-[var(--color-text)]">
-          Название ЖК <span className="text-red-600">*</span>
-        </span>
+    <form onSubmit={onSubmit} style={{ display: "grid", gap: 14 }}>
+      <div>
+        <label className="portal-label" htmlFor="zhk-name">Название ЖК *</label>
         <input
+          id="zhk-name"
           type="text"
           name="name"
           value={name}
@@ -127,45 +123,32 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
           minLength={2}
           maxLength={100}
           placeholder="например, ЖК «Скандинавия»"
-          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-base outline-none focus:border-[var(--color-primary)]"
+          className="portal-input"
         />
-        <span className="text-xs text-[var(--color-muted)]">
-          От 2 до 100 символов. Если ЖК уже есть — мы предложим перейти в него.
-        </span>
-      </label>
+        <p style={{ marginTop: 6, fontSize: 12, color: "var(--p-muted)" }}>
+          От 2 до 100 символов. Если ЖК уже есть — предложим перейти в него.
+        </p>
+      </div>
 
       {duplicate ? (
-        <div role="status" className="rounded-xl bg-[var(--color-cream-deep)] px-3 py-3 text-sm text-[var(--color-text)]">
+        <div role="status" className="portal-alert portal-alert--ok">
           Такой ЖК уже есть:{" "}
-          <Link href={`/zhk/${duplicate.slug}`} className="font-medium underline hover:text-[var(--color-primary)]">
+          <Link href={`/zhk/${duplicate.slug}`} style={{ fontWeight: 700, textDecoration: "underline" }}>
             {duplicate.name}
-          </Link>
-          . Перейдите в него, чтобы читать и обсуждать.
+          </Link>. Перейдите в него, чтобы читать и обсуждать.
         </div>
       ) : null}
 
       {message ? (
-        <div
-          role="alert"
-          className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
+        <div role="alert" className="portal-alert portal-alert--err">
           {message}
           {needsVerification ? (
-            <>
-              {" "}
-              <Link href="/login" className="font-medium underline">
-                Подтвердить телефон
-              </Link>
-            </>
+            <> <Link href="/login" style={{ fontWeight: 700, textDecoration: "underline" }}>Подтвердить телефон</Link></>
           ) : null}
         </div>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="inline-flex items-center justify-center rounded-xl bg-[var(--color-cta)] px-5 py-3 text-base font-medium text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] disabled:opacity-60"
-      >
+      <button type="submit" disabled={submitting} className="portal-btn portal-btn--block">
         {submitting ? "Добавляем…" : "Добавить ЖК"}
       </button>
     </form>

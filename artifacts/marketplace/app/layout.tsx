@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Manrope, Lora } from "next/font/google";
+import { Manrope, Lora, Golos_Text } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Header } from "../components/Header";
@@ -25,6 +25,16 @@ const lora = Lora({
   subsets: ["latin", "cyrillic"],
   variable: "--font-display",
   weight: ["500", "600"],
+  display: "swap",
+});
+
+// Golos Text — гротеск с кириллицей для «портального» раздела сообщества
+// (.portal). Нейтральный, технологичный характер; экспонируется как
+// CSS-переменная --font-grotesk и применяется только внутри .portal.
+const golos = Golos_Text({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-grotesk",
+  weight: ["400", "500", "600", "700", "800", "900"],
   display: "swap",
 });
 
@@ -94,7 +104,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const communityCities = ownChrome ? [] : await fetchCommunityCities();
 
   return (
-    <html lang="ru" className={`${manrope.variable} ${lora.variable}`}>
+    <html lang="ru" className={`${manrope.variable} ${lora.variable} ${golos.variable}`}>
       <body>
         {ownChrome ? null : <Header cities={communityCities} />}
         <main className="flex-1">{children}</main>
