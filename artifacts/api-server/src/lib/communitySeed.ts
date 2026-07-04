@@ -34,22 +34,17 @@ import {
   specialtiesTable,
   communityThreadsTable,
 } from "@workspace/db";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 // ─── Конфигурация набора ─────────────────────────────────────────────────────
 
 /** Стартовые города приоритетного развития (Requirement 17.1) — до 3 шт. */
-const STARTER_CITY_SLUGS = ["moskva", "sankt-peterburg", "krasnodar"];
+const STARTER_CITY_SLUGS = ["krasnodar", "rostov-na-donu", "volgograd"];
 
 /** Целевой SEO-набор (Requirement 16.1) — города, где включаем публичные страницы. */
 const GEO_COVERED_CITY_SLUGS = [
   ...STARTER_CITY_SLUGS,
-  "ekaterinburg",
-  "novosibirsk",
-  "kazan",
-  "nizhniy-novgorod",
-  "rostov-na-donu",
-  "sochi",
+  "stavropol",
 ];
 
 /** Специальности PRO_Zone (Requirement 6.1). */
@@ -219,17 +214,10 @@ export async function seedCommunityDemo(): Promise<SeedResult> {
     .where(eq(zhkTable.isSeeded, true));
   result.zhkCreated = createdZhk.length;
 
-  // 4. Демо-темы — только если сид-тем ещё нет (не затираем имитацию).
-  const [{ seeded }] = await db
-    .select({ seeded: sql<number>`count(*)::int` })
-    .from(communityThreadsTable)
-    .where(eq(communityThreadsTable.isSeeded, true));
-
-  if (seeded > 0) {
-    console.log(`[community-seed] сид-темы уже есть (${seeded}) — вставку тем пропускаю`);
-    return result;
-  }
-
+  // 4. Демо-темы — досев ПО КАЖДОМУ городу/ЖК/специальности отдельно.
+  // Для каждой цели вставляем демо-темы только если у неё ещё нет сид-тем —
+  // это тонко идемпотентно: дозасевает новые цели, не дублирует существующие
+  // и не затирает наработанную имитацию активности.
   const specialties = await db
     .select({ id: specialtiesTable.id, name: specialtiesTable.name })
     .from(specialtiesTable);
@@ -259,29 +247,43 @@ export async function seedCommunityDemo(): Promise<SeedResult> {
     };
   }
 
-  const rows: ThreadRow[] = [];
+  /** Есть ли уже сид-темы, удовлетворяющие условию? */
+  async function seededExists(...conds: (ReturnType<typeof eq>)[]): Promise<boolean> {
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(communityThreadsTable)
+      .where(and(eq(communityThreadsTable.isSeeded, true), ...conds));
+    return n > 0;
+  }
 
-  // City_Feed: темы уровня города.
+  // City_Feed: темы уровня города (досев по городу).
   for (const c of cities) {
-    CITY_TOPICS.forEach((topic, i) => {
+    if (await seededExists(eq(communityThreadsTable.scope, "city"), eq(communityThreadsTable.cityId, c.id))) continue;
+    const rows = CITY_TOPICS.map((topic, i) => {
       const when = hoursAgo(i * 5 + Math.random() * 3);
-      rows.push(makeThread({ zone: "sosedi", scope: "city", cityId: c.id, title: topic.title, body: topic.body, lastActivityAt: when, createdAt: when }));
+      return makeThread({ zone: "sosedi", scope: "city", cityId: c.id, title: topic.title, body: topic.body, lastActivityAt: when, createdAt: when });
     });
+    await db.insert(communityThreadsTable).values(rows);
+    result.threadsCreated += rows.length;
   }
 
-  // Local_Feed: темы уровня ЖК.
+  // Local_Feed: темы уровня ЖК (досев по ЖК).
   for (const z of createdZhk) {
-    LOCAL_TOPICS.forEach((topic, i) => {
+    if (await seededExists(eq(communityThreadsTable.scope, "zhk"), eq(communityThreadsTable.zhkId, z.id))) continue;
+    const rows = LOCAL_TOPICS.map((topic, i) => {
       const when = hoursAgo(i * 8 + Math.random() * 4);
-      rows.push(makeThread({ zone: "sosedi", scope: "zhk", zhkId: z.id, cityId: z.cityId, category: topic.category, title: topic.title, body: topic.body, lastActivityAt: when, createdAt: when }));
+      return makeThread({ zone: "sosedi", scope: "zhk", zhkId: z.id, cityId: z.cityId, category: topic.category, title: topic.title, body: topic.body, lastActivityAt: when, createdAt: when });
     });
+    await db.insert(communityThreadsTable).values(rows);
+    result.threadsCreated += rows.length;
   }
 
-  // PRO_Public: тематические темы по специальностям.
+  // PRO_Public: тематические темы по специальностям (досев по специальности).
   for (const sp of specialties) {
-    PRO_TOPIC_TEMPLATES.forEach((tpl, i) => {
+    if (await seededExists(eq(communityThreadsTable.zone, "pro_public"), eq(communityThreadsTable.specialtyId, sp.id))) continue;
+    const rows = PRO_TOPIC_TEMPLATES.map((tpl, i) => {
       const when = hoursAgo(i * 6 + Math.random() * 3);
-      rows.push(makeThread({
+      return makeThread({
         zone: "pro_public",
         scope: "pro",
         specialtyId: sp.id,
@@ -291,19 +293,15 @@ export async function seedCommunityDemo(): Promise<SeedResult> {
         body: tpl.body,
         lastActivityAt: when,
         createdAt: when,
-      }));
+      });
     });
+    await db.insert(communityThreadsTable).values(rows);
+    result.threadsCreated += rows.length;
   }
-
-  // Пакетная вставка (батчами по 100).
-  for (let i = 0; i < rows.length; i += 100) {
-    await db.insert(communityThreadsTable).values(rows.slice(i, i + 100));
-  }
-  result.threadsCreated = rows.length;
 
   console.log(
     `[community-seed] готово: города=${result.citiesMarked}, ЖК=${result.zhkCreated}, ` +
-      `специальности=${result.specialtiesEnsured}, темы=${result.threadsCreated}`,
+      `специальности=${result.specialtiesEnsured}, новых тем=${result.threadsCreated}`,
   );
   return result;
 }
