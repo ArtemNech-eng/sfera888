@@ -16,6 +16,7 @@ import { checkResponseWindows } from "./lib/priorityAssign.js";
 import { backfillReceiptTransactions } from "./routes/receipts.js";
 import { runAvitoSchedule } from "./routes/avito.js";
 import { runTemplateScenario } from "./routes/ai-office.js";
+import { seedCommunityDemo, simulateCommunityActivity } from "./lib/communitySeed.js";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -513,6 +514,13 @@ runDrizzleMigrations()
     import("./lib/designWorker.js").then(({ startDesignWorker }) => {
       startDesignWorker();
     }).catch(e => console.error("[designWorker] failed to load:", e));
+    // ── Демо-сид гео-сообщества «ХочуТакже» (по флагу) ──────────────────────
+    // Разовое идемпотентное наполнение стартовых городов/ЖК/специальностей и
+    // демо-лент, чтобы разделы /goroda, /zhk, /pro выглядели живыми до появления
+    // реального контента. Включается COMMUNITY_SEED_ENABLED=true.
+    if (process.env.COMMUNITY_SEED_ENABLED === "true") {
+      seedCommunityDemo().catch((e) => console.error("[community-seed] failed:", e));
+    }
   })
   .catch((err) => {
     console.error("[startup] Migration/bootstrap failed:", err);
@@ -552,6 +560,18 @@ import("./lib/tasksEscalation.js").then(({ runTaskEscalations }) => {
   setInterval(() => runTaskEscalations().catch(console.error), 5 * 60 * 1000);
   console.log("[escalation] Operator task escalation scheduler started (MAX)");
 }).catch(err => console.error("[escalation] failed to load module:", err));
+
+// ─── Имитация активности гео-сообщества «ХочуТакже» (по флагу) ───────────────
+// Периодически бампает last_activity_at у сид-тем и иногда добавляет свежую
+// тему, чтобы ленты выглядели живыми. Работает ТОЛЬКО с is_seeded=true строками.
+// Включается COMMUNITY_ACTIVITY_SIM_ENABLED=true; интервал —
+// COMMUNITY_ACTIVITY_SIM_INTERVAL_MIN (мин, по умолчанию 30).
+if (process.env.COMMUNITY_ACTIVITY_SIM_ENABLED === "true") {
+  const simMin = Number(process.env.COMMUNITY_ACTIVITY_SIM_INTERVAL_MIN) || 30;
+  const simMs = Math.max(1, simMin) * 60 * 1000;
+  setInterval(() => simulateCommunityActivity().catch(console.error), simMs);
+  console.log(`[community-activity] simulator started (every ${Math.max(1, simMin)} min)`);
+}
 // runQuickAutonomousCheck removed — caused spam to masters
 // runAutonomousCycle removed — caused spam to masters
 
