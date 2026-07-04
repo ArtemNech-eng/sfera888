@@ -259,3 +259,48 @@ export async function fetchCommunitySitemap(
     return { cities: [], zhk: [], specialties: [] };
   }
 }
+
+// ─── Community hub directory (навигация раздела «Соседи») ────────────────────
+//
+// Списки для хаб-страницы /soobshchestvo. Имена (не только слаги) нужны для
+// человекочитаемой навигации. Источники:
+//   • GET /api/community/geo/cities → { cities: [{ slug, name, region }] }
+//   • GET /api/community/pro         → { specialties: [{ slug, name }] }
+// При недоступности апстрима возвращаем пустые списки (хаб деградирует, не падает).
+
+/** Город целевого набора для навигации по разделу «Соседи». */
+export interface CommunityCityRef {
+  slug: string;
+  name: string;
+  region: string | null;
+}
+
+/** Специальность PRO для навигации по разделу «Хочу также ПРО». */
+export interface CommunitySpecialtyRef {
+  slug: string;
+  name: string;
+}
+
+/** Список городов целевого SEO-набора (Sosedi_Zone). */
+export async function fetchCommunityCities(opts: FetchOpts = {}): Promise<CommunityCityRef[]> {
+  try {
+    const r = await call<{ cities: CommunityCityRef[] }>("/geo/cities", {
+      revalidate: opts.revalidate ?? 300,
+    });
+    return Array.isArray(r.cities) ? r.cities : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Список активных специальностей PRO_Public_Layer. */
+export async function fetchCommunitySpecialties(opts: FetchOpts = {}): Promise<CommunitySpecialtyRef[]> {
+  try {
+    const r = await call<{ specialties: CommunitySpecialtyRef[] }>("/pro", {
+      revalidate: opts.revalidate ?? 300,
+    });
+    return Array.isArray(r.specialties) ? r.specialties : [];
+  } catch {
+    return [];
+  }
+}

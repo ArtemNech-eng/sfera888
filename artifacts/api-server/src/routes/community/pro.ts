@@ -206,6 +206,21 @@ export function createProRouter(deps: Partial<ProRouterDeps> = {}): Router {
   const handlers = makeHandlers(resolved);
 
   const router = Router();
+  // Список специальностей для хаб-страницы сообщества (публичный, уровень 1).
+  router.get("/", async (_req: Request, res: Response) => {
+    try {
+      const specialties = await db
+        .select({ slug: specialtiesTable.slug, name: specialtiesTable.name })
+        .from(specialtiesTable)
+        .where(eq(specialtiesTable.isActive, true))
+        .orderBy(specialtiesTable.name);
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=3600");
+      res.json({ specialties });
+    } catch (e: unknown) {
+      console.error("[community/pro] list", e instanceof Error ? e.message : e);
+      res.status(500).json({ error: "internal_error" });
+    }
+  });
   // Публичное чтение PRO_Public_Layer (уровень 1, Requirement 9.1).
   router.get("/:specialtySlug", handlers.getProFeed);
   return router;

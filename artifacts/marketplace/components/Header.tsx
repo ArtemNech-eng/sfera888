@@ -26,6 +26,7 @@ const NAV: NavItem[] = [
   { href: "/kalkulyator", label: "Калькулятор" },
   { href: "/uslugi", label: "Услуги" },
   { href: "/mastera", label: "Мастера" },
+  { href: "/soobshchestvo", label: "Соседи" },
 ];
 
 const EXTERNAL_FOR_MASTERS = "https://sfera-master.ru/masteram";

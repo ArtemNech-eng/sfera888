@@ -27,8 +27,8 @@ import {
   type Response,
   type NextFunction,
 } from "express";
-import { db, communityAccountsTable, type CommunityAccount } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, communityAccountsTable, citiesTable, type CommunityAccount } from "@workspace/db";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { GeoService } from "../../lib/geoService.js";
 import { feedService } from "../../lib/feedService.js";
 import { hasPublishingRights } from "../../lib/communityAuth.js";
@@ -144,6 +144,32 @@ async function requireCommunityPublisher(
   req.communityAccount = account;
   next();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /cities — список городов целевого SEO-набора для хаб-страницы сообщества.
+// Публичный (уровень 1): отдаёт активные города с is_geo_covered=true
+// (slug, name, region) для навигации по разделу «Соседи».
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/cities", async (_req: Request, res: Response) => {
+  try {
+    const cities = await db
+      .select({ slug: citiesTable.slug, name: citiesTable.name, region: citiesTable.region })
+      .from(citiesTable)
+      .where(
+        and(
+          eq(citiesTable.isGeoCovered, true),
+          eq(citiesTable.isActive, true),
+          isNotNull(citiesTable.slug),
+        ),
+      )
+      .orderBy(citiesTable.name);
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=3600");
+    return res.json({ cities });
+  } catch (err) {
+    console.error("[community/geo] GET cities failed:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /city/:citySlug — City + City_Feed (Requirements 1.2, 1.5).
