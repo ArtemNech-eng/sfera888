@@ -552,6 +552,15 @@ export interface CommunityFeedResult {
 export interface CommunityCityResponse {
   city: CommunityCity;
   cityFeed: CommunityFeedResult;
+  /** ЖК города для навигации в локальные сообщества (может отсутствовать). */
+  zhk?: CommunityCityZhkRef[];
+}
+
+/** Компактный DTO ЖК в списке города. */
+export interface CommunityCityZhkRef {
+  slug: string;
+  name: string;
+  status: string;
 }
 
 /** Ответ GET /api/community/geo/zhk/:zhkSlug (Requirements 1.4, 1.5, 1.7). */

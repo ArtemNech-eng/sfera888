@@ -60,6 +60,7 @@ export default async function CityPage(
   if (!data) notFound();
 
   const { city, cityFeed } = data;
+  const zhk = data.zhk ?? [];
 
   const breadcrumbsLd = breadcrumbJsonLd([
     { name: "Главная", url: `${publicUrl()}/` },
@@ -101,6 +102,30 @@ export default async function CityPage(
       <div className="mx-auto grid max-w-5xl gap-10 px-4 py-8 sm:px-6 sm:py-10 lg:grid-cols-[1fr_20rem]">
         {/* City_Feed */}
         <section>
+          {/* ЖК города — навигация в локальные сообщества */}
+          {zhk.length > 0 ? (
+            <div className="mb-10">
+              <h2 className="font-display mb-4 text-2xl text-[var(--color-text)]">
+                Жилые комплексы {city.name}
+              </h2>
+              <ul className="grid gap-3 sm:grid-cols-2">
+                {zhk.map((z) => (
+                  <li key={z.slug}>
+                    <Link
+                      href={`/zhk/${z.slug}`}
+                      className="block rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)] hover:shadow-cozy"
+                    >
+                      <span className="font-medium text-[var(--color-text)]">{z.name}</span>
+                      <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
+                        Локальное сообщество жителей →
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <h2 className="font-display mb-4 text-2xl text-[var(--color-text)]">
             Городские темы
           </h2>

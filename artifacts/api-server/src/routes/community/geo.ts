@@ -189,7 +189,14 @@ router.get("/city/:citySlug", async (req: Request, res: Response) => {
       cursor: parseCursor(req.query.cursor),
     });
 
-    return res.json({ city, cityFeed });
+    // ЖК города — для навигации по локальным сообществам (Requirement 1.1).
+    const zhk = await db
+      .select({ slug: zhkTable.slug, name: zhkTable.name, status: zhkTable.status })
+      .from(zhkTable)
+      .where(eq(zhkTable.cityId, city.id))
+      .orderBy(desc(zhkTable.contentScore), zhkTable.name);
+
+    return res.json({ city, cityFeed, zhk });
   } catch (err) {
     console.error("[community/geo] GET city failed:", err);
     return res.status(500).json({ error: "internal_error" });
