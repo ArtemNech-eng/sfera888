@@ -103,7 +103,172 @@ async function runRuntimeFixes() {
     ON CONFLICT (key) DO NOTHING
   `);
 
+  // ── ХочуТакже — гео-сообщество baseline (spec: hochu-takzhe-community) ──────
+  // Эти таблицы описаны как Drizzle-схемы (lib/db/src/schema/{zhk,specialties,
+  // community-*}.ts), но соответствующая drizzle-миграция НЕ сгенерирована,
+  // поэтому `runDrizzleMigrations()` их не создаёт. До появления сгенерированной
+  // миграции создаём/дополняем схему здесь идемпотентно (IF NOT EXISTS) — точная
+  // копия artifacts/api-server/migrations/2026-01-20-community-baseline.sql.
+  // Аддитивно и безопасно на работающем проде; повторный прогон — no-op.
+  // ВАЖНО: если позже появится drizzle-миграция под эти таблицы — удалить этот
+  // блок, чтобы `migrate()` не упал на `relation already exists`.
+  await applyCommunityBaseline();
+
   console.log("[startup] Runtime fixes applied");
+}
+
+/**
+ * Идемпотентный DDL гео-сообщества «ХочуТакже». Выделен в отдельную функцию,
+ * т.к. содержит `DO $$ ... $$` блоки и должен исполняться как единый simple-query
+ * (без bind-параметров). Зеркалит миграцию 2026-01-20-community-baseline.sql.
+ */
+async function applyCommunityBaseline() {
+  await db.execute(sql.raw(`
+-- 1. cities — стартовые города и SEO-покрытие
+ALTER TABLE cities
+  ADD COLUMN IF NOT EXISTS is_starter     boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS is_geo_covered boolean NOT NULL DEFAULT false;
+
+-- 2. community_accounts (создаётся до zhk; циркулярный FK добавляется ниже)
+CREATE TABLE IF NOT EXISTS community_accounts (
+  id                serial PRIMARY KEY,
+  phone             varchar(30) NOT NULL,
+  phone_verified_at timestamp,
+  role              varchar(20) NOT NULL DEFAULT 'resident',
+  zhk_id            integer,
+  max_user_id       varchar(80),
+  created_at        timestamp   NOT NULL DEFAULT NOW(),
+  CONSTRAINT community_accounts_phone_key UNIQUE (phone)
+);
+CREATE INDEX IF NOT EXISTS community_accounts_zhk_idx      ON community_accounts (zhk_id);
+CREATE INDEX IF NOT EXISTS community_accounts_max_user_idx ON community_accounts (max_user_id);
+
+-- 3. zhk
+CREATE TABLE IF NOT EXISTS zhk (
+  id                    serial PRIMARY KEY,
+  slug                  varchar(100) NOT NULL,
+  name                  varchar(100) NOT NULL,
+  name_normalized       varchar(100) NOT NULL,
+  city_id               integer      NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
+  developer             varchar(200),
+  completion_date       varchar(40),
+  buildings             jsonb,
+  status                varchar(20)  NOT NULL DEFAULT 'NON_LIVING',
+  is_seeded             boolean      NOT NULL DEFAULT false,
+  content_score         integer      NOT NULL DEFAULT 0,
+  is_indexable          boolean      NOT NULL DEFAULT false,
+  created_by_account_id integer      REFERENCES community_accounts(id) ON DELETE SET NULL,
+  seo_title             varchar(70),
+  seo_description       varchar(180),
+  h1                    varchar(100),
+  body_md               text,
+  created_at            timestamp    NOT NULL DEFAULT NOW(),
+  CONSTRAINT zhk_slug_key UNIQUE (slug)
+);
+CREATE INDEX IF NOT EXISTS zhk_city_name_normalized_idx ON zhk (city_id, name_normalized);
+CREATE INDEX IF NOT EXISTS zhk_city_status_idx          ON zhk (city_id, status);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'community_accounts_zhk_id_fkey'
+      AND table_name = 'community_accounts'
+  ) THEN
+    ALTER TABLE community_accounts
+      ADD CONSTRAINT community_accounts_zhk_id_fkey
+      FOREIGN KEY (zhk_id) REFERENCES zhk(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+-- 4. specialties
+CREATE TABLE IF NOT EXISTS specialties (
+  id         serial PRIMARY KEY,
+  slug       varchar(100) NOT NULL,
+  name       varchar(100) NOT NULL,
+  is_active  boolean      NOT NULL DEFAULT true,
+  created_at timestamp    NOT NULL DEFAULT NOW(),
+  CONSTRAINT specialties_slug_key UNIQUE (slug)
+);
+
+-- 5. pro_memberships
+CREATE TABLE IF NOT EXISTS pro_memberships (
+  id           serial PRIMARY KEY,
+  account_id   integer   NOT NULL REFERENCES community_accounts(id) ON DELETE CASCADE,
+  specialty_id integer   REFERENCES specialties(id) ON DELETE SET NULL,
+  verified     boolean   NOT NULL DEFAULT false,
+  verified_at  timestamp,
+  created_at   timestamp NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS pro_memberships_account_idx   ON pro_memberships (account_id);
+CREATE INDEX IF NOT EXISTS pro_memberships_specialty_idx ON pro_memberships (specialty_id);
+
+-- 6. community_threads
+CREATE TABLE IF NOT EXISTS community_threads (
+  id                serial PRIMARY KEY,
+  zone              varchar(20)  NOT NULL,
+  scope             varchar(10)  NOT NULL,
+  city_id           integer      REFERENCES cities(id) ON DELETE SET NULL,
+  zhk_id            integer      REFERENCES zhk(id) ON DELETE CASCADE,
+  specialty_id      integer      REFERENCES specialties(id) ON DELETE SET NULL,
+  is_local          boolean      NOT NULL DEFAULT false,
+  category          varchar(40),
+  title             varchar(200) NOT NULL,
+  body              text         NOT NULL,
+  author_account_id integer      REFERENCES community_accounts(id) ON DELETE SET NULL,
+  is_seeded         boolean      NOT NULL DEFAULT false,
+  visibility        varchar(12)  NOT NULL DEFAULT 'public',
+  moderation_status varchar(16)  NOT NULL DEFAULT 'not_screened',
+  last_activity_at  timestamp    NOT NULL DEFAULT NOW(),
+  created_at        timestamp    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS community_threads_scope_city_created_idx
+  ON community_threads (scope, city_id, created_at);
+CREATE INDEX IF NOT EXISTS community_threads_scope_zhk_created_idx
+  ON community_threads (scope, zhk_id, created_at);
+CREATE INDEX IF NOT EXISTS community_threads_zone_specialty_local_city_idx
+  ON community_threads (zone, specialty_id, is_local, city_id);
+CREATE INDEX IF NOT EXISTS community_threads_zone_city_idx  ON community_threads (zone, city_id);
+CREATE INDEX IF NOT EXISTS community_threads_zhk_idx        ON community_threads (zhk_id);
+CREATE INDEX IF NOT EXISTS community_threads_specialty_idx  ON community_threads (specialty_id);
+
+-- 7. community_thread_drafts
+CREATE TABLE IF NOT EXISTS community_thread_drafts (
+  id                serial PRIMARY KEY,
+  author_account_id integer   REFERENCES community_accounts(id) ON DELETE SET NULL,
+  payload           jsonb     NOT NULL,
+  reason            varchar(40),
+  created_at        timestamp NOT NULL DEFAULT NOW()
+);
+
+-- 8. community_moderation_log
+CREATE TABLE IF NOT EXISTS community_moderation_log (
+  id           serial PRIMARY KEY,
+  target_type  varchar(20) NOT NULL,
+  target_id    integer     NOT NULL,
+  action       varchar(24) NOT NULL,
+  reason       text,
+  moderator_id integer,
+  created_at   timestamp   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS community_moderation_log_target_idx
+  ON community_moderation_log (target_type, target_id);
+
+-- 9. zhk_weekly_activity
+CREATE TABLE IF NOT EXISTS zhk_weekly_activity (
+  id               serial PRIMARY KEY,
+  zhk_id           integer NOT NULL REFERENCES zhk(id) ON DELETE CASCADE,
+  week_start       date    NOT NULL,
+  active_residents integer NOT NULL DEFAULT 0,
+  created_at       timestamp NOT NULL DEFAULT NOW(),
+  updated_at       timestamp NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS zhk_weekly_activity_zhk_week_key
+  ON zhk_weekly_activity (zhk_id, week_start);
+CREATE INDEX IF NOT EXISTS zhk_weekly_activity_zhk_idx
+  ON zhk_weekly_activity (zhk_id);
+  `));
+  console.log("[startup] Community baseline schema ensured");
 }
 
 // Seed default voronka columns if they don't exist yet.
