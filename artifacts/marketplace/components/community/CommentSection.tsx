@@ -14,8 +14,7 @@ interface TreeNode extends ThreadCommentDTO {
   children: TreeNode[];
 }
 
-/** Максимальная визуальная вложенность (глубже — выравниваем, чтобы не уезжало). */
-const MAX_INDENT_DEPTH = 5;
+const MAX_INDENT_DEPTH = 4;
 
 const ERROR_MESSAGES: Record<string, string> = {
   verification_required: "Чтобы ответить, подтвердите телефон — это займёт минуту.",
@@ -53,22 +52,16 @@ function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   try {
-    return new Intl.DateTimeFormat("ru-RU", {
-      day: "numeric",
-      month: "long",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(d);
+    return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(d);
   } catch {
     return "";
   }
 }
 
 /**
- * Обсуждение под темой (форум-слой). Строит дерево комментариев из плоского
- * списка, показывает форму нового комментария и inline-формы ответа. Публикация
- * идёт через фасад-прокси `/api/community/threads/[id]/comments` (уровень
- * доступа 3 — подтверждённый телефон). При успехе — `router.refresh()`.
+ * Обсуждение под темой (Zen-стиль). Дерево комментариев, форма нового
+ * комментария и inline-ответы. Публикация через фасад-прокси
+ * `/api/community/threads/[id]/comments` (уровень доступа 3). Успех → refresh.
  */
 export function CommentSection({ threadId, comments }: Props) {
   const router = useRouter();
@@ -88,7 +81,6 @@ export function CommentSection({ threadId, comments }: Props) {
     setSubmitting(true);
     setError(null);
     setNeedsVerification(false);
-
     let res: Response;
     try {
       res = await fetch(`/api/community/threads/${threadId}/comments`, {
@@ -101,22 +93,18 @@ export function CommentSection({ threadId, comments }: Props) {
       setSubmitting(false);
       return false;
     }
-
     let parsed: { ok?: boolean; error?: string; reason?: string } | null = null;
     try {
       parsed = await res.json();
     } catch {
       parsed = null;
     }
-
     setSubmitting(false);
-
     if (parsed && parsed.ok === true) {
       setReplyTo(null);
       router.refresh();
       return true;
     }
-
     const label = parsed?.error;
     if (label === "verification_required") setNeedsVerification(true);
     setError(friendly(label, parsed?.reason));
@@ -124,161 +112,93 @@ export function CommentSection({ threadId, comments }: Props) {
   }
 
   return (
-    <section className="mt-10">
-      <h2 className="font-display mb-4 text-2xl text-[var(--color-text)]">
-        Обсуждение{comments.length > 0 ? ` · ${comments.length}` : ""}
-      </h2>
+    <section style={{ marginTop: 28 }}>
+      <h2 className="zen-section-title">Обсуждение · {comments.length}</h2>
 
-      {/* Новый комментарий верхнего уровня */}
-      <CommentForm
-        placeholder="Написать комментарий…"
-        submitLabel="Отправить"
-        disabled={submitting}
-        onSubmit={(text) => submit(text, null)}
-      />
+      <div className="zen-panel" style={{ padding: 16 }}>
+        <CommentForm placeholder="Написать комментарий…" submitLabel="Отправить" disabled={submitting} onSubmit={(t) => submit(t, null)} />
+        {error ? (
+          <div role="alert" className="zen-alert zen-alert--err">
+            {error}
+            {needsVerification ? (
+              <> <Link href="/login" style={{ fontWeight: 700, textDecoration: "underline" }}>Подтвердить телефон</Link></>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
-      {error ? (
-        <div role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-          {needsVerification ? (
-            <>
-              {" "}
-              <Link href="/login" className="font-medium underline">
-                Подтвердить телефон
-              </Link>
-            </>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* Дерево комментариев */}
       {tree.length > 0 ? (
-        <ul className="mt-6 flex flex-col gap-4">
+        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
           {tree.map((node) => (
-            <CommentNode
-              key={node.id}
-              node={node}
-              depth={0}
-              replyTo={replyTo}
-              setReplyTo={setReplyTo}
-              submitting={submitting}
-              onReply={(text) => submit(text, node.id)}
-            />
+            <CommentNode key={node.id} node={node} depth={0} replyTo={replyTo} setReplyTo={setReplyTo} submitting={submitting} onReply={(t) => submit(t, node.id)} />
           ))}
-        </ul>
+        </div>
       ) : (
-        <p className="mt-6 text-sm text-[var(--color-muted)]">
-          Пока нет комментариев. Будьте первым.
-        </p>
+        <p style={{ marginTop: 16, color: "var(--z-muted)", fontSize: 15 }}>Пока нет комментариев. Будьте первым.</p>
       )}
     </section>
   );
 }
 
 function CommentNode({
-  node,
-  depth,
-  replyTo,
-  setReplyTo,
-  submitting,
-  onReply,
+  node, depth, replyTo, setReplyTo, submitting, onReply,
 }: {
-  node: TreeNode;
-  depth: number;
-  replyTo: number | null;
-  setReplyTo: (id: number | null) => void;
-  submitting: boolean;
-  onReply: (text: string) => Promise<boolean>;
+  node: TreeNode; depth: number; replyTo: number | null;
+  setReplyTo: (id: number | null) => void; submitting: boolean; onReply: (text: string) => Promise<boolean>;
 }) {
-  const indent = Math.min(depth, MAX_INDENT_DEPTH);
   return (
-    <li
-      className="border-l-2 border-[var(--color-border)] pl-4"
-      style={{ marginLeft: indent > 0 ? `${indent * 0.75}rem` : undefined }}
-    >
-      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <div className="flex items-center gap-2 text-xs text-[var(--color-faint)]">
-          <span className="font-medium text-[var(--color-text)]">Сосед</span>
+    <div className="zen-comment">
+      <div className="zen-comment-card">
+        <div className="zen-comment-head">
+          <span className="zen-avatar">С</span>
+          <span className="zen-comment-author">Сосед</span>
           <span aria-hidden>·</span>
           <time dateTime={node.createdAt}>{formatDate(node.createdAt)}</time>
         </div>
-        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-text)]">
-          {node.body}
-        </p>
-        <button
-          type="button"
-          onClick={() => setReplyTo(replyTo === node.id ? null : node.id)}
-          className="mt-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
-        >
+        <p className="zen-comment-body">{node.body}</p>
+        <button type="button" onClick={() => setReplyTo(replyTo === node.id ? null : node.id)} className="zen-reply-btn">
           {replyTo === node.id ? "Отмена" : "Ответить"}
         </button>
-
         {replyTo === node.id ? (
-          <div className="mt-3">
-            <CommentForm
-              placeholder="Ваш ответ…"
-              submitLabel="Ответить"
-              disabled={submitting}
-              onSubmit={onReply}
-            />
+          <div style={{ marginTop: 12 }}>
+            <CommentForm placeholder="Ваш ответ…" submitLabel="Ответить" disabled={submitting} onSubmit={onReply} />
           </div>
         ) : null}
       </div>
 
-      {node.children.length > 0 ? (
-        <ul className="mt-3 flex flex-col gap-3">
+      {node.children.length > 0 && depth < MAX_INDENT_DEPTH ? (
+        <div className="zen-comment-children">
           {node.children.map((child) => (
-            <CommentNode
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              replyTo={replyTo}
-              setReplyTo={setReplyTo}
-              submitting={submitting}
-              onReply={onReply}
-            />
+            <CommentNode key={child.id} node={child} depth={depth + 1} replyTo={replyTo} setReplyTo={setReplyTo} submitting={submitting} onReply={onReply} />
           ))}
-        </ul>
+        </div>
+      ) : node.children.length > 0 ? (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+          {node.children.map((child) => (
+            <CommentNode key={child.id} node={child} depth={depth} replyTo={replyTo} setReplyTo={setReplyTo} submitting={submitting} onReply={onReply} />
+          ))}
+        </div>
       ) : null}
-    </li>
+    </div>
   );
 }
 
 function CommentForm({
-  placeholder,
-  submitLabel,
-  disabled,
-  onSubmit,
+  placeholder, submitLabel, disabled, onSubmit,
 }: {
-  placeholder: string;
-  submitLabel: string;
-  disabled: boolean;
-  onSubmit: (text: string) => Promise<boolean>;
+  placeholder: string; submitLabel: string; disabled: boolean; onSubmit: (text: string) => Promise<boolean>;
 }) {
   const [text, setText] = useState("");
-
   async function handle(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const ok = await onSubmit(text);
     if (ok) setText("");
   }
-
   return (
-    <form onSubmit={handle} className="grid gap-2">
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={3}
-        maxLength={5000}
-        placeholder={placeholder}
-        className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
-      />
+    <form onSubmit={handle} style={{ display: "grid", gap: 10 }}>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={5000} placeholder={placeholder} className="zen-textarea" />
       <div>
-        <button
-          type="submit"
-          disabled={disabled || text.trim().length === 0}
-          className="inline-flex items-center justify-center rounded-xl bg-[var(--color-cta)] px-5 py-2.5 text-sm font-medium text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] disabled:opacity-60"
-        >
+        <button type="submit" disabled={disabled || text.trim().length === 0} className="zen-btn">
           {disabled ? "Отправляем…" : submitLabel}
         </button>
       </div>

@@ -249,3 +249,131 @@ body {
 @media (min-width: 640px) {
   .masonry-item { margin-bottom: 2rem; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ZEN — дизайн-система раздела «Соседи»/«ПРО» в духе ленты-портала
+   (Дзен-подобный контент-фид). Светлый нейтральный фон, чистый гротеск,
+   мягкие карточки, тёплый коралловый акцент. Скоуп — `.zen`.
+   ═══════════════════════════════════════════════════════════════════ */
+.zen {
+  --z-bg: #f6f7f8;
+  --z-surface: #ffffff;
+  --z-ink: #1c1c1e;
+  --z-muted: #6b7280;
+  --z-faint: #9aa0a6;
+  --z-line: #ededed;
+  --z-accent: #ff5a3c;
+  --z-accent-ink: #ffffff;
+  --z-accent-soft: #fff1ee;
+  --z-radius: 16px;
+  --z-radius-sm: 12px;
+  --z-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 2px 8px rgba(16, 24, 40, .05);
+  --z-shadow-h: 0 6px 20px rgba(16, 24, 40, .10);
+  background: var(--z-bg);
+  color: var(--z-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 60vh;
+}
+.zen a { color: inherit; text-decoration: none; }
+.zen ::selection { background: var(--z-accent); color: #fff; }
+
+.zen-shell { max-width: 1200px; margin: 0 auto; padding: 28px 20px 64px; }
+.zen-layout { display: grid; grid-template-columns: 1fr; gap: 28px; }
+@media (min-width: 1000px) { .zen-layout--rail { grid-template-columns: 240px 1fr; } }
+
+/* ── Левый рэйл навигации (Дзен-подобный) ── */
+.zen-rail { display: none; }
+@media (min-width: 1000px) { .zen-rail { display: block; position: sticky; top: 88px; align-self: start; } }
+.zen-rail-title { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--z-faint); padding: 0 12px; margin: 16px 0 8px; }
+.zen-rail-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; font-size: 15px; font-weight: 500; color: var(--z-ink); transition: background .12s ease; }
+.zen-rail-item:hover { background: #eef0f2; }
+.zen-rail-item.is-active { background: var(--z-accent-soft); color: var(--z-accent); font-weight: 700; }
+
+/* ── Заголовки ── */
+.zen-crumbs { font-size: 13px; color: var(--z-muted); margin-bottom: 12px; }
+.zen-crumbs a:hover { color: var(--z-accent); }
+.zen-eyebrow { display: inline-block; font-size: 13px; font-weight: 700; color: var(--z-accent); margin-bottom: 6px; }
+.zen-title { font-weight: 800; letter-spacing: -.02em; line-height: 1.08; font-size: clamp(26px, 3.6vw, 40px); }
+.zen-sub { margin-top: 10px; font-size: 16px; line-height: 1.55; color: var(--z-muted); max-width: 680px; }
+.zen-note { margin-top: 10px; font-size: 14px; color: var(--z-muted); }
+.zen-note a { color: var(--z-accent); font-weight: 600; }
+.zen-note a:hover { text-decoration: underline; }
+.zen-section-title { font-weight: 700; letter-spacing: -.01em; font-size: 20px; margin: 28px 0 14px; }
+
+/* ── Каталог-карточки (города/ЖК/специальности) ── */
+.zen-grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 560px) { .zen-grid--2 { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 860px) { .zen-grid--3 { grid-template-columns: repeat(3, 1fr); } }
+.zen-card {
+  display: block; background: var(--z-surface); border: 1px solid var(--z-line);
+  border-radius: var(--z-radius); padding: 18px 18px; box-shadow: var(--z-shadow);
+  transition: box-shadow .15s ease, transform .15s ease, border-color .15s ease;
+}
+.zen-card:hover { box-shadow: var(--z-shadow-h); transform: translateY(-2px); border-color: #e2e4e7; }
+.zen-card-title { font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
+.zen-card-sub { margin-top: 4px; font-size: 13px; color: var(--z-muted); }
+.zen-card-arrow { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--z-accent); }
+
+/* ── Лента постов ── */
+.zen-feed { display: flex; flex-direction: column; gap: 14px; }
+.zen-post {
+  display: block; background: var(--z-surface); border: 1px solid var(--z-line);
+  border-radius: var(--z-radius); padding: 18px 20px; box-shadow: var(--z-shadow);
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+.zen-post:hover { box-shadow: var(--z-shadow-h); transform: translateY(-2px); }
+.zen-post-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--z-faint); }
+.zen-post-title { margin-top: 8px; font-weight: 700; font-size: clamp(18px, 2vw, 21px); letter-spacing: -.01em; line-height: 1.25; }
+.zen-post-excerpt { margin-top: 6px; font-size: 15px; line-height: 1.55; color: var(--z-muted); }
+.zen-post-foot { margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--z-accent); }
+
+/* ── Чип категории ── */
+.zen-chip { display: inline-flex; align-items: center; background: var(--z-accent-soft); color: var(--z-accent); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
+.zen-chip--muted { background: #eef0f2; color: var(--z-muted); }
+
+/* ── Пустое состояние ── */
+.zen-empty { background: var(--z-surface); border: 1px dashed #dcdfe3; border-radius: var(--z-radius); padding: 34px 24px; text-align: center; color: var(--z-muted); font-size: 15px; }
+
+/* ── Панель формы ── */
+.zen-panel { background: var(--z-surface); border: 1px solid var(--z-line); border-radius: var(--z-radius); padding: 20px; box-shadow: var(--z-shadow); }
+.zen-panel-title { font-weight: 700; font-size: 17px; }
+.zen-panel-sub { margin-top: 6px; font-size: 14px; color: var(--z-muted); }
+
+/* ── Кнопки ── */
+.zen-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--z-accent); color: var(--z-accent-ink); border: none; border-radius: 999px; padding: 11px 22px; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; transition: filter .12s ease; }
+.zen-btn:hover { filter: brightness(.94); }
+.zen-btn:disabled { opacity: .5; cursor: default; }
+.zen-btn--ghost { background: #eef0f2; color: var(--z-ink); }
+.zen-btn--block { width: 100%; }
+
+/* ── Поля ── */
+.zen-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--z-ink); }
+.zen-input, .zen-textarea, .zen-select { width: 100%; border: 1px solid #e2e4e7; background: #fff; border-radius: var(--z-radius-sm); padding: 11px 14px; font: inherit; font-size: 15px; color: var(--z-ink); }
+.zen-input:focus, .zen-textarea:focus, .zen-select:focus { outline: none; border-color: var(--z-accent); box-shadow: 0 0 0 3px var(--z-accent-soft); }
+.zen-textarea { resize: vertical; }
+
+/* ── Комментарии ── */
+.zen-comment { }
+.zen-comment-card { background: var(--z-surface); border: 1px solid var(--z-line); border-radius: var(--z-radius-sm); padding: 14px 16px; box-shadow: var(--z-shadow); }
+.zen-comment-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--z-faint); }
+.zen-comment-author { font-weight: 700; color: var(--z-ink); }
+.zen-avatar { width: 26px; height: 26px; border-radius: 999px; background: var(--z-accent-soft); color: var(--z-accent); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
+.zen-comment-body { margin-top: 8px; font-size: 15px; line-height: 1.55; white-space: pre-wrap; }
+.zen-reply-btn { margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--z-accent); background: none; border: none; padding: 0; cursor: pointer; }
+.zen-reply-btn:hover { text-decoration: underline; }
+.zen-comment-children { margin-top: 12px; padding-left: 16px; border-left: 2px solid var(--z-line); display: flex; flex-direction: column; gap: 12px; }
+
+/* ── Атрибуты ЖК ── */
+.zen-attrs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.zen-attr { background: var(--z-surface); border: 1px solid var(--z-line); border-radius: var(--z-radius-sm); padding: 10px 14px; }
+.zen-attr dt { font-size: 12px; color: var(--z-faint); }
+.zen-attr dd { margin-top: 2px; font-weight: 700; font-size: 15px; }
+
+/* ── Прочее ── */
+.zen-alert { margin-top: 12px; border-radius: var(--z-radius-sm); padding: 10px 14px; font-size: 14px; }
+.zen-alert--err { background: #fef2f2; color: #b42318; }
+.zen-alert--ok { background: #ecfdf3; color: #067647; }
+.zen-back { display: inline-block; margin-top: 20px; font-size: 14px; font-weight: 600; color: var(--z-accent); }
+.zen-back:hover { text-decoration: underline; }
+.zen-article-body { margin-top: 16px; font-size: 17px; line-height: 1.65; white-space: pre-wrap; color: #24242a; }
