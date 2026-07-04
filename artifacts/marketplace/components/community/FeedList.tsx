@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { CommunityFeedItem } from "../../lib/types";
 import { localFeedCategoryLabel } from "../../lib/types";
 
@@ -28,31 +29,36 @@ export function FeedList({ items, emptyState, emptyText, showCategory }: Props) 
   return (
     <ul className="grid gap-4">
       {items.map((item) => (
-        <li
-          key={item.id}
-          className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-cozy sm:p-6"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            {showCategory && item.category ? (
-              <span className="rounded-full bg-[var(--color-cream-deep)] px-3 py-1 text-xs font-medium text-[var(--color-text)]">
-                {localFeedCategoryLabel(item.category) ?? item.category}
-              </span>
+        <li key={item.id}>
+          <Link
+            href={`/t/${item.id}`}
+            className="block rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-cozy transition hover:border-[var(--color-primary)] hover:shadow-cozy-md sm:p-6"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {showCategory && item.category ? (
+                <span className="rounded-full bg-[var(--color-cream-deep)] px-3 py-1 text-xs font-medium text-[var(--color-text)]">
+                  {localFeedCategoryLabel(item.category) ?? item.category}
+                </span>
+              ) : null}
+              <time
+                dateTime={item.createdAt}
+                className="text-xs text-[var(--color-faint)]"
+              >
+                {formatDate(item.createdAt)}
+              </time>
+            </div>
+            <h3 className="font-display mt-3 text-xl text-[var(--color-text)]">
+              {item.title}
+            </h3>
+            {item.body ? (
+              <p className="mt-2 line-clamp-4 text-base leading-relaxed text-[var(--color-muted)]">
+                {item.body}
+              </p>
             ) : null}
-            <time
-              dateTime={item.createdAt}
-              className="text-xs text-[var(--color-faint)]"
-            >
-              {formatDate(item.createdAt)}
-            </time>
-          </div>
-          <h3 className="font-display mt-3 text-xl text-[var(--color-text)]">
-            {item.title}
-          </h3>
-          {item.body ? (
-            <p className="mt-2 line-clamp-4 text-base leading-relaxed text-[var(--color-muted)]">
-              {item.body}
-            </p>
-          ) : null}
+            <span className="mt-3 inline-block text-sm font-medium text-[var(--color-primary)]">
+              Открыть обсуждение →
+            </span>
+          </Link>
         </li>
       ))}
     </ul>

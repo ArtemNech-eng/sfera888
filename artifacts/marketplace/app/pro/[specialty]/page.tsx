@@ -294,7 +294,10 @@ function ProThreadCard({ item }: { item: ProFeedItem }) {
   const label = categoryLabel(item.category);
   const excerpt = item.body.length > 240 ? `${item.body.slice(0, 240).trimEnd()}…` : item.body;
   return (
-    <article className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 transition hover:border-[var(--color-primary)]">
+    <Link
+      href={`/t/${item.id}`}
+      className="block rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 transition hover:border-[var(--color-primary)]"
+    >
       <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
         {label ? (
           <span className="rounded-full bg-[var(--color-cream-deep)] px-2.5 py-0.5 font-medium text-[var(--color-text)]">
@@ -312,7 +315,10 @@ function ProThreadCard({ item }: { item: ProFeedItem }) {
       {excerpt ? (
         <p className="mt-1.5 text-sm leading-relaxed text-[var(--color-muted)]">{excerpt}</p>
       ) : null}
-    </article>
+      <span className="mt-3 inline-block text-sm font-medium text-[var(--color-primary)]">
+        Открыть обсуждение →
+      </span>
+    </Link>
   );
 }
 

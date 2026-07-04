@@ -324,3 +324,64 @@ export async function fetchCommunityZhkList(opts: FetchOpts = {}): Promise<Commu
     return [];
   }
 }
+
+// ─── Форум-слой: тема + комментарии (community/threads) ──────────────────────
+//
+// DTO зеркалят artifacts/api-server/src/lib/commentService.ts
+// (GET /api/community/threads/:id → { thread, comments }). Даты — ISO-строки.
+
+/** Комментарий (ответ) под темой; дерево строится по parentCommentId. */
+export interface ThreadCommentDTO {
+  id: number;
+  parentCommentId: number | null;
+  body: string;
+  authorAccountId: number | null;
+  isSeeded: boolean;
+  /** ISO timestamp. */
+  createdAt: string;
+}
+
+/** Полный DTO темы с родительским контекстом (город/ЖК/специальность). */
+export interface CommunityThreadDetail {
+  id: number;
+  zone: string;
+  scope: string;
+  category: string | null;
+  title: string;
+  body: string;
+  cityId: number | null;
+  citySlug: string | null;
+  cityName: string | null;
+  zhkId: number | null;
+  zhkSlug: string | null;
+  zhkName: string | null;
+  specialtyId: number | null;
+  specialtySlug: string | null;
+  specialtyName: string | null;
+  /** ISO timestamps. */
+  createdAt: string;
+  lastActivityAt: string;
+}
+
+/** Ответ GET /api/community/threads/:id. */
+export interface ThreadResponse {
+  thread: CommunityThreadDetail;
+  comments: ThreadCommentDTO[];
+}
+
+/**
+ * Прочитать тему с комментариями (`GET /api/community/threads/:id`).
+ * `noStore` по умолчанию — комментарии меняются, нужна свежесть; вызывающий
+ * может переопределить. Возвращает `null` при 404 (тема не найдена/скрыта).
+ */
+export async function fetchThread(
+  id: number,
+  opts: FetchOpts = { noStore: true },
+): Promise<ThreadResponse | null> {
+  try {
+    return await call<ThreadResponse>(`/threads/${id}`, opts);
+  } catch (e) {
+    if (e instanceof CommunityApiError && e.status === 404) return null;
+    throw e;
+  }
+}

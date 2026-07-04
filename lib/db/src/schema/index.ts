@@ -79,5 +79,6 @@ export * from "./community-accounts";
 export * from "./zhk";
 export * from "./specialties";
 export * from "./community-threads";
+export * from "./community-comments";
 export * from "./community-moderation-log";
 export * from "./zhk-weekly-activity";

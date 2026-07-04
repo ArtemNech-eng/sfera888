@@ -33,6 +33,7 @@ import {
   zhkTable,
   specialtiesTable,
   communityThreadsTable,
+  communityCommentsTable,
 } from "@workspace/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
@@ -99,6 +100,21 @@ const PRO_TOPIC_TEMPLATES: { title: (name: string) => string; body: string; isLo
 /** Верхняя граница количества сид-тем (защита от разрастания при имитации). */
 const MAX_SEEDED_THREADS = 600;
 
+/** Демо-комментарии City_Feed (первый — верхний уровень, второй — ответ на него). */
+const CITY_COMMENTS = [
+  "Поддерживаю, тоже искал по нашему району.",
+  "Согласен — лучше по рекомендации соседей, чем наугад.",
+  "Спасибо, полезная тема!",
+];
+/** Демо-комментарии PRO. */
+const PRO_COMMENTS = [
+  "По опыту, тут важно не экономить на материале.",
+  "Плюсую, на объекте это реально экономит время.",
+  "А как договаривались по цене за точку?",
+];
+/** Максимум тем, которым досеваем демо-комментарии, на один прогон. */
+const COMMENT_BACKFILL_LIMIT = 40;
+
 // ─── Вспомогательное ─────────────────────────────────────────────────────────
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -129,13 +145,14 @@ export interface SeedResult {
   zhkCreated: number;
   specialtiesEnsured: number;
   threadsCreated: number;
+  commentsCreated: number;
 }
 
 /**
  * Разовое демо-сидирование сообщества (идемпотентно). Возвращает сводку.
  */
 export async function seedCommunityDemo(): Promise<SeedResult> {
-  const result: SeedResult = { citiesMarked: 0, zhkCreated: 0, specialtiesEnsured: 0, threadsCreated: 0 };
+  const result: SeedResult = { citiesMarked: 0, zhkCreated: 0, specialtiesEnsured: 0, threadsCreated: 0, commentsCreated: 0 };
 
   // 1. Специальности (ON CONFLICT DO NOTHING по slug).
   for (const s of SPECIALTIES) {
@@ -299,11 +316,88 @@ export async function seedCommunityDemo(): Promise<SeedResult> {
     result.threadsCreated += rows.length;
   }
 
+  // 5. Демо-комментарии под сид-темами (форум-слой) — досев по темам без
+  //    комментариев (и для свежих, и для ранее засеянных тем).
+  result.commentsCreated = await seedDemoComments();
+
   console.log(
     `[community-seed] готово: города=${result.citiesMarked}, ЖК=${result.zhkCreated}, ` +
-      `специальности=${result.specialtiesEnsured}, новых тем=${result.threadsCreated}`,
+      `специальности=${result.specialtiesEnsured}, новых тем=${result.threadsCreated}, ` +
+      `новых комментариев=${result.commentsCreated}`,
   );
   return result;
+}
+
+/**
+ * Досев демо-комментариев: для ограниченного числа сид-тем (City_Feed и PRO),
+ * у которых ещё нет комментариев, добавляет 3 демо-комментария (второй — ответ
+ * на первый, чтобы показать вложенность). Идемпотентно и ограничено лимитом.
+ * Возвращает число созданных комментариев.
+ */
+async function seedDemoComments(): Promise<number> {
+  let created = 0;
+  created += await backfillCommentsForScope("city", CITY_COMMENTS);
+  created += await backfillCommentsForZone("pro_public", PRO_COMMENTS);
+  return created;
+}
+
+/** Досев комментариев для сид-тем заданного scope (Sosedi). */
+async function backfillCommentsForScope(scope: string, pool: string[]): Promise<number> {
+  const threads = await db
+    .select({ id: communityThreadsTable.id })
+    .from(communityThreadsTable)
+    .where(and(eq(communityThreadsTable.isSeeded, true), eq(communityThreadsTable.scope, scope)))
+    .limit(COMMENT_BACKFILL_LIMIT);
+  return addDemoCommentsToThreads(threads.map((t) => t.id), pool);
+}
+
+/** Досев комментариев для сид-тем заданной зоны (PRO). */
+async function backfillCommentsForZone(zone: string, pool: string[]): Promise<number> {
+  const threads = await db
+    .select({ id: communityThreadsTable.id })
+    .from(communityThreadsTable)
+    .where(and(eq(communityThreadsTable.isSeeded, true), eq(communityThreadsTable.zone, zone)))
+    .limit(COMMENT_BACKFILL_LIMIT);
+  return addDemoCommentsToThreads(threads.map((t) => t.id), pool);
+}
+
+/** Для каждой темы без сид-комментариев добавить демо-тред (3 коммента). */
+async function addDemoCommentsToThreads(threadIds: number[], pool: string[]): Promise<number> {
+  let created = 0;
+  for (const threadId of threadIds) {
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(communityCommentsTable)
+      .where(and(eq(communityCommentsTable.threadId, threadId), eq(communityCommentsTable.isSeeded, true)));
+    if (n > 0) continue;
+
+    const [first] = await db
+      .insert(communityCommentsTable)
+      .values({ threadId, body: pool[0], isSeeded: true, visibility: "public" })
+      .returning({ id: communityCommentsTable.id });
+    created += 1;
+
+    if (pool[1] && first) {
+      await db.insert(communityCommentsTable).values({
+        threadId,
+        parentCommentId: first.id,
+        body: pool[1],
+        isSeeded: true,
+        visibility: "public",
+      });
+      created += 1;
+    }
+    if (pool[2]) {
+      await db.insert(communityCommentsTable).values({
+        threadId,
+        body: pool[2],
+        isSeeded: true,
+        visibility: "public",
+      });
+      created += 1;
+    }
+  }
+  return created;
 }
 
 // ─── Имитация активности ─────────────────────────────────────────────────────

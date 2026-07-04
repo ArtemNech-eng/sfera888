@@ -268,6 +268,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS zhk_weekly_activity_zhk_week_key
   ON zhk_weekly_activity (zhk_id, week_start);
 CREATE INDEX IF NOT EXISTS zhk_weekly_activity_zhk_idx
   ON zhk_weekly_activity (zhk_id);
+
+-- 10. community_comments (форум-слой: комментарии/ответы к темам)
+CREATE TABLE IF NOT EXISTS community_comments (
+  id                serial PRIMARY KEY,
+  thread_id         integer NOT NULL REFERENCES community_threads(id) ON DELETE CASCADE,
+  parent_comment_id integer REFERENCES community_comments(id) ON DELETE CASCADE,
+  author_account_id integer REFERENCES community_accounts(id) ON DELETE SET NULL,
+  body              text        NOT NULL,
+  is_seeded         boolean     NOT NULL DEFAULT false,
+  visibility        varchar(12) NOT NULL DEFAULT 'public',
+  moderation_status varchar(16) NOT NULL DEFAULT 'not_screened',
+  created_at        timestamp   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS community_comments_thread_created_idx
+  ON community_comments (thread_id, created_at);
+CREATE INDEX IF NOT EXISTS community_comments_parent_idx
+  ON community_comments (parent_comment_id);
   `));
   console.log("[startup] Community baseline schema ensured");
 }
