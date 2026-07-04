@@ -14,6 +14,7 @@ interface TreeNode extends ThreadCommentDTO {
   children: TreeNode[];
 }
 
+/** Максимальная визуальная вложенность (глубже — выравниваем, чтобы не уезжало). */
 const MAX_INDENT_DEPTH = 5;
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -52,16 +53,22 @@ function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   try {
-    return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(d);
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d);
   } catch {
     return "";
   }
 }
 
 /**
- * Обсуждение под темой (portal-стиль). Дерево комментариев из плоского списка,
- * форма нового комментария и inline-формы ответа. Публикация — через фасад-прокси
- * `/api/community/threads/[id]/comments` (уровень доступа 3). Успех → router.refresh().
+ * Обсуждение под темой (форум-слой). Строит дерево комментариев из плоского
+ * списка, показывает форму нового комментария и inline-формы ответа. Публикация
+ * идёт через фасад-прокси `/api/community/threads/[id]/comments` (уровень
+ * доступа 3 — подтверждённый телефон). При успехе — `router.refresh()`.
  */
 export function CommentSection({ threadId, comments }: Props) {
   const router = useRouter();
@@ -101,6 +108,7 @@ export function CommentSection({ threadId, comments }: Props) {
     } catch {
       parsed = null;
     }
+
     setSubmitting(false);
 
     if (parsed && parsed.ok === true) {
@@ -108,6 +116,7 @@ export function CommentSection({ threadId, comments }: Props) {
       router.refresh();
       return true;
     }
+
     const label = parsed?.error;
     if (label === "verification_required") setNeedsVerification(true);
     setError(friendly(label, parsed?.reason));
@@ -115,32 +124,36 @@ export function CommentSection({ threadId, comments }: Props) {
   }
 
   return (
-    <section style={{ marginTop: 40 }}>
-      <div className="portal-kicker">
-        <h2 className="portal-h2">Обсуждение</h2>
-        <span className="portal-kicker-count">{comments.length}</span>
-      </div>
+    <section className="mt-10">
+      <h2 className="font-display mb-4 text-2xl text-[var(--color-text)]">
+        Обсуждение{comments.length > 0 ? ` · ${comments.length}` : ""}
+      </h2>
 
-      <div style={{ marginTop: 20 }}>
-        <CommentForm
-          placeholder="Написать комментарий…"
-          submitLabel="Отправить"
-          disabled={submitting}
-          onSubmit={(text) => submit(text, null)}
-        />
-      </div>
+      {/* Новый комментарий верхнего уровня */}
+      <CommentForm
+        placeholder="Написать комментарий…"
+        submitLabel="Отправить"
+        disabled={submitting}
+        onSubmit={(text) => submit(text, null)}
+      />
 
       {error ? (
-        <div role="alert" className="portal-alert portal-alert--err">
+        <div role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
           {needsVerification ? (
-            <> <Link href="/login" style={{ fontWeight: 700, textDecoration: "underline" }}>Подтвердить телефон</Link></>
+            <>
+              {" "}
+              <Link href="/login" className="font-medium underline">
+                Подтвердить телефон
+              </Link>
+            </>
           ) : null}
         </div>
       ) : null}
 
+      {/* Дерево комментариев */}
       {tree.length > 0 ? (
-        <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+        <ul className="mt-6 flex flex-col gap-4">
           {tree.map((node) => (
             <CommentNode
               key={node.id}
@@ -152,9 +165,9 @@ export function CommentSection({ threadId, comments }: Props) {
               onReply={(text) => submit(text, node.id)}
             />
           ))}
-        </div>
+        </ul>
       ) : (
-        <p style={{ marginTop: 24, color: "var(--p-muted)", fontSize: 15 }}>
+        <p className="mt-6 text-sm text-[var(--color-muted)]">
           Пока нет комментариев. Будьте первым.
         </p>
       )}
@@ -179,25 +192,41 @@ function CommentNode({
 }) {
   const indent = Math.min(depth, MAX_INDENT_DEPTH);
   return (
-    <div className="portal-comment" style={{ marginLeft: indent > 0 ? indent * 14 : undefined }}>
-      <div className="portal-comment-head">
-        <span className="portal-comment-author">Сосед</span>
-        <span aria-hidden>·</span>
-        <time dateTime={node.createdAt}>{formatDate(node.createdAt)}</time>
-      </div>
-      <p className="portal-comment-body">{node.body}</p>
-      <button type="button" onClick={() => setReplyTo(replyTo === node.id ? null : node.id)} className="portal-reply-btn">
-        {replyTo === node.id ? "Отмена" : "Ответить"}
-      </button>
-
-      {replyTo === node.id ? (
-        <div style={{ marginTop: 12 }}>
-          <CommentForm placeholder="Ваш ответ…" submitLabel="Ответить" disabled={submitting} onSubmit={onReply} />
+    <li
+      className="border-l-2 border-[var(--color-border)] pl-4"
+      style={{ marginLeft: indent > 0 ? `${indent * 0.75}rem` : undefined }}
+    >
+      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <div className="flex items-center gap-2 text-xs text-[var(--color-faint)]">
+          <span className="font-medium text-[var(--color-text)]">Сосед</span>
+          <span aria-hidden>·</span>
+          <time dateTime={node.createdAt}>{formatDate(node.createdAt)}</time>
         </div>
-      ) : null}
+        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-text)]">
+          {node.body}
+        </p>
+        <button
+          type="button"
+          onClick={() => setReplyTo(replyTo === node.id ? null : node.id)}
+          className="mt-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
+        >
+          {replyTo === node.id ? "Отмена" : "Ответить"}
+        </button>
+
+        {replyTo === node.id ? (
+          <div className="mt-3">
+            <CommentForm
+              placeholder="Ваш ответ…"
+              submitLabel="Ответить"
+              disabled={submitting}
+              onSubmit={onReply}
+            />
+          </div>
+        ) : null}
+      </div>
 
       {node.children.length > 0 ? (
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+        <ul className="mt-3 flex flex-col gap-3">
           {node.children.map((child) => (
             <CommentNode
               key={child.id}
@@ -209,9 +238,9 @@ function CommentNode({
               onReply={onReply}
             />
           ))}
-        </div>
+        </ul>
       ) : null}
-    </div>
+    </li>
   );
 }
 
@@ -227,23 +256,29 @@ function CommentForm({
   onSubmit: (text: string) => Promise<boolean>;
 }) {
   const [text, setText] = useState("");
+
   async function handle(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const ok = await onSubmit(text);
     if (ok) setText("");
   }
+
   return (
-    <form onSubmit={handle} style={{ display: "grid", gap: 10 }}>
+    <form onSubmit={handle} className="grid gap-2">
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={3}
         maxLength={5000}
         placeholder={placeholder}
-        className="portal-textarea"
+        className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]"
       />
       <div>
-        <button type="submit" disabled={disabled || text.trim().length === 0} className="portal-btn">
+        <button
+          type="submit"
+          disabled={disabled || text.trim().length === 0}
+          className="inline-flex items-center justify-center rounded-xl bg-[var(--color-cta)] px-5 py-2.5 text-sm font-medium text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] disabled:opacity-60"
+        >
           {disabled ? "Отправляем…" : submitLabel}
         </button>
       </div>
