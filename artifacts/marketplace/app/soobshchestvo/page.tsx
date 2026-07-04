@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import {
   fetchCommunityCities,
-  fetchCommunitySpecialties,
   fetchCommunityZhkList,
 } from "../../lib/communityApi";
 import { publicUrl } from "../../lib/env";
@@ -36,9 +35,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function CommunityHubPage() {
-  const [cities, specialties, zhk] = await Promise.all([
+  const [cities, zhk] = await Promise.all([
     fetchCommunityCities(),
-    fetchCommunitySpecialties(),
     fetchCommunityZhkList(),
   ]);
 
@@ -70,8 +68,14 @@ export default async function CommunityHubPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--color-muted)] sm:text-lg">
             Выберите свой город — обсуждайте покупки, отзывы о магазинах и жизнь
-            жилых комплексов с соседями. Мастерам — профессиональные разделы по
-            специальностям.
+            жилых комплексов с соседями.
+          </p>
+          <p className="mt-2 text-sm text-[var(--color-muted)]">
+            Вы мастер? Профессиональные обсуждения — в разделе{" "}
+            <Link href="/pro" className="font-medium text-[var(--color-primary)] underline">
+              «Хочу также ПРО»
+            </Link>
+            .
           </p>
         </div>
       </section>
@@ -135,30 +139,8 @@ export default async function CommunityHubPage() {
           </section>
         ) : null}
 
-        {/* Профессиональные сообщества */}
-        {specialties.length > 0 ? (
-          <section className="mt-12">
-            <h2 className="font-display mb-2 text-2xl text-[var(--color-text)]">
-              Хочу также ПРО — сообщества мастеров
-            </h2>
-            <p className="mb-4 max-w-2xl text-sm text-[var(--color-muted)]">
-              Профессиональные обсуждения по специальностям: цены, инструмент,
-              разбор сложных объектов.
-            </p>
-            <ul className="flex flex-wrap gap-2.5">
-              {specialties.map((s) => (
-                <li key={s.slug}>
-                  <Link
-                    href={`/pro/${s.slug}`}
-                    className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-                  >
-                    {s.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        {/* Профессиональные сообщества ПРО вынесены на отдельную страницу /pro
+            — зоны «Соседи» и «Хочу также ПРО» изолированы (Requirement 5.3 / 8.1). */}
       </div>
     </>
   );
