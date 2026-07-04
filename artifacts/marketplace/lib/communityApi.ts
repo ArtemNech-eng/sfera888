@@ -304,3 +304,23 @@ export async function fetchCommunitySpecialties(opts: FetchOpts = {}): Promise<C
     return [];
   }
 }
+
+/** ЖК для блока «Популярные ЖК» на хабе. */
+export interface CommunityZhkRef {
+  slug: string;
+  name: string;
+  cityName: string;
+  citySlug: string | null;
+}
+
+/** Список индексируемых ЖК (проекция с именем города) для навигации. */
+export async function fetchCommunityZhkList(opts: FetchOpts = {}): Promise<CommunityZhkRef[]> {
+  try {
+    const r = await call<{ zhk: CommunityZhkRef[] }>("/geo/zhk", {
+      revalidate: opts.revalidate ?? 300,
+    });
+    return Array.isArray(r.zhk) ? r.zhk : [];
+  } catch {
+    return [];
+  }
+}

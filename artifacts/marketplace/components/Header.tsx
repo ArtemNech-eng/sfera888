@@ -9,6 +9,12 @@ interface NavItem {
   label: string;
 }
 
+/** Город сообщества для переключателя в шапке (передаётся из layout). */
+interface CityOption {
+  slug: string;
+  name: string;
+}
+
 /**
  * Portal-grade public header (plan §21.9).
  *
@@ -31,9 +37,10 @@ const NAV: NavItem[] = [
 
 const EXTERNAL_FOR_MASTERS = "https://sfera-master.ru/masteram";
 
-export function Header() {
+export function Header({ cities = [] }: { cities?: CityOption[] }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [cityMenuOpen, setCityMenuOpen] = useState(false);
   const pathname = usePathname() ?? "/";
 
   // Hairline appears once the user starts scrolling so the hero stays clean.
@@ -47,6 +54,7 @@ export function Header() {
   // Auto-close mobile drawer on navigation.
   useEffect(() => {
     setMenuOpen(false);
+    setCityMenuOpen(false);
   }, [pathname]);
 
   // Body scroll lock while drawer is open.
@@ -96,20 +104,62 @@ export function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3 sm:gap-4">
-          {/* City picker — placeholder, links to catalog until detection ships */}
-          <Link
-            href="/mastera"
-            className="hidden items-center gap-1.5 text-sm font-medium text-[var(--color-text)] transition hover:text-[var(--color-primary)] lg:inline-flex"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
-              <circle cx="12" cy="10" r="3" />
-            </svg>
-            Москва
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </Link>
+          {/* City picker → раздел «Соседи»: дропдаун реальных городов сообщества */}
+          {cities.length > 0 ? (
+            <div className="relative hidden lg:block">
+              <button
+                type="button"
+                onClick={() => setCityMenuOpen((v) => !v)}
+                aria-expanded={cityMenuOpen}
+                aria-label="Выбрать город сообщества"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)] transition hover:text-[var(--color-primary)]"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                Город
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {cityMenuOpen ? (
+                <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-cozy-md">
+                  <ul className="flex flex-col">
+                    {cities.map((c) => (
+                      <li key={c.slug}>
+                        <Link
+                          href={`/goroda/${c.slug}`}
+                          className="block rounded-lg px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-cream-deep)]"
+                        >
+                          {c.name}
+                        </Link>
+                      </li>
+                    ))}
+                    <li className="mt-1 border-t border-[var(--color-border)] pt-1">
+                      <Link
+                        href="/soobshchestvo"
+                        className="block rounded-lg px-3 py-2 text-sm font-semibold text-[var(--color-primary)] transition hover:bg-[var(--color-cream-deep)]"
+                      >
+                        Все сообщества
+                      </Link>
+                    </li>
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <Link
+              href="/soobshchestvo"
+              className="hidden items-center gap-1.5 text-sm font-medium text-[var(--color-text)] transition hover:text-[var(--color-primary)] lg:inline-flex"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              Соседи
+            </Link>
+          )}
 
           <a
             href={EXTERNAL_FOR_MASTERS}
@@ -143,18 +193,25 @@ export function Header() {
         <div className="lg:hidden">
           <nav className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
             <ul className="mx-auto flex max-w-6xl flex-col divide-y divide-[var(--color-border)] px-4 sm:px-6">
-              <li>
-                <Link
-                  href="/mastera"
-                  className="flex items-center gap-2 py-4 text-base text-[var(--color-text)]"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
-                    <circle cx="12" cy="10" r="3" />
-                  </svg>
-                  Город: <span className="font-semibold">Москва</span>
-                </Link>
-              </li>
+              {cities.length > 0 ? (
+                <li className="py-3">
+                  <p className="pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-faint)]">
+                    Город
+                  </p>
+                  <ul className="flex flex-wrap gap-2">
+                    {cities.map((c) => (
+                      <li key={c.slug}>
+                        <Link
+                          href={`/goroda/${c.slug}`}
+                          className="inline-flex rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]"
+                        >
+                          {c.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ) : null}
               {NAV.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(item.href + "/");
                 return (

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import {
   fetchCommunityCities,
   fetchCommunitySpecialties,
+  fetchCommunityZhkList,
 } from "../../lib/communityApi";
 import { publicUrl } from "../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../lib/jsonLd";
@@ -35,9 +36,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function CommunityHubPage() {
-  const [cities, specialties] = await Promise.all([
+  const [cities, specialties, zhk] = await Promise.all([
     fetchCommunityCities(),
     fetchCommunitySpecialties(),
+    fetchCommunityZhkList(),
   ]);
 
   const breadcrumbsLd = breadcrumbJsonLd([
@@ -106,6 +108,32 @@ export default async function CommunityHubPage() {
             </p>
           )}
         </section>
+
+        {/* Популярные ЖК */}
+        {zhk.length > 0 ? (
+          <section className="mt-12">
+            <h2 className="font-display mb-4 text-2xl text-[var(--color-text)]">
+              Популярные ЖК
+            </h2>
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {zhk.map((z) => (
+                <li key={z.slug}>
+                  <Link
+                    href={`/zhk/${z.slug}`}
+                    className="block rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-cozy transition hover:shadow-cozy-md"
+                  >
+                    <span className="font-display text-lg text-[var(--color-text)]">
+                      {z.name}
+                    </span>
+                    <span className="mt-1 block text-sm text-[var(--color-muted)]">
+                      {z.cityName}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {/* Профессиональные сообщества */}
         {specialties.length > 0 ? (

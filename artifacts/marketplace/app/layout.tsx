@@ -7,6 +7,7 @@ import { Footer } from "../components/Footer";
 import { CookieBanner } from "../components/CookieBanner";
 import { YandexMetrika } from "../components/YandexMetrika";
 import { publicUrl } from "../lib/env";
+import { fetchCommunityCities } from "../lib/communityApi";
 
 // Manrope — body / UI / numerals / buttons.
 const manrope = Manrope({
@@ -88,11 +89,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const headersList = await headers();
   const pathname = headersList.get("x-pathname") ?? "/";
   const ownChrome = isOwnChromeRoute(pathname);
+  // Города сообщества для переключателя в шапке (server-to-server, кэш 5 мин;
+  // при недоступности апстрима — пустой список, шапка деградирует к ссылке на хаб).
+  const communityCities = ownChrome ? [] : await fetchCommunityCities();
 
   return (
     <html lang="ru" className={`${manrope.variable} ${lora.variable}`}>
       <body>
-        {ownChrome ? null : <Header />}
+        {ownChrome ? null : <Header cities={communityCities} />}
         <main className="flex-1">{children}</main>
         {ownChrome ? null : <Footer />}
         <CookieBanner />

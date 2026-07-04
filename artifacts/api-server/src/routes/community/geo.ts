@@ -27,8 +27,8 @@ import {
   type Response,
   type NextFunction,
 } from "express";
-import { db, communityAccountsTable, citiesTable, type CommunityAccount } from "@workspace/db";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { db, communityAccountsTable, citiesTable, zhkTable, type CommunityAccount } from "@workspace/db";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { GeoService } from "../../lib/geoService.js";
 import { feedService } from "../../lib/feedService.js";
 import { hasPublishingRights } from "../../lib/communityAuth.js";
@@ -192,6 +192,37 @@ router.get("/city/:citySlug", async (req: Request, res: Response) => {
     return res.json({ city, cityFeed });
   } catch (err) {
     console.error("[community/geo] GET city failed:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /zhk — список ЖК для блока «Популярные ЖК» на хаб-странице.
+// Публичный (уровень 1): индексируемые ЖК (прошедшие порог контента), с именем
+// города; сортировка по content_score. Параметр ?limit (по умолчанию 24, макс 60).
+// Зарегистрирован ДО POST /zhk (разные методы) и до /zhk/:zhkSlug (GET /zhk без
+// параметра — отдельный путь).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/zhk", async (req: Request, res: Response) => {
+  try {
+    const rawLimit = Number(req.query.limit);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.floor(rawLimit)), 60) : 24;
+    const zhk = await db
+      .select({
+        slug: zhkTable.slug,
+        name: zhkTable.name,
+        cityName: citiesTable.name,
+        citySlug: citiesTable.slug,
+      })
+      .from(zhkTable)
+      .innerJoin(citiesTable, eq(zhkTable.cityId, citiesTable.id))
+      .where(eq(zhkTable.isIndexable, true))
+      .orderBy(desc(zhkTable.contentScore), zhkTable.name)
+      .limit(limit);
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=3600");
+    return res.json({ zhk });
+  } catch (err) {
+    console.error("[community/geo] GET zhk list failed:", err);
     return res.status(500).json({ error: "internal_error" });
   }
 });
