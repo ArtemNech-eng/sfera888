@@ -154,7 +154,9 @@ export async function resolveCommunityPublisher(
     return { ok: false, status: 403, body: { error: "verification_required" } };
   }
 
-  return { ok: true, account };
+  // hasPublishingRights возвращает false для undefined/null, поэтому здесь
+  // account гарантированно определён (TS не сужает через предикат-обёртку).
+  return { ok: true, account: account! };
 }
 
 /**

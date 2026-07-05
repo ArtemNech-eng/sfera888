@@ -31,13 +31,31 @@ function getAllowedOrigins(): string[] {
     process.env.CRM_URL,
     process.env.PUBLIC_CRM_URL,
     process.env.CRM_PUBLIC_URL,
+    // Web_Facade (marketplace) origin — the community register/login forms POST
+    // here with `credentials: "include"`, so the facade's origin MUST be an
+    // allowed CORS origin for the `connect.sid` cookie to be set/sent
+    // (community-phone-registration, Requirement 8.5). Cross-origin credentialed
+    // cookies additionally require the session cookie's `SameSite=None; Secure`
+    // (configured below). `MARKETPLACE_PUBLIC_URL` is the variable actually set
+    // on this service in production (= https://chestnye-mastera.ru); the others
+    // are accepted as aliases for flexibility.
+    process.env.MARKETPLACE_PUBLIC_URL,
+    process.env.MARKETPLACE_ORIGIN,
+    process.env.MARKETPLACE_URL,
+    process.env.PUBLIC_MARKETPLACE_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
   ]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .map((value) => value.trim());
+    .map((value) => value.trim().replace(/\/+$/, ""));
 
   const defaults = [
     "https://sfera-master.ru",
     "https://www.sfera-master.ru",
+    // Marketplace Web_Facade custom domain (community forms live here). Hardcoded
+    // alongside the API's own domains so cross-origin credentialed auth works
+    // even if the env var above is ever unset.
+    "https://chestnye-mastera.ru",
+    "https://www.chestnye-mastera.ru",
   ];
 
   return Array.from(new Set([...raw, ...defaults]));

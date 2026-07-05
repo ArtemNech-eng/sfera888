@@ -46,8 +46,14 @@ import {
   confirmPhoneCode,
   linkMaxOptional,
   hasPublishingRights,
+  registerAccount,
+  loginAccount,
+  toPublicAccount,
   type PhoneVerificationDeps,
+  type CommunityAuthDeps,
+  type RegisterRejectionReason,
 } from "../../lib/communityAuth.js";
+import { createRateLimiter } from "../../lib/rateLimit.js";
 
 declare const console: { error: (...args: unknown[]) => void };
 
@@ -79,6 +85,52 @@ export function checkRateLimit(req: Request, res: Response, next: NextFunction) 
     rateLimitStore.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
   }
   next();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rate limiting password-потока (переиспользуем `createRateLimiter` из
+// lib/rateLimit.ts — тот же паттерн, что в master-pwa.ts / auth.ts). Оба
+// лимитера отвечают 429 автоматически при превышении окна (Requirements 7.1, 7.3).
+// ─────────────────────────────────────────────────────────────────────────────
+/** Registration_Rate_Limiter: 5 запросов / 60 минут на IP (Requirement 7.1). */
+const registerRateLimit = createRateLimiter({ windowMs: 60 * 60_000, maxAttempts: 5 });
+/** Login_Rate_Limiter: 10 запросов / 15 минут на IP (Requirement 7.3). */
+const loginRateLimit = createRateLimiter({ windowMs: 15 * 60_000, maxAttempts: 10 });
+
+/**
+ * Срок действия Community_Session — не более 30 дней (Requirement 4.5). При
+ * установке сессии community-маршруты выставляют `req.session.cookie.maxAge`
+ * этим значением, переопределяя глобальный дефолт `app.ts` (1 день).
+ */
+const COMMUNITY_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Транслировать причину отказа `registerAccount` в HTTP-код и тело ответа
+ * (см. таблицу Error Handling в design.md). Ответы с `retry: true` предлагают
+ * повторить проверку Captcha (Requirements 2.5, 2.6, 2.7).
+ */
+function registerRejectionToHttp(
+  reason: RegisterRejectionReason,
+): { status: number; body: Record<string, unknown> } {
+  switch (reason) {
+    case "phone_missing":
+    case "phone_invalid":
+    case "password_missing":
+    case "password_invalid":
+      return { status: 400, body: { reason } };
+    case "phone_taken":
+      return { status: 409, body: { reason } };
+    case "captcha_missing":
+    case "captcha_failed":
+      return { status: 400, body: { reason, retry: true } };
+    case "captcha_unavailable":
+      return { status: 503, body: { reason, retry: true } };
+    default: {
+      // Исчерпывающая проверка: новая причина обязана получить явный маппинг.
+      const _exhaustive: never = reason;
+      return { status: 400, body: { reason: _exhaustive } };
+    }
+  }
 }
 
 // ─── Разбор запроса ──────────────────────────────────────────────────────────
@@ -123,8 +175,16 @@ export interface AuthRouterDeps {
    * `communityAuth.ts` (in-memory стор + SMS-доставка + Drizzle-репозиторий).
    */
   verification: PhoneVerificationDeps;
-  /** Загрузка Community_Account по id для `/link-max` (по умолчанию — Drizzle). */
+  /** Загрузка Community_Account по id для `/link-max` и `/me` (по умолчанию — Drizzle). */
   loadAccount: (accountId: number) => Promise<CommunityAccount | null>;
+  /**
+   * Инъектируемые зависимости password-регистрации/входа (Requirements 1, 3, 6):
+   * репозиторий аккаунтов, проверка Captcha, bcryptjs-хелперы. По умолчанию `{}`
+   * — тогда `registerAccount` / `loginAccount` применяют прод-дефолты
+   * (`communityAuthDefaults`). Тесты подставляют фейки, чтобы прогонять маршруты
+   * без БД/сети/bcrypt.
+   */
+  auth: CommunityAuthDeps;
 }
 
 /** Загрузка аккаунта по умолчанию — Drizzle поверх `community_accounts`. */
@@ -141,6 +201,8 @@ async function defaultLoadAccount(accountId: number): Promise<CommunityAccount |
 const defaultDeps: AuthRouterDeps = {
   verification: {},
   loadAccount: defaultLoadAccount,
+  // Пустой объект → registerAccount/loginAccount применяют communityAuthDefaults.
+  auth: {},
 };
 
 // ─── HTTP-хендлеры (тестируемы без сервера) ──────────────────────────────────
@@ -241,7 +303,134 @@ export function makeHandlers(deps: AuthRouterDeps) {
     }
   }
 
-  return { requestCode, confirmCode, linkMax };
+  // ─── Password-поток: регистрация / вход / выход / текущий аккаунт ──────────
+
+  /**
+   * POST /register — форумная регистрация Community_Account по телефону и паролю
+   * (Requirements 1.1–1.6). Тело: `{ phone, password, captchaToken }`.
+   *
+   * Доменная логика (нормализация, Password_Policy, Captcha, уникальность,
+   * bcryptjs-хеш) — в `registerAccount`. Роут лишь транслирует результат в HTTP:
+   *   • успех → 201, устанавливает Community_Session (`communityAccountId`) и
+   *     срок cookie 30 дней (Requirement 4.5); аккаунт сериализуется ТОЛЬКО через
+   *     `toPublicAccount` — без `password_hash` (Requirements 1.3, 1.4).
+   *   • отказ → код/тело по таблице Error Handling (`registerRejectionToHttp`).
+   */
+  async function register(req: Request, res: Response): Promise<void> {
+    const body = (req.body ?? {}) as {
+      phone?: unknown;
+      password?: unknown;
+      captchaToken?: unknown;
+    };
+    const phone = typeof body.phone === "string" ? body.phone : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    const captchaToken = typeof body.captchaToken === "string" ? body.captchaToken : "";
+    try {
+      const result = await registerAccount(
+        { phone, password, captchaToken, remoteIp: req.ip ?? null },
+        deps.auth,
+      );
+      if (!result.ok) {
+        const { status, body: errBody } = registerRejectionToHttp(result.reason);
+        res.status(status).json(errBody);
+        return;
+      }
+      // Успех: устанавливаем Community_Session и срок cookie 30 дней (R1.3, R4.5).
+      req.session.communityAccountId = result.account.id;
+      if (req.session.cookie) {
+        req.session.cookie.maxAge = COMMUNITY_SESSION_MAX_AGE_MS;
+      }
+      // Аккаунт наружу — ТОЛЬКО через toPublicAccount (без password_hash, R1.4).
+      res.status(201).json({ ok: true, account: toPublicAccount(result.account) });
+    } catch (e: unknown) {
+      console.error("[community/auth/register]", e instanceof Error ? e.message : e);
+      res.status(500).json({ error: "internal_error" });
+    }
+  }
+
+  /**
+   * POST /login — вход по телефону и паролю (Requirements 3.1, 3.2, 3.7). Тело:
+   * `{ phone, password }`.
+   *
+   *   • успех → 200, устанавливает Community_Session и срок cookie 30 дней; аккаунт
+   *     сериализуется ТОЛЬКО через `toPublicAccount` (без `password_hash`, R3.2).
+   *   • отказ → 401 единая ошибка `invalid_credentials`, не раскрывающая фактор
+   *     (Requirement 3.7); сессия не устанавливается.
+   */
+  async function login(req: Request, res: Response): Promise<void> {
+    const body = (req.body ?? {}) as { phone?: unknown; password?: unknown };
+    const phone = typeof body.phone === "string" ? body.phone : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    try {
+      const result = await loginAccount({ phone, password }, deps.auth);
+      if (!result.ok) {
+        // Единый отказ — без раскрытия несовпавшего фактора (R3.7).
+        res.status(401).json({ error: "invalid_credentials" });
+        return;
+      }
+      req.session.communityAccountId = result.account.id;
+      if (req.session.cookie) {
+        req.session.cookie.maxAge = COMMUNITY_SESSION_MAX_AGE_MS;
+      }
+      res.status(200).json({ ok: true, account: toPublicAccount(result.account) });
+    } catch (e: unknown) {
+      console.error("[community/auth/login]", e instanceof Error ? e.message : e);
+      res.status(500).json({ error: "internal_error" });
+    }
+  }
+
+  /**
+   * POST /logout — завершение Community_Session (Requirements 4.1, 4.3, 4.6).
+   *
+   *   • при действительной сессии → `session.destroy`, после которого
+   *     идентификатор аккаунта недоступен, 200 `{ ok: true }` (R4.1).
+   *   • без активной сессии → 200 `{ ok: true, noSession: true }` без ошибок и
+   *     без изменения прочих сессий (R4.6).
+   */
+  async function logout(req: Request, res: Response): Promise<void> {
+    if (typeof req.session?.communityAccountId !== "number") {
+      // Нет активной community-сессии (R4.6): не аутентифицирован.
+      res.status(200).json({ ok: true, noSession: true });
+      return;
+    }
+    req.session.destroy((err) => {
+      if (err) {
+        console.error("[community/auth/logout]", err instanceof Error ? err.message : err);
+        res.status(500).json({ error: "internal_error" });
+        return;
+      }
+      res.status(200).json({ ok: true });
+    });
+  }
+
+  /**
+   * GET /me — данные текущего Community_Account (Requirements 4.4, 4.7).
+   *
+   *   • действительная сессия + аккаунт найден → 200 `{ account }`, сериализация
+   *     ТОЛЬКО через `toPublicAccount` (без `password_hash`, R4.4).
+   *   • нет сессии либо аккаунт не найден → 401 `{ error: "unauthorized" }`, не
+   *     раскрывая данные аккаунта (R4.7).
+   */
+  async function me(req: Request, res: Response): Promise<void> {
+    const accountId = req.session?.communityAccountId;
+    if (typeof accountId !== "number" || !Number.isInteger(accountId) || accountId <= 0) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    try {
+      const account = await deps.loadAccount(accountId);
+      if (!account) {
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
+      res.status(200).json({ account: toPublicAccount(account) });
+    } catch (e: unknown) {
+      console.error("[community/auth/me]", e instanceof Error ? e.message : e);
+      res.status(500).json({ error: "internal_error" });
+    }
+  }
+
+  return { requestCode, confirmCode, linkMax, register, login, logout, me };
 }
 
 /**
@@ -260,6 +449,14 @@ export function createAuthRouter(deps: Partial<AuthRouterDeps> = {}): Router {
   router.post("/confirm-code", checkRateLimit, handlers.confirmCode);
   // Опциональная привязка Max — тоже под лимитом; работает поверх верифицированного аккаунта.
   router.post("/link-max", checkRateLimit, handlers.linkMax);
+
+  // Password-поток форумной регистрации (community-phone-registration).
+  // Регистрация и вход — под своими скользящими лимитерами (Requirements 7.1, 7.3),
+  // которые сами отвечают 429 при превышении окна.
+  router.post("/register", registerRateLimit, handlers.register);
+  router.post("/login", loginRateLimit, handlers.login);
+  router.post("/logout", handlers.logout);
+  router.get("/me", handlers.me);
   return router;
 }
 

@@ -25,7 +25,7 @@ import type { CommunityAccount } from "@workspace/db";
 // логика маршрутов чистая (сервисы инъектируются), поэтому даём фиктивный URL
 // исключительно чтобы пройти проверку импорта, и подгружаем роутер динамически.
 process.env.DATABASE_URL ??= "postgres://test:test@localhost:5432/test";
-const { makeHandlers, parseFeedQuery, resolvePublisher, ACCOUNT_ID_HEADER } =
+const { makeHandlers, parseFeedQuery, resolvePublisher } =
   await import("../../src/routes/community/feeds.js");
 
 // ─── Тестовые дублёры ────────────────────────────────────────────────────────
@@ -58,18 +58,21 @@ function mockRes() {
   return res;
 }
 
-/** Минимальный mock Request. */
+/** Минимальный mock Request. Публикующий аккаунт передаётся через
+ *  Community_Session (`session.communityAccountId`), как в проде. */
 function mockReq(opts: {
   params?: Record<string, string>;
   query?: Record<string, unknown>;
   headers?: Record<string, string>;
   body?: unknown;
+  session?: { communityAccountId?: number };
 }): any {
   return {
     params: opts.params ?? {},
     query: opts.query ?? {},
     headers: opts.headers ?? {},
     body: opts.body,
+    session: opts.session ?? {},
   };
 }
 
@@ -252,27 +255,27 @@ describe("GET /zhk/:zhkSlug — Local_Feed (R3.3)", () => {
 // ─── resolvePublisher — гейт уровня 3 (Requirement 11) ───────────────────────
 
 describe("resolvePublisher — уровень доступа 3 (R11)", () => {
-  it("нет заголовка аккаунта → 401", async () => {
+  it("нет сессии → 401", async () => {
     const r = await resolvePublisher(mockReq({}), makeDeps().loadAccount);
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.status, 401);
   });
 
-  it("неверифицированный аккаунт → 403 с предложением подтвердить телефон (R11.3, R11.4)", async () => {
+  it("аккаунт без прав публикации → 403 publishing_rights_required (R5.4, R5.5)", async () => {
     const r = await resolvePublisher(
-      mockReq({ headers: { [ACCOUNT_ID_HEADER]: "101" } }),
+      mockReq({ session: { communityAccountId: 101 } }),
       makeDeps().loadAccount,
     );
     assert.equal(r.ok, false);
     if (!r.ok) {
       assert.equal(r.status, 403);
-      assert.equal(r.body.reason, "phone_verification_required");
+      assert.equal(r.body.reason, "publishing_rights_required");
     }
   });
 
-  it("подтверждённый аккаунт → ok", async () => {
+  it("аккаунт с правами публикации → ok", async () => {
     const r = await resolvePublisher(
-      mockReq({ headers: { [ACCOUNT_ID_HEADER]: "100" } }),
+      mockReq({ session: { communityAccountId: 100 } }),
       makeDeps().loadAccount,
     );
     assert.equal(r.ok, true);
@@ -283,7 +286,7 @@ describe("resolvePublisher — уровень доступа 3 (R11)", () => {
 // ─── POST /zhk — публикация темы (Requirements 3.1, 3.2, 3.4, 3.5, 11) ───────
 
 describe("POST /zhk — создание темы Local_Feed (уровень 3)", () => {
-  it("аноним без заголовка аккаунта → 401", async () => {
+  it("аноним без сессии → 401", async () => {
     const h = makeHandlers(makeDeps());
     const res = mockRes();
     await h.createLocalTopic(
@@ -293,7 +296,7 @@ describe("POST /zhk — создание темы Local_Feed (уровень 3)"
     assert.equal(res.statusCode, 401);
   });
 
-  it("верифицированный аккаунт → 201 created (R3.2)", async () => {
+  it("аккаунт с правами публикации → 201 created (R3.2)", async () => {
     let received: any = null;
     const h = makeHandlers(makeDeps({
       feedService: {
@@ -309,7 +312,7 @@ describe("POST /zhk — создание темы Local_Feed (уровень 3)"
     const res = mockRes();
     await h.createLocalTopic(
       mockReq({
-        headers: { [ACCOUNT_ID_HEADER]: "100" },
+        session: { communityAccountId: 100 },
         body: { category: "tool_sharing", title: "Дрель", body: "Одолжу дрель" },
       }),
       res as any,
@@ -336,7 +339,7 @@ describe("POST /zhk — создание темы Local_Feed (уровень 3)"
     const res = mockRes();
     await h.createLocalTopic(
       mockReq({
-        headers: { [ACCOUNT_ID_HEADER]: "100" },
+        session: { communityAccountId: 100 },
         body: { category: "bad", title: "T", body: "B" },
       }),
       res as any,
@@ -362,7 +365,7 @@ describe("POST /zhk — создание темы Local_Feed (уровень 3)"
     const res = mockRes();
     await h.createLocalTopic(
       mockReq({
-        headers: { [ACCOUNT_ID_HEADER]: "100" },
+        session: { communityAccountId: 100 },
         body: { category: "tool_sharing", title: "Дрель", body: "Одолжу" },
       }),
       res as any,

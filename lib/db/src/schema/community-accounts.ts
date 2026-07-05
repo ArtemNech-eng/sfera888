@@ -25,6 +25,12 @@ export const communityAccountsTable = pgTable(
     phone: varchar("phone", { length: 30 }).notNull().unique("community_accounts_phone_key"),
     /** Момент завершения Phone_Verification; NULL = не подтверждён (Requirement 11.4). */
     phoneVerifiedAt: timestamp("phone_verified_at"),
+    /**
+     * bcryptjs-хеш Password (Password_Hash); NULL = пароль не задан.
+     * Единственная хранимая форма Password (Requirement 1.2, 6.1).
+     * Spec: .kiro/specs/community-phone-registration/ (migration 2026-06-11-community-password)
+     */
+    passwordHash: varchar("password_hash", { length: 100 }),
     /** `resident` | `master`. */
     role: varchar("role", { length: 20 }).notNull().default("resident"),
     /** Привязка жителя к ЖК на момент публикации (Requirement 3.2, 3.5). */

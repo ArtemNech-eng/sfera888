@@ -1,19 +1,20 @@
 /**
- * Feature: community-generalized-locality, Task 6.7: verification gate and city-feed fallback
+ * Feature: community-generalized-locality, Task 6.7: publishing gate and city-feed fallback
  *
  * Unit tests for two publish behaviors of the generalized-locality community:
  *
- *   1. **Validates: Requirements 8.4** — публикация Community_Thread через
- *      Community_Account БЕЗ завершённой Phone_Verification отклоняется
- *      (verification_required), тема НЕ сохраняется. Публикующий гейт темы —
+ *   1. **Validates: Requirements 5.4, 5.5, 8.4** — публикация Community_Thread
+ *      через Community_Account БЕЗ прав публикации (Publishing_Rights)
+ *      отклоняется, тема НЕ сохраняется. Публикующий гейт темы —
  *      `resolvePublisher` в `routes/community/feeds.ts`; хендлер публикации
  *      (`makeHandlers().createLocalTopic`) вызывает гейт ДО обращения к
- *      `FeedService.createLocalTopic`. При неверифицированном аккаунте гейт
- *      отвечает 403 `phone_verification_required` (семантически = требуется
- *      завершить Phone_Verification, R8.4) и НЕ доходит до пути создания —
- *      отсутствие персистентности доказывается тем, что шпион на
+ *      `FeedService.createLocalTopic`. Публикующий аккаунт берётся из
+ *      Community_Session (`req.session.communityAccountId`). При аккаунте без
+ *      Publishing_Rights (не задан ни `passwordHash`, ни `phoneVerifiedAt`)
+ *      гейт отвечает 403 `publishing_rights_required` и НЕ доходит до пути
+ *      создания — отсутствие персистентности доказывается тем, что шпион на
  *      `createLocalTopic` не вызывается (0 вызовов → 0 сохранённых тем). Для
- *      анонима без идентификатора аккаунта → 401 (создание тоже не достигается).
+ *      анонима без валидной сессии → 401 (создание тоже не достигается).
  *
  *   2. **Validates: Requirements 2.3** — Resident, не нашедший подходящей
  *      Locality своего типа, может опубликовать Community_Thread в City_Feed
@@ -48,7 +49,7 @@ import type { CityView, ZhkView } from "../../src/lib/geoService.js";
 // реального запроса не выполняется (pg.Pool ленив), а в тесте R2.3 используется
 // полностью инъектированный db-стаб.
 process.env.DATABASE_URL ??= "postgres://test:test@localhost:5432/test";
-const { makeHandlers, resolvePublisher, ACCOUNT_ID_HEADER } = await import(
+const { makeHandlers, resolvePublisher } = await import(
   "../../src/routes/community/feeds.js"
 );
 const { FeedService } = await import("../../src/lib/feedService.js");
@@ -83,18 +84,21 @@ function mockRes() {
   return res;
 }
 
-/** Минимальный mock Request. */
+/** Минимальный mock Request. Публикующий аккаунт передаётся через
+ *  Community_Session (`session.communityAccountId`), как в проде. */
 function mockReq(opts: {
   params?: Record<string, string>;
   query?: Record<string, unknown>;
   headers?: Record<string, string>;
   body?: unknown;
+  session?: { communityAccountId?: number };
 }): any {
   return {
     params: opts.params ?? {},
     query: opts.query ?? {},
     headers: opts.headers ?? {},
     body: opts.body,
+    session: opts.session ?? {},
   };
 }
 
@@ -181,42 +185,42 @@ function makeDepsWithCreateSpy(): {
 // ─── R8.4 — гейт Phone_Verification при публикации темы ──────────────────────
 
 describe("Publish gate — Community_Thread без Phone_Verification отклоняется (R8.4)", () => {
-  it("resolvePublisher: неверифицированный аккаунт → 403 (требуется Phone_Verification)", async () => {
+  it("resolvePublisher: аккаунт без прав публикации → 403 (publishing_rights_required)", async () => {
     const { deps } = makeDepsWithCreateSpy();
 
     const resolution = await resolvePublisher(
-      mockReq({ headers: { [ACCOUNT_ID_HEADER]: "101" } }),
+      mockReq({ session: { communityAccountId: 101 } }),
       deps.loadAccount,
     );
 
     assert.equal(resolution.ok, false);
     if (!resolution.ok) {
       assert.equal(resolution.status, 403);
-      // Индикация ошибки: требуется завершить Phone_Verification (R8.4).
-      assert.equal(resolution.body.reason, "phone_verification_required");
+      // Индикация ошибки: у аккаунта нет прав публикации (R5.4, R5.5).
+      assert.equal(resolution.body.reason, "publishing_rights_required");
     }
   });
 
-  it("POST темы неверифицированным аккаунтом → 403 и тема НЕ сохраняется (createLocalTopic не вызывается)", async () => {
+  it("POST темы аккаунтом без прав публикации → 403 и тема НЕ сохраняется (createLocalTopic не вызывается)", async () => {
     const { deps, createLocalTopicCalls } = makeDepsWithCreateSpy();
     const h = makeHandlers(deps);
     const res = mockRes();
 
     await h.createLocalTopic(
       mockReq({
-        headers: { [ACCOUNT_ID_HEADER]: "101" },
+        session: { communityAccountId: 101 },
         body: { category: "tool_sharing", title: "Одолжу дрель", body: "Соседям" },
       }),
       res as any,
     );
 
     assert.equal(res.statusCode, 403);
-    assert.equal((res.body as any).reason, "phone_verification_required");
+    assert.equal((res.body as any).reason, "publishing_rights_required");
     // Гейт отклонил публикацию ДО пути создания → тема не сохранена (0 вызовов).
     assert.equal(createLocalTopicCalls(), 0);
   });
 
-  it("POST темы анонимом без идентификатора аккаунта → 401 и тема НЕ сохраняется", async () => {
+  it("POST темы анонимом без сессии → 401 и тема НЕ сохраняется", async () => {
     const { deps, createLocalTopicCalls } = makeDepsWithCreateSpy();
     const h = makeHandlers(deps);
     const res = mockRes();
@@ -232,14 +236,14 @@ describe("Publish gate — Community_Thread без Phone_Verification откло
     assert.equal(createLocalTopicCalls(), 0);
   });
 
-  it("контраст: верифицированный аккаунт проходит гейт и достигает пути создания (тема сохраняется)", async () => {
+  it("контраст: аккаунт с правами публикации проходит гейт и достигает пути создания (тема сохраняется)", async () => {
     const { deps, createLocalTopicCalls } = makeDepsWithCreateSpy();
     const h = makeHandlers(deps);
     const res = mockRes();
 
     await h.createLocalTopic(
       mockReq({
-        headers: { [ACCOUNT_ID_HEADER]: "100" },
+        session: { communityAccountId: 100 },
         body: { category: "tool_sharing", title: "Одолжу дрель", body: "Соседям" },
       }),
       res as any,

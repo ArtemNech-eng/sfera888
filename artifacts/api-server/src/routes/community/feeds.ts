@@ -14,10 +14,11 @@
  *   • GET — публичны (уровень 1, Requirement 9.1): чтение лент доступно без
  *     аутентификации, чтобы контент индексировался и читался анонимами.
  *   • POST — уровень 3 (Requirement 11): публиковать может только владелец
- *     подтверждённого Community_Account (`phoneVerifiedAt != null`,
- *     `hasPublishingRights`). Идентификатор публикующего аккаунта берётся из
- *     заголовка `X-Community-Account-Id` (в 14.1 источником станет сессия);
- *     права проверяются по БД — заголовок сам по себе прав не даёт.
+ *     Community_Account с правами публикации (`hasPublishingRights`: задан
+ *     `passwordHash` ИЛИ проставлен `phoneVerifiedAt`). Идентификатор
+ *     публикующего аккаунта берётся из Community_Session
+ *     (`req.session.communityAccountId`, Requirements 4.2, 4.3); права
+ *     проверяются по БД — сессия сама по себе прав не даёт.
  *
  * Пустая лента — не ошибка: возвращается `feed.emptyState = true` со статусом
  * 200 (Requirements 1.3, 3.6). Несуществующий slug — 404 `{ error: "not_found" }`
@@ -52,7 +53,14 @@ import { hasPublishingRights } from "../../lib/communityAuth.js";
 
 declare const console: { error: (...args: unknown[]) => void };
 
-/** Заголовок, несущий идентификатор публикующего Community_Account (уровень 3). */
+/**
+ * Заголовок, ранее несший идентификатор публикующего Community_Account.
+ *
+ * DEPRECATED для гейта публикации: `resolvePublisher` теперь читает
+ * идентификатор из Community_Session (`req.session.communityAccountId`).
+ * Константа сохранена для обратной совместимости легаси-SMS-пути
+ * (`resolveAccountId` в `routes/community/auth.ts`, `/link-max`).
+ */
 export const ACCOUNT_ID_HEADER = "x-community-account-id";
 
 // ── Rate limiting по IP для анонимного «народного вопроса» (Ask_Anything) ────
@@ -146,36 +154,40 @@ export type PublisherResolution =
 
 /**
  * Разрешить публикующий Community_Account и проверить права уровня 3
- * (Requirement 11).
+ * (Requirements 4.2, 4.3, 4.7, 5.4, 5.5).
  *
  * Порядок:
- *   1. Заголовок `X-Community-Account-Id` обязателен и должен быть
- *      положительным целым — иначе 401 (неаутентифицированный запрос).
+ *   1. Идентификатор берётся из Community_Session
+ *      (`req.session.communityAccountId`) и должен быть положительным целым —
+ *      иначе 401 (неаутентифицированный запрос: сессия отсутствует, истекла или
+ *      завершена, Requirements 4.3, 4.7).
  *   2. Аккаунт должен существовать и иметь права публикации
- *      (`hasPublishingRights`, т.е. завершённую Phone_Verification) — иначе 403
- *      с предложением подтвердить телефон (Requirement 11.3, 11.4).
+ *      (`hasPublishingRights`: задан `passwordHash` ИЛИ проставлен
+ *      `phoneVerifiedAt`) — иначе 403 `publishing_rights_required`
+ *      (Requirements 5.4, 5.5).
  *
- * Max_Login в проверку не входит и не может быть обязательным (Requirement 11.4).
+ * Max_Login в проверку не входит и не может быть обязательным (Requirement 5.6).
  */
 export async function resolvePublisher(
   req: Request,
   loadAccount: FeedsRouterDeps["loadAccount"],
 ): Promise<PublisherResolution> {
-  const raw = req.headers[ACCOUNT_ID_HEADER];
-  const headerValue = Array.isArray(raw) ? raw[0] : raw;
-  const accountId = Number(headerValue);
+  const accountId = (req.session as { communityAccountId?: unknown } | undefined)
+    ?.communityAccountId;
 
-  if (!headerValue || !Number.isInteger(accountId) || accountId <= 0) {
+  if (typeof accountId !== "number" || !Number.isInteger(accountId) || accountId <= 0) {
+    // Нет действительной Community_Session (R4.3, R4.7).
     return { ok: false, status: 401, body: { error: "unauthorized" } };
   }
 
   const account = await loadAccount(accountId);
   if (!hasPublishingRights(account)) {
-    // Уровень 3 не пройден: нет подтверждённой Phone_Verification (R11.3, R11.4).
+    // Нет прав публикации (R5.4, R5.5): не удалось загрузить аккаунт либо у него
+    // не задан ни passwordHash, ни phoneVerifiedAt.
     return {
       ok: false,
       status: 403,
-      body: { error: "forbidden", reason: "phone_verification_required" },
+      body: { error: "forbidden", reason: "publishing_rights_required" },
     };
   }
 

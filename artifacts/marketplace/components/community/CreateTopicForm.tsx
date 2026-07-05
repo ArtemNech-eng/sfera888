@@ -26,7 +26,7 @@ type Envelope = CreatedEnvelope | ErrorEnvelope;
 
 const ERROR_MESSAGES: Record<string, string> = {
   verification_required:
-    "Чтобы опубликовать тему, подтвердите телефон — это займёт минуту.",
+    "Чтобы опубликовать тему, войдите в сообщество или зарегистрируйтесь — это займёт минуту.",
   validation_error: "Проверьте заполнение формы.",
   invalid_category: "Выберите категорию темы.",
   invalid_title: "Заголовок должен содержать от 1 до 200 символов.",
@@ -175,7 +175,16 @@ export function CreateTopicForm({ zhkName }: Props) {
         <div role="alert" className={`zen-alert ${status === "success" ? "zen-alert--ok" : "zen-alert--err"}`}>
           {message}
           {needsVerification ? (
-            <> <Link href="/login" style={{ fontWeight: 700, textDecoration: "underline" }}>Подтвердить телефон</Link></>
+            <>
+              {" "}
+              <Link href="/soobshchestvo/vhod" style={{ fontWeight: 700, textDecoration: "underline" }}>
+                Войти
+              </Link>{" "}
+              или{" "}
+              <Link href="/soobshchestvo/registraciya" style={{ fontWeight: 700, textDecoration: "underline" }}>
+                зарегистрироваться
+              </Link>
+            </>
           ) : null}
         </div>
       ) : null}

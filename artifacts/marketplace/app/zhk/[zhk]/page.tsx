@@ -10,6 +10,8 @@ import {
 } from "../../../lib/communityLocalityMeta";
 import { FeedList } from "../../../components/community/FeedList";
 import { AskForm } from "../../../components/community/AskForm";
+import { PublishGate } from "../../../components/community/PublishGate";
+import { CreateTopicForm } from "../../../components/community/CreateTopicForm";
 import { CommunityRail } from "../../../components/community/CommunityRail";
 import type { CommunityZhk } from "../../../lib/types";
 
@@ -58,6 +60,12 @@ export default async function ZhkPage({ params }: { params: Promise<RouteParams>
 
   const { zhk, localFeed } = data;
 
+  // Браузерная база api-server для клиентской проверки Community_Session в
+  // гейте публикации (Requirement 8.7) — та же переменная, что у форм
+  // регистрации/входа. Значение вшивается в бандл на этапе СБОРКИ.
+  const apiBaseUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://sfera-master.ru/api";
+
   const breadcrumbsLd = breadcrumbJsonLd([
     { name: "Главная", url: `${publicUrl()}/` },
     { name: "Соседи", url: `${publicUrl()}/soobshchestvo` },
@@ -94,6 +102,26 @@ export default async function ZhkPage({ params }: { params: Promise<RouteParams>
                 />
               </section>
               <aside className="lg:sticky lg:top-24 lg:self-start" style={{ marginTop: 52 }}>
+                {/* Гейт публикации: создание темы Local_Feed — только для
+                    участников с действительной Community_Session. Без сессии
+                    гейт предлагает регистрацию или вход (Requirement 8.7). */}
+                <div className="zen-panel" style={{ marginBottom: 16 }}>
+                  <div className="zen-panel-title">Создать тему</div>
+                  <p className="zen-panel-sub">
+                    Полноценная тема в ленте вашего ЖК — для зарегистрированных соседей.
+                  </p>
+                  <div style={{ marginTop: 16 }}>
+                    <PublishGate
+                      apiBaseUrl={apiBaseUrl}
+                      next={`/zhk/${zhk.slug}`}
+                      title="Создание темы — для участников"
+                      description="Чтобы опубликовать тему в ленте ЖК, зарегистрируйтесь или войдите. Телефон станет вашим логином."
+                    >
+                      <CreateTopicForm zhkName={zhk.name} />
+                    </PublishGate>
+                  </div>
+                </div>
+
                 <div className="zen-panel">
                   <div className="zen-panel-title">Спросить соседей</div>
                   <p className="zen-panel-sub">Задайте вопрос или поделитесь полезным — без регистрации.</p>
