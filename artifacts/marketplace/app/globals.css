@@ -354,6 +354,19 @@ body {
 .zen-input, .zen-textarea, .zen-select { width: 100%; border: 1px solid #e2e4e7; background: #fff; border-radius: var(--z-radius-sm); padding: 11px 14px; font: inherit; font-size: 15px; color: var(--z-ink); }
 .zen-input:focus, .zen-textarea:focus, .zen-select:focus { outline: none; border-color: var(--z-accent); box-shadow: 0 0 0 3px var(--z-accent-soft); }
 .zen-textarea { resize: vertical; }
+/* Селект в фирменном стиле: убираем нативный вид, рисуем свою стрелку. */
+.zen-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px 16px;
+}
+.zen-select::-ms-expand { display: none; }
 
 /* ── Комментарии ── */
 .zen-comment { }

@@ -134,7 +134,7 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
           name="kind"
           value={kind}
           onChange={(e) => setKind(e.target.value as CommunityLocalityKind)}
-          className="zen-input"
+          className="zen-select"
         >
           {KIND_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
