@@ -56,4 +56,28 @@ describe("toCommunitySitemap (Requirements 16.1, 16.3, 5.2, 6.5)", () => {
     const out = toCommunitySitemap([{ slug: "  moskva  " }], [], []);
     assert.deepEqual(out.cities, ["moskva"]);
   });
+
+  // Task 7.3 — Community_Sitemap_Source: плоский, упорядоченный, без дубликатов.
+  it("список локаций: единый плоский список по slug ASC (Requirement 7.3)", () => {
+    const out = toCommunitySitemap(
+      [],
+      [{ slug: "zhk-solnechnyy" }, { slug: "cheryomushki" }, { slug: "fmr" }],
+      [],
+    );
+    assert.deepEqual(out.zhk, ["cheryomushki", "fmr", "zhk-solnechnyy"]);
+  });
+
+  it("список локаций: дубликаты слагов схлопываются ровно в один (Requirement 7.1)", () => {
+    const out = toCommunitySitemap(
+      [],
+      [{ slug: "fmr" }, { slug: "  fmr  " }, { slug: "cheryomushki" }, { slug: "fmr" }],
+      [],
+    );
+    assert.deepEqual(out.zhk, ["cheryomushki", "fmr"]);
+  });
+
+  it("список локаций: нет индексируемых → пустой список без ошибки (Requirement 7.4)", () => {
+    const out = toCommunitySitemap([{ slug: "moskva" }], [], [{ slug: "elektrik" }]);
+    assert.deepEqual(out.zhk, []);
+  });
 });

@@ -4,15 +4,25 @@ import { notFound } from "next/navigation";
 import { fetchCommunityZhk } from "../../../lib/communityApi";
 import { publicUrl } from "../../../lib/env";
 import { breadcrumbJsonLd, toJsonLdScript } from "../../../lib/jsonLd";
+import {
+  buildLocalityMetadata,
+  localityKindEyebrow,
+} from "../../../lib/communityLocalityMeta";
 import { FeedList } from "../../../components/community/FeedList";
 import { AskForm } from "../../../components/community/AskForm";
 import { CommunityRail } from "../../../components/community/CommunityRail";
 import type { CommunityZhk } from "../../../lib/types";
 
 /**
- * Sosedi_Zone — страница ЖК `/zhk/[zhk]` (spec task 13.1). Zen-стиль.
- * Local_Feed + форма новой темы. Только темы этого ЖК (Requirement 3.3).
- * Атрибуты — только заполненные (Requirement 1.7).
+ * Sosedi_Zone — страница локации `/zhk/[zhk]` (community-generalized-locality
+ * task 9.1). Zen-стиль. Обслуживает локацию ЛЮБОГО Locality_Kind — ЖК, район
+ * или посёлок (Requirement 3.2). Local_Feed + форма новой темы. Только темы
+ * этой локации. Атрибуты — только заполненные (Requirement 1.7).
+ *
+ * Метаданные (title/description/canonical/noindex) — через чистый билдер
+ * `buildLocalityMetadata`: непустые title и описание, абсолютный canonical для
+ * любого kind (Requirement 6.6); `noindex` эмитится iff `isIndexable === false`
+ * (Requirement 6.7).
  */
 
 export const revalidate = 60;
@@ -24,13 +34,21 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { zhk: zhkSlug } = await params;
   const data = await fetchCommunityZhk(zhkSlug, { revalidate: 300 });
-  if (!data) return { title: "ЖК не найден — Соседи" };
+  // Not-found путь сохраняет непустой title (Requirement 6.6).
+  if (!data) return { title: "Локация не найдена — Соседи" };
   const { zhk } = data;
-  return {
-    title: `${zhk.name} — соседский чат жилого комплекса`,
-    description: `Соседское сообщество ЖК «${zhk.name}»: аварии ЖКХ, дефекты застройщика, обмен инструментом и локальные рекомендации.`,
-    alternates: { canonical: `${publicUrl()}/zhk/${zhk.slug}` },
+  const meta = buildLocalityMetadata(
+    { name: zhk.name, slug: zhk.slug, kind: zhk.kind, isIndexable: zhk.isIndexable },
+    publicUrl(),
+  );
+  const metadata: Metadata = {
+    title: meta.title,
+    description: meta.description,
+    alternates: { canonical: meta.canonical },
   };
+  // Директива noindex — только для неиндексируемых локаций (Requirement 6.7).
+  if (meta.robots) metadata.robots = meta.robots;
+  return metadata;
 }
 
 export default async function ZhkPage({ params }: { params: Promise<RouteParams> }) {
@@ -57,7 +75,7 @@ export default async function ZhkPage({ params }: { params: Promise<RouteParams>
             <nav className="zen-crumbs">
               <Link href="/">Главная</Link> · <Link href="/soobshchestvo">Соседи</Link> · {zhk.name}
             </nav>
-            <span className="zen-eyebrow">Жилой комплекс</span>
+            <span className="zen-eyebrow">{localityKindEyebrow(zhk.kind)}</span>
             <h1 className="zen-title">{zhk.name}</h1>
             <p className="zen-sub">
               Локальный чат соседей: аварии ЖКХ, дефекты застройщика, обмен
@@ -82,7 +100,7 @@ export default async function ZhkPage({ params }: { params: Promise<RouteParams>
                   <div style={{ marginTop: 16 }}>
                     <AskForm
                       zhkSlug={zhk.slug}
-                      placeholder={`Спросите жителей ЖК «${zhk.name}»…`}
+                      placeholder={`Спросите соседей «${zhk.name}»…`}
                       suggestions={[
                         "Как принимали квартиру — на что смотреть?",
                         "Кто делал ремонт в нашем ЖК — посоветуйте бригаду",

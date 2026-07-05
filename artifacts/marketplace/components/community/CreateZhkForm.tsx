@@ -2,6 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import type { CommunityLocalityKind } from "../../lib/types";
+import { LOCALITY_KIND_OPTIONS } from "../../lib/communityLocalityForm";
 
 interface Props {
   /** Родительский город (Requirement 4.1) — slug и человекочитаемое имя. */
@@ -28,15 +30,23 @@ interface ErrorEnvelope {
 }
 type Envelope = CreatedEnvelope | DuplicateEnvelope | ErrorEnvelope;
 
+/**
+ * Выбор типа локации (Locality_Kind, Requirement 4.1). Опции вынесены в чистый
+ * модуль `lib/communityLocalityForm.ts`, чтобы их можно было проверить юнит-
+ * тестом без клиентского рантайма (task 9.5). Значение по умолчанию — `zhk`.
+ */
+const KIND_OPTIONS = LOCALITY_KIND_OPTIONS;
+
 const ERROR_MESSAGES: Record<string, string> = {
   verification_required:
-    "Чтобы добавить ЖК, подтвердите телефон — это займёт минуту.",
-  validation_error: "Проверьте название ЖК.",
-  invalid_name: "Название ЖК должно содержать от 2 до 100 символов.",
+    "Чтобы добавить место, подтвердите телефон — это займёт минуту.",
+  validation_error: "Проверьте название места.",
+  invalid_name: "Название места должно содержать от 2 до 100 символов.",
+  invalid_kind: "Выберите тип места из списка.",
   city_not_found: "Город временно недоступен.",
   invalid_json: "Не удалось обработать форму. Перезагрузите страницу.",
   upstream_unreachable: "Сервис временно недоступен, попробуйте позже.",
-  upstream_error: "Не удалось добавить ЖК, попробуйте позже.",
+  upstream_error: "Не удалось добавить место, попробуйте позже.",
 };
 
 function friendlyError(label: string | undefined): string {
@@ -45,10 +55,14 @@ function friendlyError(label: string | undefined): string {
 }
 
 /**
- * Форма создания нового ЖК жителем (Requirement 4). Уровень доступа 3 гейтится
- * на клиенте: если сессия сообщества отсутствует, бэкенд-прокси вернёт
- * `verification_required`, и форма покажет предложение подтвердить телефон
- * (Requirement 11.1/11.3) вместо тихого провала.
+ * Форма создания нового места жителем (Requirement 4). Житель выбирает тип
+ * локации — ЖК, район или посёлок (Requirement 4.1) — так что сообщество
+ * работает и для старого фонда, и для частного сектора, а не только для
+ * новостроек.
+ *
+ * Уровень доступа 3 гейтится на клиенте: если сессия сообщества отсутствует,
+ * бэкенд-прокси вернёт `verification_required`, и форма покажет предложение
+ * подтвердить телефон (Requirement 11.1/11.3) вместо тихого провала.
  */
 export function CreateZhkForm({ citySlug, cityName }: Props) {
   const [status, setStatus] = useState<Status>("idle");
@@ -57,6 +71,8 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
   const [duplicate, setDuplicate] = useState<{ slug: string; name: string } | null>(null);
   // Контролируем поле, чтобы ввод не терялся при ошибке (Requirement 3.4-стиль UX).
   const [name, setName] = useState("");
+  // Тип локации (Requirement 4.1). По умолчанию `zhk` — обратная совместимость.
+  const [kind, setKind] = useState<CommunityLocalityKind>("zhk");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,7 +87,7 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
       res = await fetch("/api/community/zhk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), citySlug }),
+        body: JSON.stringify({ name: name.trim(), citySlug, kind }),
       });
     } catch {
       setMessage("Сетевая ошибка. Проверьте интернет-соединение.");
@@ -87,13 +103,13 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
     }
 
     if (parsed && parsed.ok === true && parsed.status === "created") {
-      // Local_Feed нового ЖК доступен сразу (Requirement 4.6) — ведём туда.
+      // Local_Feed нового места доступен сразу (Requirement 4.6) — ведём туда.
       window.location.assign(`/zhk/${parsed.zhk.slug}`);
       return;
     }
 
     if (parsed && parsed.ok === true && parsed.status === "duplicate_suggested") {
-      // Дубликат: предлагаем существующий ЖК вместо создания (Requirement 4.5).
+      // Дубликат: предлагаем существующее место вместо создания (Requirement 4.5).
       setDuplicate(parsed.existing);
       setStatus("duplicate");
       return;
@@ -112,7 +128,27 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
   return (
     <form onSubmit={onSubmit} style={{ display: "grid", gap: 14 }}>
       <div>
-        <label className="zen-label" htmlFor="zhk-name">Название ЖК *</label>
+        <label className="zen-label" htmlFor="place-kind">Тип места *</label>
+        <select
+          id="place-kind"
+          name="kind"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as CommunityLocalityKind)}
+          className="zen-input"
+        >
+          {KIND_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <p style={{ marginTop: 6, fontSize: 12, color: "var(--z-muted)" }}>
+          Новостройка, район старого фонда или посёлок — соседи найдут вас по типу места.
+        </p>
+      </div>
+
+      <div>
+        <label className="zen-label" htmlFor="zhk-name">Название места *</label>
         <input
           id="zhk-name"
           type="text"
@@ -122,17 +158,17 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
           required
           minLength={2}
           maxLength={100}
-          placeholder="например, ЖК «Скандинавия»"
+          placeholder="например, ЖК «Скандинавия» или «Черёмушки»"
           className="zen-input"
         />
         <p style={{ marginTop: 6, fontSize: 12, color: "var(--z-muted)" }}>
-          От 2 до 100 символов. Если ЖК уже есть — предложим перейти в него.
+          От 2 до 100 символов. Если место уже есть — предложим перейти в него.
         </p>
       </div>
 
       {duplicate ? (
         <div role="status" className="zen-alert zen-alert--ok">
-          Такой ЖК уже есть:{" "}
+          Такое место уже есть:{" "}
           <Link href={`/zhk/${duplicate.slug}`} style={{ fontWeight: 700, textDecoration: "underline" }}>
             {duplicate.name}
           </Link>. Перейдите в него, чтобы читать и обсуждать.
@@ -149,7 +185,7 @@ export function CreateZhkForm({ citySlug, cityName }: Props) {
       ) : null}
 
       <button type="submit" disabled={submitting} className="zen-btn zen-btn--block">
-        {submitting ? "Добавляем…" : "Добавить ЖК"}
+        {submitting ? "Добавляем…" : "Добавить место"}
       </button>
     </form>
   );

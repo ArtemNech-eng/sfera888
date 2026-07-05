@@ -30,6 +30,7 @@ import {
 import { db, communityAccountsTable, citiesTable, zhkTable, type CommunityAccount } from "@workspace/db";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { GeoService } from "../../lib/geoService.js";
+import type { CreateLocalityInput } from "../../lib/geoService.js";
 import { feedService } from "../../lib/feedService.js";
 import { hasPublishingRights } from "../../lib/communityAuth.js";
 
@@ -106,44 +107,97 @@ export function resolveAccountId(req: {
   return num;
 }
 
+/** Загрузчик Community_Account по идентификатору (инъектируемый seam). */
+export type LoadCommunityAccount = (
+  accountId: number,
+) => Promise<CommunityAccount | undefined>;
+
+/** Результат разрешения публикующего аккаунта уровня 3 (Requirement 4.5). */
+export type PublisherResolution =
+  | { ok: true; account: CommunityAccount }
+  | { ok: false; status: 401 | 403; body: { error: string } };
+
 /**
- * Middleware уровня доступа 3: резолвит Community_Account и проверяет права
- * публикации.
+ * Загрузчик по умолчанию: читает Community_Account из БД по первичному ключу.
+ */
+async function loadCommunityAccountFromDb(
+  accountId: number,
+): Promise<CommunityAccount | undefined> {
+  const [account] = await db
+    .select()
+    .from(communityAccountsTable)
+    .where(eq(communityAccountsTable.id, accountId))
+    .limit(1);
+  return account;
+}
+
+/**
+ * Чистая (относительно инъектированного `loadAccount`) логика гейта уровня 3.
+ * Тестируется без БД: `loadAccount` инъектируется.
+ *
+ *   • отсутствует идентификатор аккаунта → 401 `account_required`
+ *     (`loadAccount` не вызывается — ничего не читается и не пишется);
+ *   • аккаунт не найден или Phone_Verification не завершена → 403
+ *     `verification_required` (Requirement 4.5 / 11.1 / 11.4).
+ */
+export async function resolveCommunityPublisher(
+  req: { headers?: Record<string, unknown>; body?: unknown },
+  loadAccount: LoadCommunityAccount,
+): Promise<PublisherResolution> {
+  const accountId = resolveAccountId(req);
+  if (accountId === null) {
+    return { ok: false, status: 401, body: { error: "account_required" } };
+  }
+
+  const account = await loadAccount(accountId);
+  if (!hasPublishingRights(account)) {
+    return { ok: false, status: 403, body: { error: "verification_required" } };
+  }
+
+  return { ok: true, account };
+}
+
+/**
+ * Фабрика middleware уровня доступа 3: резолвит Community_Account через
+ * инъектированный `loadAccount` и проверяет права публикации. Если гейт не
+ * пройден, `next` НЕ вызывается — нижележащий обработчик создания (и, значит,
+ * `GeoService.createLocality`) не выполняется, запись не сохраняется.
  *
  *   • отсутствует идентификатор аккаунта → 401 `account_required`;
  *   • аккаунт не найден или Phone_Verification не завершена → 403
  *     `verification_required` (публикация запрещена до подтверждения телефона,
- *     Requirement 11.1/11.4).
+ *     Requirement 4.5 / 11.1 / 11.4).
  */
-async function requireCommunityPublisher(
-  req: CommunityRequest,
-  res: Response,
-  next: NextFunction,
-) {
-  const accountId = resolveAccountId(req);
-  if (accountId === null) {
-    return res.status(401).json({ error: "account_required" });
-  }
+export function makeRequireCommunityPublisher(loadAccount: LoadCommunityAccount) {
+  return async function requireCommunityPublisher(
+    req: CommunityRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    let resolution: PublisherResolution;
+    try {
+      resolution = await resolveCommunityPublisher(req, loadAccount);
+    } catch (err) {
+      console.error("[community/geo] account lookup failed:", err);
+      return res.status(500).json({ error: "internal_error" });
+    }
 
-  let account: CommunityAccount | undefined;
-  try {
-    [account] = await db
-      .select()
-      .from(communityAccountsTable)
-      .where(eq(communityAccountsTable.id, accountId))
-      .limit(1);
-  } catch (err) {
-    console.error("[community/geo] account lookup failed:", err);
-    return res.status(500).json({ error: "internal_error" });
-  }
+    if (!resolution.ok) {
+      return res.status(resolution.status).json(resolution.body);
+    }
 
-  if (!hasPublishingRights(account)) {
-    return res.status(403).json({ error: "verification_required" });
-  }
-
-  req.communityAccount = account;
-  next();
+    req.communityAccount = resolution.account;
+    next();
+  };
 }
+
+/**
+ * Middleware уровня доступа 3, привязанный к реальному загрузчику из БД.
+ * Именно он навешивается на `POST /zhk`.
+ */
+const requireCommunityPublisher = makeRequireCommunityPublisher(
+  loadCommunityAccountFromDb,
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /cities — список городов целевого SEO-набора для хаб-страницы сообщества.
@@ -189,12 +243,11 @@ router.get("/city/:citySlug", async (req: Request, res: Response) => {
       cursor: parseCursor(req.query.cursor),
     });
 
-    // ЖК города — для навигации по локальным сообществам (Requirement 1.1).
-    const zhk = await db
-      .select({ slug: zhkTable.slug, name: zhkTable.name, status: zhkTable.status })
-      .from(zhkTable)
-      .where(eq(zhkTable.cityId, city.id))
-      .orderBy(desc(zhkTable.contentScore), zhkTable.name);
+    // Все локации города любого Locality_Kind (ЖК, районы, посёлки) единым
+    // списком, отсортированным по name_normalized asc без группировки по kind
+    // (Requirement 2.4). Поле ответа `zhk` сохранено ради совместимости фасада;
+    // теперь каждый элемент включает поле `kind`.
+    const zhk = await GeoService.listLocalitiesByCity(city.id);
 
     return res.json({ city, cityFeed, zhk });
   } catch (err) {
@@ -235,13 +288,15 @@ router.get("/zhk", async (req: Request, res: Response) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /zhk/:zhkSlug — ZhK + Local_Feed (Requirements 1.4, 1.5, 1.7).
+// GET /zhk/:zhkSlug — Locality + Local_Feed (Requirements 2.5, 3.2, 3.5, 1.7).
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/zhk/:zhkSlug", async (req: Request, res: Response) => {
   try {
-    const zhk = await GeoService.getZhkBySlug(String(req.params.zhkSlug));
+    // Резолвим Locality любого Locality_Kind; DTO включает поле `kind`
+    // (Requirement 3.2). Поле ответа `zhk` сохранено ради совместимости фасада.
+    const zhk = await GeoService.getLocalityBySlug(String(req.params.zhkSlug));
     if (!zhk) {
-      // Requirement 1.5 — «ресурс не найден», Local_Feed не отображается.
+      // Requirement 2.5 / 3.5 — «локация не найдена», Local_Feed не отображается.
       return res.status(404).json({ notFound: true });
     }
 
@@ -267,29 +322,43 @@ router.post(
   checkRateLimit,
   requireCommunityPublisher,
   async (req: CommunityRequest, res: Response) => {
-    const body = (req.body ?? {}) as { name?: unknown; citySlug?: unknown };
+    const body = (req.body ?? {}) as {
+      name?: unknown;
+      citySlug?: unknown;
+      kind?: unknown;
+    };
     const name = typeof body.name === "string" ? body.name : "";
     const citySlug = typeof body.citySlug === "string" ? body.citySlug : "";
+    // `kind` опционален (Requirement 1.3–1.5): отсутствие/`null` → "zhk"
+    // (Requirement 1.4), недопустимое значение отклоняется как invalid_kind.
+    // Передаём как есть — доменный `createLocality` валидирует его.
+    const kind = body.kind as CreateLocalityInput["kind"];
 
     try {
-      const result = await GeoService.createZhk({
+      const result = await GeoService.createLocality({
         name,
         citySlug,
+        kind,
         createdByAccountId: req.communityAccount?.id ?? null,
       });
 
       switch (result.status) {
         case "created":
-          // Requirement 4.1, 4.6 — новый ЖК создан, Local_Feed доступен сразу.
-          return res.status(201).json({ status: "created", zhk: result.zhk });
+          // Requirement 4.2, 4.4 — новая локация создана, Local_Feed доступен
+          // сразу. Поле `zhk` сохранено ради совместимости фасада (содержит
+          // созданную локацию с полем `kind`).
+          return res
+            .status(201)
+            .json({ status: "created", zhk: result.locality });
         case "duplicate_suggested":
-          // Requirement 4.5 — предлагаем существующий ЖК вместо дубликата.
+          // Requirement 5.1 — предлагаем существующую локацию вместо дубликата.
           return res
             .status(200)
             .json({ status: "duplicate_suggested", existing: result.existing });
         case "rejected":
-          // Requirement 4.3 (invalid_name) / 4.4 (city_not_found) — запись не
-          // создаётся, сообщение поясняет невыполненное условие.
+          // Requirement 1.5 (invalid_kind) / 4.6 (invalid_name) → 400;
+          // 4.7 (city_not_found) → 404. Запись не создаётся, `message`
+          // поясняет невыполненное условие.
           return res
             .status(result.reason === "city_not_found" ? 404 : 400)
             .json({

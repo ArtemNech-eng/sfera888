@@ -5,10 +5,12 @@ import { internalApiBase, internalApiToken } from "../../../../lib/env";
 /**
  * POST /api/community/zhk — создание нового ЖК жителем (уровень доступа 3).
  *
- * Браузер POST'ит сюда JSON `{ name, citySlug }`; мы форвардим его на
+ * Браузер POST'ит сюда JSON `{ name, citySlug, kind? }`; мы форвардим его на
  * `${INTERNAL_API_BASE_URL}/community/geo/zhk` с Bearer-токеном (токен остаётся
  * на сервере — Requirement 20.6) и заголовком `X-Community-Account-Id`,
- * идентифицирующим публикующий Community_Account.
+ * идентифицирующим публикующий Community_Account. Опциональный `kind`
+ * (тип локации, Requirement 4.1) форвардится как есть — валидацию выполняет
+ * api-server.
  *
  * Уровень 3 гейтится на клиенте наличием сессии сообщества: id аккаунта хранится
  * в HTTP-only cookie `kiro_community_account_id` (её выставляет флоу
@@ -31,6 +33,8 @@ const ACCOUNT_COOKIE = "kiro_community_account_id";
 interface ClientPayload {
   name?: unknown;
   citySlug?: unknown;
+  /** Тип локации (Locality_Kind): zhk | district | settlement (Requirement 4.1). */
+  kind?: unknown;
 }
 
 function asString(v: unknown, max: number): string | undefined {
@@ -69,6 +73,18 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "validation_error");
   }
 
+  // Пробрасываем `kind` как есть, если он присутствует в теле запроса
+  // (Requirement 4.1). Валидацию типа выполняет api-server: недопустимое
+  // значение → 400 invalid_kind, отсутствие → тип по умолчанию `zhk`
+  // (Requirement 1.4, 1.5). Отсутствующее поле не форвардим.
+  const forwardBody: { name: string; citySlug: string; kind?: unknown } = {
+    name,
+    citySlug,
+  };
+  if (payload.kind !== undefined) {
+    forwardBody.kind = payload.kind;
+  }
+
   let res: Response;
   try {
     res = await fetch(`${internalApiBase().replace(/\/+$/, "")}/community/geo/zhk`, {
@@ -78,7 +94,7 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${internalApiToken()}`,
         "X-Community-Account-Id": accountId,
       },
-      body: JSON.stringify({ name, citySlug }),
+      body: JSON.stringify(forwardBody),
       cache: "no-store",
     });
   } catch {

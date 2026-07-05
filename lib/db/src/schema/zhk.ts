@@ -18,6 +18,15 @@ import { communityAccountsTable } from "./community-accounts";
 /** Статус живого сообщества ЖК (Requirement 17.2). */
 export type ZhkStatus = "LIVING" | "NON_LIVING";
 
+/** Тип локальной единицы сообщества (Requirement 1.2). */
+export type LocalityKind = "zhk" | "district" | "settlement";
+
+/** Допустимые значения Locality_Kind (Requirement 1.2, 1.5). */
+export const LOCALITY_KINDS = ["zhk", "district", "settlement"] as const;
+
+/** Значение по умолчанию — обратная совместимость (Requirement 1.4, 9.1, 9.6). */
+export const DEFAULT_LOCALITY_KIND: LocalityKind = "zhk";
+
 /** Один корпус ЖК (произвольная структура, отображается только при заполнении). */
 export interface ZhkBuilding {
   name: string;
@@ -50,6 +59,12 @@ export const zhkTable = pgTable(
     cityId: integer("city_id")
       .notNull()
       .references(() => citiesTable.id, { onDelete: "cascade" }),
+    /**
+     * Дискриминатор типа локальности: `zhk | district | settlement`
+     * (Requirement 1.2, 1.4). DEFAULT `'zhk'` сохраняет все дострадийные строки
+     * как ЖК без миграции данных (Requirement 9.1, 9.6).
+     */
+    kind: varchar("kind", { length: 16 }).notNull().default("zhk"),
     /** Атрибут: застройщик (Requirement 1.7). NULL = не отображать. */
     developer: varchar("developer", { length: 200 }),
     /** Атрибут: срок сдачи (Requirement 1.7). */
@@ -83,6 +98,8 @@ export const zhkTable = pgTable(
      */
     cityNameNormalizedIdx: index("zhk_city_name_normalized_idx").on(t.cityId, t.nameNormalized),
     cityStatusIdx: index("zhk_city_status_idx").on(t.cityId, t.status),
+    /** Листинг/фильтрация локаций города по типу (Requirement 2.4). */
+    cityKindIdx: index("zhk_city_kind_idx").on(t.cityId, t.kind),
   }),
 );
 

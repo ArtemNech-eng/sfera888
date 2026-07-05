@@ -33,7 +33,8 @@
  * Фактическая пометка `is_indexable` / включение в sitemap на фасаде — Task 11.2.
  */
 
-import type { Zhk } from "@workspace/db";
+import { db, zhkTable, communityThreadsTable, type Zhk } from "@workspace/db";
+import { and, eq, sql } from "drizzle-orm";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Порог контента (конфигурируемый)
@@ -271,4 +272,137 @@ export function enrichZhkSeedData(
     meetsThreshold: meetsContentThreshold(currentScore, threshold),
     missing,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// recomputeLocalityIndexable — Requirement 6.1–6.5 (community-generalized-locality)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Сигнал наличия агрегированных цен на странице локации. Хранится вне
+ * `zhkTable`, поэтому передаётся вызывающим (по умолчанию — отсутствует).
+ */
+export interface RecomputeIndexableOptions {
+  /** Порог контента; по умолчанию — `getMinContentScore()` (env-конфиг). */
+  threshold?: number;
+  /** Присутствуют ли агрегированные цены (сигнал вне строки `zhk`). */
+  hasAggregatedPrices?: boolean;
+  /** Инъекция БД для тестируемости; по умолчанию — общий пул `@workspace/db`. */
+  database?: typeof db;
+}
+
+/** Результат пересчёта индексируемости локации. */
+export interface RecomputeIndexableResult {
+  /** id Locality_Record (любого Locality_Kind). */
+  localityId: number;
+  /** Пересчитанная оценка контента (`computeContentScore`). */
+  contentScore: number;
+  /** Применённый порог контента. */
+  threshold: number;
+  /** Итоговое значение `is_indexable` после пересчёта. */
+  isIndexable: boolean;
+  /**
+   * Изменилось ли хранимое значение `is_indexable` / `content_score` этим
+   * пересчётом (переход false↔true — Requirement 6.3, 6.4).
+   */
+  changed: boolean;
+}
+
+/**
+ * Пересчитать `is_indexable` для одной Locality по Content_Threshold
+ * (community-generalized-locality Requirements 6.1–6.5).
+ *
+ * ── Kind-агностичность (Requirement 6.1) ────────────────────────────────────
+ * Функция разрешает Locality ИСКЛЮЧИТЕЛЬНО по `zhkTable.id` и НЕ ветвится по
+ * `Locality_Kind` (`zhk` | `district` | `settlement`). Оценка контента строится
+ * из тех же сигналов (застройщик, срок, корпуса, число тем Local_Feed, AI-сид,
+ * агрегированные цены) для локаций любого типа — то есть Content_Threshold
+ * применяется по идентичным критериям независимо от `kind`. Поскольку все
+ * локации живут в таблице `zhk`, порог считается единообразно, и районы/посёлки
+ * попадают в индекс ровно как ЖК.
+ *
+ * ── Значение `is_indexable` ─────────────────────────────────────────────────
+ * `is_indexable = meetsContentThreshold(score, threshold)`:
+ *   • Пока локация НЕ удовлетворяет порогу (в т.ч. только что созданная, ещё не
+ *     проходившая пересчёт — у неё колонка по умолчанию `false`), `is_indexable`
+ *     остаётся `false` (Requirement 6.2).
+ *   • Когда локация начинает удовлетворять порогу — `is_indexable = true`
+ *     (Requirement 6.3); когда перестаёт — `is_indexable = false`
+ *     (Requirement 6.4).
+ *
+ * ── Пересчёт при добавлении/удалении темы (Requirement 6.5) ─────────────────
+ * Вызывается на add/remove темы Local_Feed данной локации: считает актуальное
+ * число тем (`scope = 'zhk'`, `zhk_id = localityId`, публичная видимость),
+ * пересчитывает оценку и записывает `content_score` + `is_indexable`. Запись
+ * выполняется только при фактическом изменении значений (иначе — no-op).
+ *
+ * @param localityId id Locality_Record (любого kind).
+ * @param options    порог, сигнал цен, инъекция БД.
+ * @returns результат пересчёта или `null`, если локации с таким id нет.
+ */
+export async function recomputeLocalityIndexable(
+  localityId: number,
+  options: RecomputeIndexableOptions = {},
+): Promise<RecomputeIndexableResult | null> {
+  const database = options.database ?? db;
+  const threshold = options.threshold ?? getMinContentScore();
+
+  // Разрешаем локацию ТОЛЬКО по id — без фильтра/ветвления по kind (R6.1).
+  const [locality] = await database
+    .select({
+      id: zhkTable.id,
+      developer: zhkTable.developer,
+      completionDate: zhkTable.completionDate,
+      buildings: zhkTable.buildings,
+      bodyMd: zhkTable.bodyMd,
+      contentScore: zhkTable.contentScore,
+      isIndexable: zhkTable.isIndexable,
+    })
+    .from(zhkTable)
+    .where(eq(zhkTable.id, localityId))
+    .limit(1);
+
+  if (!locality) return null;
+
+  // Актуальное число тем Local_Feed данной локации (scope='zhk', zhk_id=...).
+  const [{ threadCount }] = await database
+    .select({ threadCount: sql<number>`count(*)::int` })
+    .from(communityThreadsTable)
+    .where(
+      and(
+        eq(communityThreadsTable.scope, "zhk"),
+        eq(communityThreadsTable.zhkId, localityId),
+        eq(communityThreadsTable.visibility, "public"),
+      ),
+    );
+
+  const buildingsCount = Array.isArray(locality.buildings)
+    ? locality.buildings.length
+    : 0;
+
+  // Сигналы контента — те же для любого kind (R6.1); БЕЗ ветвления по типу.
+  const score = computeContentScore({
+    hasDeveloper: !!(locality.developer && locality.developer.trim().length > 0),
+    hasCompletionDate: !!(
+      locality.completionDate && locality.completionDate.trim().length > 0
+    ),
+    buildingsCount,
+    realThreadCount: Number(threadCount) || 0,
+    hasAggregatedPrices: !!options.hasAggregatedPrices,
+    hasAiSeedBody: !!(locality.bodyMd && locality.bodyMd.trim().length > 0),
+  });
+
+  const isIndexable = meetsContentThreshold(score, threshold);
+  const changed =
+    locality.isIndexable !== isIndexable || locality.contentScore !== score;
+
+  // Пишем только при фактическом изменении (переход false↔true — R6.3/R6.4).
+  if (changed) {
+    await database
+      .update(zhkTable)
+      .set({ contentScore: score, isIndexable })
+      .where(eq(zhkTable.id, localityId));
+  }
+
+  return { localityId, contentScore: score, threshold, isIndexable, changed };
 }

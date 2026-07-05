@@ -23,7 +23,7 @@
 
 import { Router, type Request, type Response } from "express";
 import { db, citiesTable, zhkTable, specialtiesTable, communityThreadsTable } from "@workspace/db";
-import { and, eq, isNotNull, desc } from "drizzle-orm";
+import { and, eq, isNotNull, asc, desc } from "drizzle-orm";
 
 declare const console: { error: (...args: unknown[]) => void };
 
@@ -50,6 +50,12 @@ export interface CommunitySitemapResponse {
 /**
  * ЧИСТЫЙ маппер: из строк БД собрать ответ sitemap, отбросив пустые слаги.
  * Детерминирован и не обращается к БД — точка для unit-теста.
+ *
+ * Список локаций (`zhk`) — это Community_Sitemap_Source (Requirement 7.1–7.4):
+ * входные строки уже отфильтрованы по `is_indexable = true` в запросе, а маппер
+ * гарантирует единый плоский список без дубликатов, детерминированно
+ * отсортированный по `slug` в порядке возрастания; пустой вход → пустой список
+ * без ошибки. Списки `cities`/`specialties` сохраняют исходный порядок запроса.
  */
 export function toCommunitySitemap(
   cities: SlugRow[],
@@ -61,9 +67,16 @@ export function toCommunitySitemap(
     rows
       .map((r) => (typeof r.slug === "string" ? r.slug.trim() : ""))
       .filter((s) => s.length > 0);
+  /**
+   * Слаги Locality_Record для sitemap: ровно индексируемые (уже отфильтрованы),
+   * каждый ровно один раз (дедуп), единым плоским списком по `slug ASC`
+   * (Requirement 7.1, 7.3). Пустой вход → пустой список (Requirement 7.4).
+   */
+  const pickLocalitySlugs = (rows: SlugRow[]): string[] =>
+    Array.from(new Set(pick(rows))).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return {
     cities: pick(cities),
-    zhk: pick(zhk),
+    zhk: pickLocalitySlugs(zhk),
     specialties: pick(specialties),
     threads: threads
       .map((t) => t.id)
@@ -86,10 +99,13 @@ router.get("/", async (_req: Request, res: Response) => {
         .from(citiesTable)
         .where(and(eq(citiesTable.isGeoCovered, true), eq(citiesTable.isActive, true), isNotNull(citiesTable.slug))),
       // ЖК выше порога контента — «тонкие» исключены (Requirement 16.3).
+      // Индексируемые Locality_Record единым плоским списком по slug ASC
+      // (Requirement 7.1, 7.3); пустой набор → пустой список (Requirement 7.4).
       db
         .select({ slug: zhkTable.slug })
         .from(zhkTable)
-        .where(eq(zhkTable.isIndexable, true)),
+        .where(eq(zhkTable.isIndexable, true))
+        .orderBy(asc(zhkTable.slug)),
       // Специальности PRO_Public_Layer (Requirement 6.5).
       db
         .select({ slug: specialtiesTable.slug })

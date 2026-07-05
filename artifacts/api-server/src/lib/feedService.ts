@@ -36,6 +36,8 @@ import {
   communityThreadsTable,
   communityThreadDraftsTable,
   communityAccountsTable,
+  zhkTable,
+  citiesTable,
   type CommunityThread,
 } from "@workspace/db";
 import { and, eq, isNull, desc, lt, or } from "drizzle-orm";
@@ -464,12 +466,23 @@ export class FeedService {
   }
 
   /**
-   * Local_Feed — темы конкретного ЖК (Requirements 1.4, 3.3, 3.6).
+   * Local_Feed — локальная лента конкретной Locality (Requirements 1.4, 3.3, 3.6;
+   * generalized-locality Requirements 2.1, 2.2, 2.6, 3.1, 8.2).
    *
-   * Фильтр: zone=`sosedi`, scope=`zhk`, zhk_id=<ЖК>, visibility=`public`.
-   * Возвращаются ТОЛЬКО темы данного ЖК — темы других ЖК исключаются
-   * (Requirement 3.3). Сортировка — по дате создания `createdAt` DESC
-   * (Requirement 1.4). Пустая лента → `emptyState: true` (Requirement 3.6).
+   * Фильтр: zone=`sosedi`, scope=`zhk`, zhk_id=<Locality.id>, visibility=`public`.
+   * Возвращаются ТОЛЬКО темы данной Locality — темы других локаций исключаются
+   * (Requirement 3.3). Сортировка — по дате создания `createdAt` DESC, при
+   * равенстве дат — по id темы DESC (tie-break через `readFeed`,
+   * generalized-locality Requirement 2.1). Пустая лента → `emptyState: true`,
+   * `items: []`, без ошибки (Requirement 3.6, generalized-locality Requirement 2.6).
+   *
+   * Kind-агностично (generalized-locality Requirements 2.2, 8.2): логика ленты
+   * определяется исключительно привязкой к `zhk_id` + `scope = 'zhk'` и НЕ
+   * ветвится по `Locality_Kind` (`zhk` | `district` | `settlement`). Поскольку
+   * все локации любого типа живут в таблице `zhk` и их темы привязываются тем же
+   * дискриминатором `scope = 'zhk'`, эта же логика единообразно обслуживает ЖК
+   * (Requirement 3.1), районы и посёлки. `zhkId` здесь — идентификатор Locality
+   * любого типа (физическое имя параметра сохранено ради обратной совместимости).
    */
   async getLocalFeed(zhkId: number, query: FeedQuery = {}): Promise<FeedResult> {
     return this.readFeed({
@@ -628,6 +641,33 @@ export class FeedService {
 
     if (zhkId == null && cityId == null) {
       return { status: "rejected", reason: "no_target" };
+    }
+
+    // Валидация существования целевого места (generalized-locality Requirement 8.5):
+    // публикация с указанием НЕсуществующей Locality/City отклоняется ДО вставки —
+    // тема не создаётся, Locality/City не создаётся, возвращается индикация
+    // отсутствия целевого места. Маршрут `/ask` резолвит адресата по slug (404 на
+    // отсутствие) ещё до сервиса; эта проверка обеспечивает тот же инвариант на
+    // уровне сервиса при обращении по id, возвращая чистый `no_target` вместо
+    // нарушения внешнего ключа (community_threads.zhk_id / city_id).
+    if (zhkId != null) {
+      const [locality] = await this.database
+        .select({ id: zhkTable.id })
+        .from(zhkTable)
+        .where(eq(zhkTable.id, zhkId))
+        .limit(1);
+      if (!locality) {
+        return { status: "rejected", reason: "no_target" };
+      }
+    } else {
+      const [city] = await this.database
+        .select({ id: citiesTable.id })
+        .from(citiesTable)
+        .where(eq(citiesTable.id, cityId as number))
+        .limit(1);
+      if (!city) {
+        return { status: "rejected", reason: "no_target" };
+      }
     }
 
     const category =

@@ -8,11 +8,24 @@ import { FeedList } from "../../../components/community/FeedList";
 import { CreateZhkForm } from "../../../components/community/CreateZhkForm";
 import { AskForm } from "../../../components/community/AskForm";
 import { CommunityRail } from "../../../components/community/CommunityRail";
+import type { CommunityLocalityKind } from "../../../lib/types";
 
 /**
  * Sosedi_Zone — страница города `/goroda/[city]` (spec task 13.1). Zen-стиль.
- * Список ЖК города + City_Feed + форма добавления ЖК. Нет города → 404.
+ * Единый список локаций города (ЖК, районы и посёлки вперемешку, без группировки
+ * по типу — Requirement 2.4) + City_Feed + форма добавления места. Нет города → 404.
  */
+
+/** Человекочитаемая подпись типа локации для карточки (Requirement 2.4, 4.1). */
+const KIND_LABELS: Record<CommunityLocalityKind, string> = {
+  zhk: "Жилой комплекс",
+  district: "Район / микрорайон",
+  settlement: "Посёлок",
+};
+
+function kindLabel(kind: CommunityLocalityKind | undefined): string {
+  return kind ? KIND_LABELS[kind] ?? KIND_LABELS.zhk : KIND_LABELS.zhk;
+}
 
 export const revalidate = 60;
 
@@ -64,7 +77,7 @@ export default async function CityPage({ params }: { params: Promise<RouteParams
             <h1 className="zen-title">{city.h1 ?? city.name}</h1>
             <p className="zen-sub">
               Общегородские темы: где купить материалы, отзывы о магазинах, поиск
-              проверенных бригад. Выберите свой ЖК ниже.
+              проверенных бригад. Выберите своё место ниже — ЖК, район или посёлок.
             </p>
 
             <div className="zen-panel" style={{ marginTop: 8 }}>
@@ -86,11 +99,12 @@ export default async function CityPage({ params }: { params: Promise<RouteParams
 
             {zhk.length > 0 ? (
               <>
-                <h2 className="zen-section-title">Жилые комплексы</h2>
+                <h2 className="zen-section-title">Места сообщества</h2>
                 <div className="zen-grid zen-grid--2">
                   {zhk.map((z) => (
                     <Link key={z.slug} href={`/zhk/${z.slug}`} className="zen-card">
                       <div className="zen-card-title">{z.name}</div>
+                      <div className="zen-card-sub">{kindLabel(z.kind)}</div>
                       <div className="zen-card-arrow">Локальное сообщество →</div>
                     </Link>
                   ))}
@@ -109,8 +123,8 @@ export default async function CityPage({ params }: { params: Promise<RouteParams
               </section>
               <aside className="lg:sticky lg:top-24 lg:self-start" style={{ marginTop: 52 }}>
                 <div className="zen-panel">
-                  <div className="zen-panel-title">Нет вашего ЖК?</div>
-                  <p className="zen-panel-sub">Добавьте жилой комплекс — соседское обсуждение начнётся сразу.</p>
+                  <div className="zen-panel-title">Нет вашего места?</div>
+                  <p className="zen-panel-sub">Добавьте ЖК, район или посёлок — соседское обсуждение начнётся сразу.</p>
                   <div style={{ marginTop: 16 }}>
                     <CreateZhkForm citySlug={city.slug} cityName={city.name} />
                   </div>

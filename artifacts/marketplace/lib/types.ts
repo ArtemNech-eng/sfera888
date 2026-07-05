@@ -504,10 +504,20 @@ export interface CommunityZhkBuilding {
 }
 
 /**
- * Публичный DTO ЖК для страницы `/zhk/[zhk]` (Geo_Service.ZhkView).
+ * Тип локальной единицы сообщества (Locality_Kind, Requirement 1.2):
+ * `zhk` (жилой комплекс), `district` (район / микрорайон), `settlement`
+ * (посёлок / частный сектор).
+ */
+export type CommunityLocalityKind = "zhk" | "district" | "settlement";
+
+/**
+ * Публичный DTO Locality для страницы `/zhk/[zhk]` (Geo_Service.LocalityView).
  *
- * Атрибуты `developer`, `completionDate`, `buildings` присутствуют ТОЛЬКО когда
- * заполнены — незаполненные не отображаются (Requirement 1.7).
+ * Обобщение прежнего ЖК: страница обслуживает локацию любого `kind`
+ * (Requirement 3.2). Атрибуты `developer`, `completionDate`, `buildings`
+ * присутствуют ТОЛЬКО когда заполнены — незаполненные не отображаются
+ * (Requirement 1.7). `isIndexable` пробрасывается, чтобы страница эмитила
+ * `noindex` тогда и только тогда, когда `isIndexable === false` (Requirement 6.7).
  */
 export interface CommunityZhk {
   id: number;
@@ -515,6 +525,10 @@ export interface CommunityZhk {
   name: string;
   cityId: number;
   status: string;
+  /** Тип локальности (Requirement 1.2, 3.2). */
+  kind: CommunityLocalityKind;
+  /** Индексируемость страницы — noindex iff `false` (Requirement 6.7). */
+  isIndexable: boolean;
   developer?: string;
   completionDate?: string;
   buildings?: CommunityZhkBuilding[];
@@ -556,11 +570,13 @@ export interface CommunityCityResponse {
   zhk?: CommunityCityZhkRef[];
 }
 
-/** Компактный DTO ЖК в списке города. */
+/** Компактный DTO локации в списке города (Requirement 2.4). */
 export interface CommunityCityZhkRef {
   slug: string;
   name: string;
   status: string;
+  /** Тип локальности (Requirement 1.2, 2.4): ЖК, район или посёлок. */
+  kind: CommunityLocalityKind;
 }
 
 /** Ответ GET /api/community/geo/zhk/:zhkSlug (Requirements 1.4, 1.5, 1.7). */
