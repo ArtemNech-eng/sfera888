@@ -147,7 +147,7 @@ console.log('[cors] Allowed origins:', allowedOrigins);
 app.use(cors({
   origin: (origin, callback) => {
     console.log(`[cors] Checking origin: ${origin}`);
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin) || origin?.includes("sslip.io")) {
       return callback(null, true);
     }
     console.log(`[cors] BLOCKED origin: ${origin}`);
