@@ -13,6 +13,12 @@ export interface City {
   h1: string | null;
   bodyMd: string | null;
   isActive: boolean;
+  /**
+   * city-launch-model: город операционно запущен (есть мастера, полный опыт
+   * маркетплейса). Города с `isLaunched=false` — в режиме «пре-лонч»: их
+   * контентные страницы копят SEO-вес, но каталог/приём заявок не открыты.
+   */
+  isLaunched: boolean;
 }
 
 export interface Service {

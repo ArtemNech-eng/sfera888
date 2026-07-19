@@ -34,6 +34,11 @@ interface Props {
    * Allowed values are constrained on the route handler's whitelist.
    */
   sourcePageType?: "service-city" | "master" | "design_waitlist";
+  /**
+   * Optional. Overrides the submit button label. Defaults to "Получить мастера".
+   * Used e.g. by pre-launch cities to render "Записаться в лист ожидания".
+   */
+  submitLabel?: string;
 }
 
 type Status = "idle" | "submitting" | "error";
@@ -123,6 +128,7 @@ export function LeadForm({
   attachedMasterTitle,
   commentPrefix,
   sourcePageType,
+  submitLabel,
 }: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [errMessage, setErrMessage] = useState<string | null>(null);
@@ -342,7 +348,7 @@ export function LeadForm({
         disabled={submitting}
         className="inline-flex items-center justify-center rounded-xl bg-[var(--color-cta)] px-5 py-3 text-base font-medium text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] disabled:opacity-60"
       >
-        {submitting ? "Отправляем…" : "Получить мастера"}
+        {submitting ? "Отправляем…" : (submitLabel ?? "Получить мастера")}
       </button>
     </form>
   );
