@@ -100,6 +100,10 @@ function toCityDto(c: CityRow) {
     h1: c.h1,
     bodyMd: c.bodyMd,
     isActive: c.isActive,
+    // city-launch-model: запущен ли город операционно. Пре-лонч города
+    // (isGeoCovered=true, isLaunched=false) копят SEO-вес, но каталог/заявки
+    // не открыты. Фронт использует флаг, чтобы разграничить режимы страниц.
+    isLaunched: c.isLaunched,
   };
 }
 

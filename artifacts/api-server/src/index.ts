@@ -115,6 +115,21 @@ async function runRuntimeFixes() {
   // блок, чтобы `migrate()` не упал на `relation already exists`.
   await applyCommunityBaseline();
 
+  // ── city-launch-model (spec: .kiro/specs/city-launch-model) ────────────────
+  // Флаг `is_launched` разграничивает «операционно запущенные» города (есть
+  // мастера, полный опыт маркетплейса) и «пре-лонч/SEO» города (страницы копят
+  // вес, но каталог/заявки не открыты). Аддитивно и идемпотентно.
+  //
+  // Краснодар — единственный запущенный город на момент написания. Ставим ему
+  // is_launched=true безусловно (idempotent), чтобы флагманский город никогда
+  // случайно не «схлопнулся» в 404 из-за дефолта false. Остальные города
+  // управляются через БД (переключаются по факту масштабирования).
+  // Зеркало: artifacts/api-server/migrations/2026-07-19-city-launch-model.sql.
+  await db.execute(sql.raw(`
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS is_launched boolean NOT NULL DEFAULT false;
+UPDATE cities SET is_launched = true WHERE slug = 'krasnodar';
+  `));
+
   console.log("[startup] Runtime fixes applied");
 }
 
