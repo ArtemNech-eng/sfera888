@@ -32,7 +32,9 @@ export async function generateMetadata(
   const path = `/${serviceSlug}/${citySlug}`;
   // city-launch-model (решение №3): пре-лонч город — длинный хвост «услуга×город»
   // НЕ индексируем (только хаб + контент). Отдаём noindex,follow и честный тайтл.
-  if (!data.city.isLaunched) {
+  // Проверка строго `=== false`: если поле отсутствует (старый api-server во время
+  // выката), ведём себя как launched — безопасный фолбэк, Краснодар не ломается.
+  if (data.city.isLaunched === false) {
     const cityIn = data.city.nameIn ?? data.city.name;
     return {
       title: { absolute: `${data.service.name} в ${cityIn} — скоро запускаемся` },
@@ -100,8 +102,9 @@ export default async function ServiceCityPage(
   // показываем каталог мастеров и обычную форму «мастер перезвонит». Вместо этого
   // — честный экран: лист ожидания для клиента + набор мастеров. Страница уже
   // помечена noindex в generateMetadata и исключена из sitemap. Launched-путь
-  // (Краснодар) ниже не меняется.
-  if (!data.city.isLaunched) {
+  // (Краснодар) ниже не меняется. Проверка строго `=== false`: отсутствие поля
+  // (старый api-server во время выката) трактуем как launched — безопасный фолбэк.
+  if (data.city.isLaunched === false) {
     return <PreLaunchServiceCity data={data} serviceSlug={serviceSlug} citySlug={citySlug} />;
   }
 
