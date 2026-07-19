@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fetchCities } from "../lib/api";
 
 /**
  * Portal-grade footer (plan §21.9).
@@ -8,8 +9,24 @@ import Link from "next/link";
  * "this is a national platform with a lot under the hood" feel.
  *
  * Server component, zero JS.
+ *
+ * city-launch-model: колонка «Города» строится из данных — только операционно
+ * запущенные города (isLaunched=true), чтобы не вести на пустой каталог
+ * незапущенного города. Деградирует к «Все города» при недоступности API.
  */
-export function Footer() {
+export async function Footer() {
+  let cityLinks: FooterLink[] = [];
+  try {
+    const cities = await fetchCities();
+    cityLinks = cities
+      .filter((c) => c.isLaunched && c.slug)
+      .map((c) => ({ href: `/mastera?city=${encodeURIComponent(c.slug)}`, label: c.name }));
+  } catch {
+    // API недоступен — не роняем футер, оставляем только ссылку «Все города».
+    cityLinks = [];
+  }
+  cityLinks.push({ href: "/mastera", label: "Все города" });
+
   return (
     <footer className="mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
@@ -57,17 +74,7 @@ export function Footer() {
             ]}
           />
 
-          <FooterColumn
-            title="Города"
-            links={[
-              { href: "/mastera?city=moskva", label: "Москва" },
-              { href: "/mastera?city=spb", label: "Санкт-Петербург" },
-              { href: "/mastera?city=ekaterinburg", label: "Екатеринбург" },
-              { href: "/mastera?city=novosibirsk", label: "Новосибирск" },
-              { href: "/mastera?city=krasnodar", label: "Краснодар" },
-              { href: "/mastera", label: "Все города" },
-            ]}
-          />
+          <FooterColumn title="Города" links={cityLinks} />
 
           <FooterColumn
             title="О нас"

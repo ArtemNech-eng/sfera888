@@ -28,6 +28,10 @@ function pickCitySlug(cities: City[]): string | null {
 export default async function ServicesPage() {
   const [services, cities] = await Promise.all([fetchServices(), fetchCities()]);
   const fallbackCity = pickCitySlug(cities);
+  // city-launch-model: рейл городов ведёт в каталог мастеров (/mastera?city=),
+  // поэтому показываем только операционно запущенные города — иначе ссылка вела
+  // бы в пустой каталог. Пре-лонч города находят через свои хабы /goroda/[city].
+  const launchedCities = cities.filter((c) => c.isLaunched);
 
   const breadcrumbsLd = breadcrumbJsonLd([
     { name: "Главная", url: `${publicUrl()}/` },
@@ -98,18 +102,18 @@ export default async function ServicesPage() {
       </section>
 
       {/* ── Cities rail ── */}
-      {cities.length > 0 ? (
+      {launchedCities.length > 0 ? (
         <section className="border-t border-[var(--color-border)] bg-[var(--color-cream-deep)]">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
             <h2 className="font-display text-3xl text-[var(--color-text)] sm:text-4xl">
-              Работаем по всей стране.
+              Города, где уже работаем.
             </h2>
             <p className="mt-3 max-w-2xl text-base leading-relaxed text-[var(--color-muted)]">
-              В каждом городе свои мастера — выбирайте локального для быстрого
-              выезда.
+              Выбирайте свой город — в нём свои проверенные мастера для быстрого
+              выезда. Новые города открываем по мере подключения мастеров.
             </p>
             <ul className="mt-8 flex flex-wrap gap-2">
-              {cities.map((c) => (
+              {launchedCities.map((c) => (
                 <li key={c.slug}>
                   <Link
                     href={`/mastera?city=${encodeURIComponent(c.slug)}`}
