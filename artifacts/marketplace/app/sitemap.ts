@@ -45,8 +45,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   const pairs: MetadataRoute.Sitemap = [];
+  // city-launch-model (решение №3): длинный хвост «услуга×город» индексируем
+  // ТОЛЬКО для операционно запущенных городов (isLaunched=true). Пре-лонч города
+  // (isGeoCovered=true, isLaunched=false) копят вес через контентные хабы
+  // (/goroda/[city] из community-набора ниже), а не через пустую матрицу услуг.
+  const launchedCities = cities.filter((c) => c.isLaunched);
   for (const service of services) {
-    for (const city of cities) {
+    for (const city of launchedCities) {
       pairs.push({
         url: `${base}/${service.slug}/${city.slug}`,
         lastModified: now,
