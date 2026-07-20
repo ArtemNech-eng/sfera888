@@ -138,15 +138,25 @@ export async function runRealPriceBackfill(opts: { apply: boolean }): Promise<Ba
 
   if (!apply) return report;
 
-  await db.transaction(async (tx) => {
-    if (touchedReceiptIds.length > 0) {
-      await tx.delete(pricePointsTable).where(inArray(pricePointsTable.receiptId, touchedReceiptIds));
-    }
-    if (points.length > 0) {
-      await tx.insert(pricePointsTable).values(points);
-    }
-  });
-  report.pointsWritten = points.length;
-  report.aggregates = await recomputePriceAggregates();
+  try {
+    await db.transaction(async (tx) => {
+      if (touchedReceiptIds.length > 0) {
+        await tx.delete(pricePointsTable).where(inArray(pricePointsTable.receiptId, touchedReceiptIds));
+      }
+      if (points.length > 0) {
+        await tx.insert(pricePointsTable).values(points);
+      }
+    });
+    report.pointsWritten = points.length;
+  } catch (e) {
+    throw new Error(`запись price_points: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  try {
+    report.aggregates = await recomputePriceAggregates();
+  } catch (e) {
+    throw new Error(`пересчёт агрегатов: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   return report;
 }

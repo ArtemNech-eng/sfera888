@@ -34,9 +34,14 @@ export function RealPriceCard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apply }),
       });
-      const d = await r.json();
-      if (!r.ok || !d.ok) setError("Не удалось выполнить. Нужны права администратора.");
-      else setReport(d.report as BackfillReport);
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 401 || r.status === 403) {
+        setError("Нужны права администратора (войдите под admin).");
+      } else if (!r.ok || !d.ok) {
+        setError(`Ошибка сервера: ${d?.message || d?.error || r.status}`);
+      } else {
+        setReport(d.report as BackfillReport);
+      }
     } catch {
       setError("Сеть недоступна, попробуйте позже.");
     } finally {
