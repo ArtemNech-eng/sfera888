@@ -33,22 +33,21 @@ export function HomeForMasters() {
 
           <div>
             <p className="text-lg leading-relaxed text-white/80 sm:text-xl sm:leading-[1.55]">
-              Первая заявка — в среднем на следующий день. Без выкупа лидов
-              и блокировки счёта.
+              Платформа для мастеров: портфолио, отзывы и удобное управление
+              заявками от клиентов — от первой заявки до закрытия объекта.
             </p>
             <p className="mt-5 text-base leading-relaxed text-white/65 sm:text-lg">
-              Платформа для мастеров с инструментами портфолио, отзывов и
-              управления заявками. Подключение бесплатное, договор на каждом
-              заказе, оплата после выполнения.
+              Работайте с клиентами платформы и ведите заказы в приложении.
+              Все условия для мастеров — на отдельной странице.
             </p>
 
             <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
               <a
                 href={EXTERNAL_FOR_MASTERS}
                 rel="noopener noreferrer"
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-cta)] px-7 text-base font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)]"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-7 text-base font-semibold text-[var(--color-text)] shadow-cozy-md transition hover:bg-white/90"
               >
-                Создать портфолио
+                Стать мастером
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M5 12h14" />
                   <path d="m12 5 7 7-7 7" />

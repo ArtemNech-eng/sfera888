@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { fetchRabotyList } from "../lib/api";
 import type { RabotyListItem } from "../lib/types";
 import { HomeHero } from "../components/home/HomeHero";
+import { HomePillars } from "../components/home/HomePillars";
 import { HomePopularNow } from "../components/home/HomePopularNow";
 import { HomePopularObjects } from "../components/home/HomePopularObjects";
 import { HomeAIDesigns } from "../components/home/HomeAIDesigns";
@@ -58,6 +59,7 @@ export default async function HomePage() {
   return (
     <>
       <HomeHero />
+      <HomePillars />
       <HomePopularNow />
       <HomePopularObjects cases={cases} />
       <HomeAIDesigns />
