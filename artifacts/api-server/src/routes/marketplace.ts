@@ -1741,7 +1741,7 @@ router.get("/real-price/:workSlug/:citySlug", async (req, res) => {
       return;
     }
     const [city] = await db
-      .select({ slug: citiesTable.slug, name: citiesTable.name })
+      .select({ slug: citiesTable.slug, name: citiesTable.name, nameIn: citiesTable.nameIn })
       .from(citiesTable)
       .where(and(eq(citiesTable.slug, citySlug), eq(citiesTable.isActive, true)))
       .limit(1);
@@ -1763,7 +1763,7 @@ router.get("/real-price/:workSlug/:citySlug", async (req, res) => {
     setOkCache(res);
     res.json({
       workType: { slug: workType.slug, name: workType.name, category: workType.category, unit: workType.defaultUnit },
-      city: { slug: city.slug, name: city.name },
+      city: { slug: city.slug, name: city.name, nameIn: city.nameIn ?? null },
       cityAggregate,
       zhk,
     });

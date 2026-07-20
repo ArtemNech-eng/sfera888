@@ -18,11 +18,12 @@ export async function generateMetadata({ params }: { params: Promise<RouteParams
   if (!data) return { robots: { index: false, follow: false } };
   const agg = data.zhk.find((z) => z.district === zhk) ?? null;
   const work = data.workType.name.toLowerCase();
-  const title = `Сколько стоит ${work} в ${zhk}, ${data.city.name} — реальные цены`;
+  const cityLoc = data.city.nameIn ?? data.city.name;
+  const title = `Сколько стоит ${work} в ${zhk}, ${cityLoc} — реальные цены`;
   const description =
     agg && agg.n > 0
-      ? `Реальные цены на ${work} в ${zhk} (${data.city.name}) по ${agg.n} подтверждённым сделкам: медиана и диапазон.`
-      : `Цены на ${work} в ${zhk} (${data.city.name}) — собираем по подтверждённым сделкам.`;
+      ? `Реальные цены на ${work} в ${zhk} (${cityLoc}) по ${agg.n} подтверждённым сделкам: медиана и диапазон.`
+      : `Цены на ${work} в ${zhk} (${cityLoc}) — собираем по подтверждённым сделкам.`;
   return {
     title,
     description,

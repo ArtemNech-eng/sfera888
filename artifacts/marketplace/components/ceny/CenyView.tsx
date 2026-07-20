@@ -20,7 +20,8 @@ export function CenyView({ data, scope, zhkName }: Props) {
 
   const work = data.workType.name;
   const city = data.city.name;
-  const locative = scope === "zhk" && zhkName ? `${zhkName}, ${city}` : city;
+  const cityLoc = data.city.nameIn?.trim() || data.city.name;
+  const locative = scope === "zhk" && zhkName ? `${zhkName}, ${cityLoc}` : cityLoc;
   const unit = agg?.unit ?? data.workType.unit ?? null;
 
   const p50 = num(agg?.p50);
@@ -34,7 +35,7 @@ export function CenyView({ data, scope, zhkName }: Props) {
     <div className="zen">
       <div className="zen-shell">
         <div className="zen-crumbs">
-          <Link href="/">Главная</Link> · <Link href="/ceny">Цены</Link> · <span>{work}</span> · <span>{locative}</span>
+          <Link href="/">Главная</Link> · <span>Цены</span> · <span>{work}</span> · <span>{locative}</span>
         </div>
 
         <span className="zen-eyebrow">Реальная цена · подтверждённые сделки</span>
@@ -118,7 +119,7 @@ export function CenyView({ data, scope, zhkName }: Props) {
             <div>
               <div style={{ fontWeight: 800, fontSize: 20 }}>Нужен такой ремонт?</div>
               <p style={{ margin: "6px 0 0", color: "#8a4a3d", fontSize: 15 }}>
-                Подберём проверенного мастера в {city} — по реальной цене, без наценки платформы.
+                Подберём проверенного мастера в {cityLoc} — по реальной цене, без наценки платформы.
               </p>
             </div>
             <Link href="/mastera" className="zen-btn">Найти мастера →</Link>

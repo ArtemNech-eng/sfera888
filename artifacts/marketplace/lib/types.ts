@@ -625,7 +625,7 @@ export interface PriceAggregateDTO {
 
 export interface RealPriceResponse {
   workType: { slug: string; name: string; category: string; unit: string | null };
-  city: { slug: string; name: string };
+  city: { slug: string; name: string; nameIn: string | null };
   cityAggregate: PriceAggregateDTO | null;
   zhk: PriceAggregateDTO[];
 }

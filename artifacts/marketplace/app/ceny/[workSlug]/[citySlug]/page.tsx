@@ -17,11 +17,12 @@ export async function generateMetadata({ params }: { params: Promise<RouteParams
   if (!data) return { robots: { index: false, follow: false } };
   const agg = data.cityAggregate;
   const work = data.workType.name.toLowerCase();
-  const title = `Сколько стоит ${work} в ${data.city.name} — реальные цены`;
+  const cityLoc = data.city.nameIn ?? data.city.name;
+  const title = `Сколько стоит ${work} в ${cityLoc} — реальные цены`;
   const description =
     agg && agg.n > 0
-      ? `Реальные цены на ${work} в ${data.city.name} по ${agg.n} подтверждённым сделкам: медиана и диапазон P25–P75, динамика за 12 месяцев.`
-      : `Цены на ${work} в ${data.city.name} — собираем по подтверждённым сделкам платформы.`;
+      ? `Реальные цены на ${work} в ${cityLoc} по ${agg.n} подтверждённым сделкам: медиана и диапазон P25–P75, динамика за 12 месяцев.`
+      : `Цены на ${work} в ${cityLoc} — собираем по подтверждённым сделкам платформы.`;
   return {
     title,
     description,
