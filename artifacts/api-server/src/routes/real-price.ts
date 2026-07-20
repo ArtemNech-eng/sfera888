@@ -34,8 +34,9 @@ router.post("/backfill", requireRole("admin"), async (req, res) => {
     const report = await runRealPriceBackfill({ apply });
     res.json({ ok: true, report });
   } catch (e) {
-    console.error("[real-price/backfill]", e instanceof Error ? e.message : e);
-    res.status(500).json({ error: "backfill_failed" });
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[real-price/backfill]", message, e instanceof Error ? e.stack : "");
+    res.status(500).json({ error: "backfill_failed", message });
   }
 });
 
