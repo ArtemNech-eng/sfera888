@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
+import { RealPriceCard } from "@/components/RealPriceCard";
 import { useGetCities, useCreateCity, useDeleteCity, useGetServices, useCreateService, useDeleteService } from "@workspace/api-client-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { Trash2, Plus, MapPin, Wrench, Percent, Save, Loader2, Zap, UserCheck, Users, ToggleLeft } from "lucide-react";
@@ -772,6 +773,8 @@ export default function Settings() {
               </div>
             </div>
           </div>
+
+          <RealPriceCard />
 
         </div>
       </Layout>

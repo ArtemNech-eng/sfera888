@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { recomputePriceAggregates } from "../lib/priceAggregation.js";
+import { runRealPriceBackfill } from "../lib/realPriceBackfill.js";
 
 /**
  * Real Price — админ-эндпойнт пересчёта агрегатов (spec: `.kiro/specs/real-price`).
@@ -22,6 +23,19 @@ router.post("/recompute", requireRole("admin"), async (_req, res) => {
   } catch (e) {
     console.error("[real-price/recompute]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "recompute_failed" });
+  }
+});
+
+// POST /api/real-price/backfill — импорт исторических смет в цены. Body { apply }.
+// apply=false (по умолчанию) — сухой прогон (отчёт). apply=true — запись + пересчёт.
+router.post("/backfill", requireRole("admin"), async (req, res) => {
+  const apply = req.body?.apply === true;
+  try {
+    const report = await runRealPriceBackfill({ apply });
+    res.json({ ok: true, report });
+  } catch (e) {
+    console.error("[real-price/backfill]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "backfill_failed" });
   }
 });
 
