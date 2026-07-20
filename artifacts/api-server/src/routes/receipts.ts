@@ -1,13 +1,12 @@
 import { Router, type Request } from "express";
-import { db, receiptsTable, ordersTable, mastersTable, leadsTable, transactionsTable, pricePointsTable } from "@workspace/db";
+import { db, receiptsTable, ordersTable, mastersTable, leadsTable, transactionsTable } from "@workspace/db";
 import { sendMaxMessage } from "../maxBot.js";
 import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { checkFomoTransition } from "../lib/fomoBlock.js";
-import { slugify } from "../lib/slug.js";
-import { stagesToLineItems, stagesTotal, stageLinesToPoints } from "../lib/realPrice.js";
-import { recomputePriceAggregates } from "../lib/priceAggregation.js";
+import { stagesToLineItems, stagesTotal } from "../lib/realPrice.js";
+import { publishObjectForMaster } from "../lib/objectService.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -367,64 +366,16 @@ router.patch("/:id", async (req: any, res) => {
 });
 
 // ─── POST /:id/publish — публикация Объекта как кейса + подача ценовых точек ──
-// Real Price (spec: .kiro/specs/real-price). Мастер публикует завершённый Объект:
-// генерируем slug, ставим is_published/is_indexable, из этапов формируем
-// нормализованные price_points и пересчитываем агрегаты — петля замыкается.
+// Real Price (spec: .kiro/specs/real-price). Тонкая обёртка над общим сервисом
+// (lib/objectService) — та же логика используется из кабинета мастера.
 router.post("/:id/publish", async (req: any, res) => {
   const id = parseInt(String(req.params.id));
   const masterId = req.session?.masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
 
-  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.id, id));
-  if (!receipt || receipt.masterId !== masterId) return res.status(404).json({ error: "Объект не найден" });
-
-  const stages = Array.isArray(receipt.stages) ? receipt.stages : [];
-  if (stages.length === 0) return res.status(400).json({ error: "Заполните этапы сметы перед публикацией" });
-
-  const consent = receipt.publishConsent || req.body?.consent === true;
-  if (!consent) return res.status(400).json({ error: "Нужно согласие клиента на публикацию фото" });
-
-  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, receipt.orderId));
-  const base = slugify([receipt.serviceType, receipt.city, receipt.zhk].filter(Boolean).join("-"));
-  const slug = receipt.slug ?? `${base || "obekt"}-${receipt.id}`;
-  const points = stageLinesToPoints(stages);
-  const closedAt = order?.completedAt ?? new Date();
-
-  await db.transaction(async (tx) => {
-    await tx.update(receiptsTable).set({
-      isPublished: true,
-      publishedAt: new Date(),
-      isIndexable: true,
-      publishConsent: true,
-      slug,
-      objectType: receipt.objectType ?? "project",
-    }).where(eq(receiptsTable.id, id));
-
-    await tx.delete(pricePointsTable).where(eq(pricePointsTable.receiptId, id));
-    if (points.length > 0) {
-      await tx.insert(pricePointsTable).values(
-        points.map((p) => ({
-          orderId: receipt.orderId,
-          receiptId: receipt.id,
-          masterId: receipt.masterId,
-          workTypeId: p.workTypeId,
-          unit: p.unit,
-          quantity: p.quantity != null ? String(p.quantity) : null,
-          unitPrice: String(p.unitPrice),
-          total: String(p.total),
-          city: order?.city ?? receipt.city,
-          district: order?.district ?? receipt.district ?? null,
-          zhk: receipt.zhk ?? null,
-          source: receipt.source ?? "platform",
-          closedAt,
-        })),
-      );
-    }
-  });
-
-  recomputePriceAggregates().catch((e) => console.error("[receipts/publish recompute]", e instanceof Error ? e.message : e));
-
-  res.json({ ok: true, slug, url: `/raboty/${slug}`, pricePoints: points.length });
+  const result = await publishObjectForMaster(masterId, id, { consent: req.body?.consent === true });
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.json({ ok: true, ...result.data });
 });
 
 // ─── CRM: POST /api/receipts/crm — Admin/operator creates receipt ─────────────

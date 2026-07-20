@@ -35,6 +35,12 @@ import {
   type AssembleInput,
 } from "../lib/aiContent.js";
 import { getPendingActionsForMaster } from "../lib/stuckOrders.js";
+import {
+  listActiveWorkTypes,
+  getObjectForOrder,
+  saveObject,
+  publishObjectForMaster,
+} from "../lib/objectService.js";
 const authRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 5 });
 const registerRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
 const forgotPasswordRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
@@ -3055,6 +3061,44 @@ router.post("/orders/:id/call-report", requireMasterPwa, async (req, res) => {
   });
 
   res.json({ success: true, scheduledAt: scheduledDate ? scheduledDate.toISOString() : null });
+});
+
+// ─── Объект (Real Price): редактор карточки в кабинете мастера ─────────────────
+// Кабинет на маркетплейсе ходит только через прокси /api/cabinet/* → /master-pwa/*,
+// поэтому CRUD Объекта живёт здесь и делегирует в общий сервис (lib/objectService).
+
+// Словарь видов работ — пикер позиций этапа.
+router.get("/work-types", requireMasterPwa, async (_req, res) => {
+  const items = await listActiveWorkTypes();
+  res.json(items);
+});
+
+// Контекст заказа + Объект (если уже создан) — экран редактора.
+router.get("/objects/:orderId", requireMasterPwa, async (req: any, res) => {
+  const masterId = req.session.masterId as number;
+  const orderId = parseInt(String(req.params.orderId), 10);
+  if (!Number.isFinite(orderId)) return res.status(400).json({ error: "Неверный orderId" });
+  const result = await getObjectForOrder(masterId, orderId);
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.json(result.data);
+});
+
+// Создать/сохранить Объект (upsert по заказу).
+router.post("/objects", requireMasterPwa, async (req: any, res) => {
+  const masterId = req.session.masterId as number;
+  const result = await saveObject(masterId, req.body ?? {});
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.json(result.data);
+});
+
+// Опубликовать Объект как кейс + подать ценовые точки.
+router.post("/objects/:id/publish", requireMasterPwa, async (req: any, res) => {
+  const masterId = req.session.masterId as number;
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Неверный id" });
+  const result = await publishObjectForMaster(masterId, id, { consent: req.body?.consent === true });
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.json({ ok: true, ...result.data });
 });
 
 export default router;
