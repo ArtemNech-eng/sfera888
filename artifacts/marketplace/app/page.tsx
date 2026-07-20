@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
-import { fetchRabotyList } from "../lib/api";
-import type { RabotyListItem } from "../lib/types";
-import { HomeHero } from "../components/home/HomeHero";
-import { HomePillars } from "../components/home/HomePillars";
-import { HomePopularNow } from "../components/home/HomePopularNow";
-import { HomePopularObjects } from "../components/home/HomePopularObjects";
-import { HomeAIDesigns } from "../components/home/HomeAIDesigns";
-import { HomeQuestions } from "../components/home/HomeQuestions";
-import { HomeForMasters } from "../components/home/HomeForMasters";
+import { fetchRabotyList, fetchServices, fetchMasters } from "../lib/api";
+import type { RabotyListItem, Service, Master } from "../lib/types";
+import { HomeZen } from "../components/home/HomeZen";
 
 // Skip prerender at build time — page depends on the marketplace API which is
 // only available at runtime. ISR caching (5 min) lives in lib/api.ts.
@@ -15,56 +9,29 @@ export const dynamic = "force-dynamic";
 
 export function generateMetadata(): Metadata {
   return {
-    title: "Найдите ремонт, который хотите повторить",
+    title: "Ремонт в Краснодаре — идеи, цены и мастера в одной ленте",
     description:
-      "Тысячи реальных ремонтов и AI-дизайнов с ценами, сроками и мастерами. Понравился объект — нажмите «Хочу такой же», подберём мастера, который сделает похоже.",
+      "Городской сервис ремонта: реальные работы с ценами, AI-дизайн комнаты, сметы по ценам города и проверенные мастера рядом. Всё в одной ленте.",
     alternates: { canonical: "/" },
   };
 }
 
 /**
- * Magazine homepage (home-magazine-redesign).
- *
- * Стратегия v3: главный товар — РЕЗУЛЬТАТ РЕМОНТА. Не каталог мастеров.
- * Pinterest-журнал ремонтов с 4-слойной контент-моделью:
- *   • L1 AI-дизайны (главный SEO-двигатель, ~100К страниц через комбинаторику)
- *   • L2 Listicles (отложено, редакторский = медленно)
- *   • L3 Q&A «Спроси мастера» (новый SEO-канал)
- *   • L4 Профили мастеров (B2B-фокус)
- *
- * Порядок секций (6 экранов):
- *   1. Hero            — Lora H1 + photo-collage + один primary CTA
- *   2. Популярное сейчас — filter pills (Pinterest-style discovery)
- *   3. Популярные объекты — главный inspiration-блок (mixed aspect grid)
- *   4. AI-дизайн teaser — «Создайте свой дизайн комнаты»
- *   5. Q&A featured     — один вопрос-ответ от мастера-эксперта (SO-style card)
- *   6. Для мастеров     — B2B CTA-блок, ведёт на sfera-master.ru/masteram
- *
- * Удалены из render'а (файлы оставлены): HomeIdeasCategories, HomeTopMasters,
- * HomeCalculator, HomeHowItWorks, HomePricingTable. Pricing вернётся когда
- * будет достаточно опубликованных кейсов на каждый bucket для live-агрегации
- * через `/api/marketplace/raboty/market-stats`.
- *
- * Backend feed: один параллельный fetch (cases для главного блока).
- * Per-source fallback — единичный сбой UPstream деградирует только эту
- * секцию, не валит главную.
+ * Главная в Zen-стиле (city-service нового поколения). Рендер вынесен в
+ * `HomeZen` (общая Zen-дизайн-система из globals.css). Здесь — только серверный
+ * сбор данных с per-source fallback: единичный сбой апстрима деградирует
+ * соответствующую секцию, не валит страницу.
  */
 export default async function HomePage() {
-  const [cases] = await Promise.all([
-    fetchRabotyList({ limit: 12 })
+  const [cases, services, mastersResp] = await Promise.all([
+    fetchRabotyList({ limit: 6 })
       .then((r) => r.items)
       .catch(() => [] as RabotyListItem[]),
+    fetchServices().catch(() => [] as Service[]),
+    fetchMasters({ limit: 4 })
+      .then((r) => r.items)
+      .catch(() => [] as Master[]),
   ]);
 
-  return (
-    <>
-      <HomeHero />
-      <HomePillars />
-      <HomePopularNow />
-      <HomePopularObjects cases={cases} />
-      <HomeAIDesigns />
-      <HomeQuestions />
-      <HomeForMasters />
-    </>
-  );
+  return <HomeZen cases={cases} services={services} masters={mastersResp} />;
 }

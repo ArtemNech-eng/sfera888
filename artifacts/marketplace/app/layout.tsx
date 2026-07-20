@@ -29,10 +29,9 @@ const lora = Lora({
 });
 
 // Theme color drives the iOS / Chrome status-bar tint when the cabinet is
-// installed as a PWA. Switched from emerald to magazine warm-red to match
-// the new home-magazine palette.
+// installed as a PWA. Zen city-service coral accent (matches --color-cta).
 export const viewport = {
-  themeColor: "#D9342B",
+  themeColor: "#FF5A3C",
 };
 
 /**
