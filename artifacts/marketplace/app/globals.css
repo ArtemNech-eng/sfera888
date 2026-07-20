@@ -40,11 +40,12 @@
   --color-primary-soft: #FDEBD8;     /* peach soft */
   --color-primary-ring: #FBD9B5;
 
-  /* CTA — signature yellow. ТОЛЬКО заливка кнопок/бейджей + маркер-
-     подсветка. Текст сверху всегда тёмный (`--color-on-cta`). */
-  --color-cta: #FACC15;
-  --color-cta-hover: #EAB308;
-  --color-on-cta: #1A1A1A;
+  /* CTA — тёмный графит (премиум, не «распродажный» жёлтый). Заливка
+     основных кнопок; текст сверху белый (`--color-on-cta`). На ТЁМНЫХ секциях
+     кнопку делаем светлой/золотой локально (жёлтый раньше «читался дёшево»). */
+  --color-cta: #1B1A18;
+  --color-cta-hover: #000000;
+  --color-on-cta: #FFFFFF;
 
   /* Money / "ok" — neutral graphite numerals, soft yellow tint. */
   --color-money: #1A1A1A;

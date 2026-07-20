@@ -189,7 +189,7 @@ export function DesignBoardPending({ slug, initialDesign }: Props) {
                     done
                       ? "bg-[var(--color-text)] text-white"
                       : active
-                        ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]"
+                        ? "bg-[var(--color-primary)] text-white"
                         : "border border-[var(--color-border)] text-[var(--color-faint)]"
                   }`}
                 >

@@ -726,7 +726,7 @@ function SimilarRow({ title, seeAllHref, designs }: { title: string; seeAllHref:
 }
 
 function BeforeAfterPair({ label, labelTone, url, alt }: { label: string; labelTone: "muted" | "brand"; url: string; alt: string }) {
-  const labelClass = labelTone === "brand" ? "bg-[var(--color-cta)] text-[var(--color-on-cta)]" : "bg-[var(--color-text)] text-white";
+  const labelClass = labelTone === "brand" ? "bg-[var(--color-primary)] text-white" : "bg-[var(--color-text)] text-white";
   return (
     <figure className="relative overflow-hidden rounded-xl bg-[var(--color-surface)] shadow-cozy">
       <div className="relative aspect-[4/3] w-full">
