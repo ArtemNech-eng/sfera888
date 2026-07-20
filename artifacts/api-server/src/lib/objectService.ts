@@ -163,6 +163,78 @@ export async function getObjectForOrder(
   return done({ order: toOrderContext(order), object: receipt ? toObjectView(receipt) : null });
 }
 
+// ─── Список Объектов мастера (хаб «Мои Объекты») ──────────────────────────────
+
+export interface ObjectSummary {
+  id: number;
+  orderId: number;
+  objectType: string | null;
+  serviceType: string;
+  city: string;
+  district: string | null;
+  zhk: string | null;
+  area: number | null;
+  totalAmount: number;
+  stagesCount: number;
+  isPublished: boolean;
+  publishedAt: string | null;
+  isIndexable: boolean;
+  slug: string | null;
+  publicUrl: string | null;
+  coverPhoto: string | null;
+}
+
+/**
+ * Все Объекты мастера (черновики + опубликованные). Объектом считаем расписку
+ * со заполненными этапами или уже опубликованную — классические сметы без
+ * этапов не показываем. Обложка — первое фото «после» заказа, иначе «до».
+ */
+export async function listObjectsForMaster(masterId: number): Promise<ObjectSummary[]> {
+  const rows = await db
+    .select({
+      receipt: receiptsTable,
+      photosBefore: ordersTable.photosBefore,
+      photosAfter: ordersTable.photosAfter,
+    })
+    .from(receiptsTable)
+    .leftJoin(ordersTable, eq(ordersTable.id, receiptsTable.orderId))
+    .where(eq(receiptsTable.masterId, masterId));
+
+  const objects = rows.filter((r) => {
+    const st = Array.isArray(r.receipt.stages) ? r.receipt.stages : [];
+    return st.length > 0 || r.receipt.isPublished;
+  });
+
+  const sortKey = (r: (typeof objects)[number]) =>
+    (r.receipt.publishedAt ?? r.receipt.createdAt ?? new Date(0)).getTime();
+  objects.sort((a, b) => sortKey(b) - sortKey(a));
+
+  return objects.map((r) => {
+    const after = (r.photosAfter as string[] | null) ?? [];
+    const before = (r.photosBefore as string[] | null) ?? [];
+    const st = (Array.isArray(r.receipt.stages) ? r.receipt.stages : []) as ObjStage[];
+    const view = toObjectView(r.receipt);
+    return {
+      id: view.id,
+      orderId: view.orderId,
+      objectType: view.objectType,
+      serviceType: view.serviceType,
+      city: view.city,
+      district: view.district,
+      zhk: view.zhk,
+      area: view.area,
+      totalAmount: view.totalAmount,
+      stagesCount: st.length,
+      isPublished: view.isPublished,
+      publishedAt: view.publishedAt,
+      isIndexable: view.isIndexable,
+      slug: view.slug,
+      publicUrl: view.publicUrl,
+      coverPhoto: after[0] ?? before[0] ?? null,
+    };
+  });
+}
+
 // ─── Создание / редактирование Объекта (upsert по заказу) ─────────────────────
 
 export interface SaveObjectInput {

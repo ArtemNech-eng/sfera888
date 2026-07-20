@@ -37,6 +37,7 @@ import {
 import { getPendingActionsForMaster } from "../lib/stuckOrders.js";
 import {
   listActiveWorkTypes,
+  listObjectsForMaster,
   getObjectForOrder,
   saveObject,
   publishObjectForMaster,
@@ -3070,6 +3071,13 @@ router.post("/orders/:id/call-report", requireMasterPwa, async (req, res) => {
 // Словарь видов работ — пикер позиций этапа.
 router.get("/work-types", requireMasterPwa, async (_req, res) => {
   const items = await listActiveWorkTypes();
+  res.json(items);
+});
+
+// Список Объектов мастера (хаб «Мои Объекты»).
+router.get("/objects", requireMasterPwa, async (req: any, res) => {
+  const masterId = req.session.masterId as number;
+  const items = await listObjectsForMaster(masterId);
   res.json(items);
 });
 

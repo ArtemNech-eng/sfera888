@@ -658,8 +658,29 @@ export interface PublishObjectResponse {
   pricePoints: number;
 }
 
+/** Карточка Объекта в списке-хабе. */
+export interface ObjectSummary {
+  id: number;
+  orderId: number;
+  objectType: string | null;
+  serviceType: string;
+  city: string;
+  district: string | null;
+  zhk: string | null;
+  area: number | null;
+  totalAmount: number;
+  stagesCount: number;
+  isPublished: boolean;
+  publishedAt: string | null;
+  isIndexable: boolean;
+  slug: string | null;
+  publicUrl: string | null;
+  coverPhoto: string | null;
+}
+
 export const cabinetObjects = {
   workTypes: () => req<WorkTypeOption[]>("GET", "/work-types"),
+  list: () => req<ObjectSummary[]>("GET", "/objects"),
   get: (orderId: number) => req<ObjectForOrderResponse>("GET", `/objects/${orderId}`),
   save: (input: SaveObjectInput) => req<ObjectView>("POST", "/objects", input),
   publish: (id: number, consent: boolean) =>
