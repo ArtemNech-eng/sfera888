@@ -629,3 +629,46 @@ export interface RealPriceResponse {
   cityAggregate: PriceAggregateDTO | null;
   zhk: PriceAggregateDTO[];
 }
+
+// ── Real Price — кейс-страница Объекта (/raboty/{slug}) ───────────────────────
+export interface ObjectCaseStageLine {
+  workTypeId?: number | null;
+  name?: string;
+  description?: string;
+  unit?: string | null;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  price?: number | null;
+  sum?: number | null;
+}
+export interface ObjectCaseStage {
+  title?: string;
+  order?: number;
+  lineItems?: ObjectCaseStageLine[];
+}
+export interface ObjectCaseResponse {
+  object: {
+    slug: string | null;
+    objectType: string | null;
+    serviceType: string;
+    city: string;
+    district: string | null;
+    zhk: string | null;
+    area: string | null;
+    totalAmount: string;
+    stages: ObjectCaseStage[];
+    publishedAt: string | null;
+    photosBefore: string[];
+    photosAfter: string[];
+    durationDays: number | null;
+  };
+  master: {
+    slug: string | null;
+    name: string;
+    specialization: string | null;
+    city: string | null;
+    rating: string | null;
+    reviewsCount: number;
+    yearsExperience: number | null;
+  } | null;
+}
