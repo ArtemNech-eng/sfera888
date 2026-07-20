@@ -96,3 +96,26 @@ test("derivePricePoint: не сопоставилось словарю или ц
   assert.equal(derivePricePoint({ description: "Ерунда какая-то", price: 500 }, WT), null);
   assert.equal(derivePricePoint({ description: "Штукатурка", price: 0 }, WT), null);
 });
+
+import { verdictForPrice } from "../src/lib/realPrice.js";
+
+test("verdictForPrice: зелёный в пределах рынка (≤ P75)", () => {
+  assert.equal(verdictForPrice(1200, 1200, 1400), "green");
+  assert.equal(verdictForPrice(1400, 1200, 1400), "green");
+  assert.equal(verdictForPrice(800, 1200, 1400), "green");
+});
+
+test("verdictForPrice: жёлтый выше рынка до 1,5× медианы", () => {
+  assert.equal(verdictForPrice(1600, 1200, 1400), "yellow"); // >1400, ≤1800
+  assert.equal(verdictForPrice(1800, 1200, 1400), "yellow");
+});
+
+test("verdictForPrice: красный в 1,5×+ медианы", () => {
+  assert.equal(verdictForPrice(1801, 1200, 1400), "red");
+  assert.equal(verdictForPrice(5000, 1200, 1400), "red");
+});
+
+test("verdictForPrice: unknown без медианы или при невалидной цене", () => {
+  assert.equal(verdictForPrice(1000, null, null), "unknown");
+  assert.equal(verdictForPrice(0, 1200, 1400), "unknown");
+});
