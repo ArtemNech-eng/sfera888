@@ -119,3 +119,40 @@ test("verdictForPrice: unknown без медианы или при невали�
   assert.equal(verdictForPrice(1000, null, null), "unknown");
   assert.equal(verdictForPrice(0, 1200, 1400), "unknown");
 });
+
+import { stagesToLineItems, stagesTotal, stageLinesToPoints, type ObjStage } from "../src/lib/realPrice.js";
+
+const STAGES: ObjStage[] = [
+  { title: "Черновые", order: 1, lineItems: [
+    { workTypeId: 1, name: "Штукатурка стен", unit: "м²", quantity: 28, unitPrice: 700 },
+    { name: "Прочее без work_type", unit: "шт", quantity: 1, unitPrice: 5000 }, // без workTypeId
+  ]},
+  { title: "Плитка", order: 2, lineItems: [
+    { workTypeId: 3, name: "Укладка плитки", unit: "м²", quantity: 10, unitPrice: 1900, sum: 19000 },
+    { workTypeId: 3, name: "Плитка лумп", unitPrice: 0 }, // невалидная цена
+  ]},
+];
+
+test("stagesToLineItems: плоские позиции из этапов (пропуск без цены)", () => {
+  const li = stagesToLineItems(STAGES);
+  assert.equal(li.length, 3); // 2 валидные + прочее (есть цена/описание); лумп с ценой 0 отброшен
+  assert.equal(li[0]!.description, "Штукатурка стен");
+  assert.equal(li[0]!.quantity, 28);
+  assert.equal(li[0]!.price, 700);
+});
+
+test("stagesTotal: сумма по этапам (sum приоритетнее)", () => {
+  // Штукатурка 700*28=19600, Прочее 5000, Плитка sum=19000, лумп 0 → 43600
+  assert.equal(stagesTotal(STAGES), 43600);
+});
+
+test("stageLinesToPoints: только позиции с work_type_id и ценой", () => {
+  const pts = stageLinesToPoints(STAGES);
+  assert.equal(pts.length, 2); // штукатурка + плитка (прочее без wt, лумп цена 0 — отброшены)
+  assert.equal(pts[0]!.workTypeId, 1);
+  assert.equal(pts[0]!.unitPrice, 700);
+  assert.equal(pts[0]!.quantity, 28);
+  assert.equal(pts[0]!.total, 19600);
+  assert.equal(pts[1]!.workTypeId, 3);
+  assert.equal(pts[1]!.total, 19000); // sum
+});

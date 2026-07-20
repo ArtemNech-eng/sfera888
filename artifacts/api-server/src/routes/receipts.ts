@@ -1,10 +1,13 @@
 import { Router, type Request } from "express";
-import { db, receiptsTable, ordersTable, mastersTable, leadsTable, transactionsTable } from "@workspace/db";
+import { db, receiptsTable, ordersTable, mastersTable, leadsTable, transactionsTable, pricePointsTable } from "@workspace/db";
 import { sendMaxMessage } from "../maxBot.js";
 import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 import { requireRole } from "../middlewares/requireAuth.js";
 import { calculateCommission, getCommissionSettings } from "../lib/commission.js";
 import { checkFomoTransition } from "../lib/fomoBlock.js";
+import { slugify } from "../lib/slug.js";
+import { stagesToLineItems, stagesTotal, stageLinesToPoints } from "../lib/realPrice.js";
+import { recomputePriceAggregates } from "../lib/priceAggregation.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -323,21 +326,27 @@ router.patch("/:id", async (req: any, res) => {
     return res.status(403).json({ error: "Нет доступа" });
   }
 
-  const { lineItems, prepaymentAmount, notes } = req.body;
-  if (!Array.isArray(lineItems) || lineItems.length === 0) return res.status(400).json({ error: "Добавьте хотя бы одну позицию" });
-  if (!prepaymentAmount || Number(prepaymentAmount) <= 0) return res.status(400).json({ error: "Укажите сумму предоплаты" });
+  const { lineItems, stages, prepaymentAmount, notes, area, zhk, objectType } = req.body;
+  const hasStages = Array.isArray(stages) && stages.length > 0;
+  const validItems = hasStages ? stagesToLineItems(stages) : (Array.isArray(lineItems) ? parseLineItems(lineItems) : []);
+  if (validItems.length === 0) return res.status(400).json({ error: "Добавьте хотя бы одну позицию или этап" });
+  // Предоплата обязательна только для классической сметы (не для карточки Объекта).
+  if (!hasStages && (!prepaymentAmount || Number(prepaymentAmount) <= 0)) return res.status(400).json({ error: "Укажите сумму предоплаты" });
 
-  const validItems = parseLineItems(lineItems);
-  if (validItems.length === 0) return res.status(400).json({ error: "Все позиции должны иметь описание и цену" });
+  const totalAmount = hasStages ? stagesTotal(stages) : validItems.reduce((sum, i) => sum + lineTotal(i), 0);
 
-  const totalAmount = validItems.reduce((sum, i) => sum + lineTotal(i), 0);
-
-  const [updated] = await db.update(receiptsTable).set({
+  const setFields: Record<string, unknown> = {
     lineItems: validItems,
     totalAmount: String(totalAmount),
-    prepaymentAmount: String(Number(prepaymentAmount)),
     notes: notes?.trim() || null,
-  }).where(eq(receiptsTable.id, id)).returning();
+  };
+  if (prepaymentAmount != null && Number(prepaymentAmount) > 0) setFields["prepaymentAmount"] = String(Number(prepaymentAmount));
+  if (hasStages) setFields["stages"] = stages;
+  if (area != null && Number.isFinite(Number(area))) setFields["area"] = String(Number(area));
+  if (zhk !== undefined) setFields["zhk"] = (typeof zhk === "string" && zhk.trim()) || null;
+  if (typeof objectType === "string" && objectType) setFields["objectType"] = objectType;
+
+  const [updated] = await db.update(receiptsTable).set(setFields).where(eq(receiptsTable.id, id)).returning();
 
   // Sync proposed_amount to order so FOMO block is lifted
   // Also auto-set orderAmount if not yet confirmed by operator
@@ -355,6 +364,67 @@ router.patch("/:id", async (req: any, res) => {
 
   const [master] = await db.select().from(mastersTable).where(eq(mastersTable.id, updated.masterId));
   res.json(await buildReceiptResponse(updated, master, req));
+});
+
+// ─── POST /:id/publish — публикация Объекта как кейса + подача ценовых точек ──
+// Real Price (spec: .kiro/specs/real-price). Мастер публикует завершённый Объект:
+// генерируем slug, ставим is_published/is_indexable, из этапов формируем
+// нормализованные price_points и пересчитываем агрегаты — петля замыкается.
+router.post("/:id/publish", async (req: any, res) => {
+  const id = parseInt(String(req.params.id));
+  const masterId = req.session?.masterId;
+  if (!masterId) return res.status(401).json({ error: "Не авторизован" });
+
+  const [receipt] = await db.select().from(receiptsTable).where(eq(receiptsTable.id, id));
+  if (!receipt || receipt.masterId !== masterId) return res.status(404).json({ error: "Объект не найден" });
+
+  const stages = Array.isArray(receipt.stages) ? receipt.stages : [];
+  if (stages.length === 0) return res.status(400).json({ error: "Заполните этапы сметы перед публикацией" });
+
+  const consent = receipt.publishConsent || req.body?.consent === true;
+  if (!consent) return res.status(400).json({ error: "Нужно согласие клиента на публикацию фото" });
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, receipt.orderId));
+  const base = slugify([receipt.serviceType, receipt.city, receipt.zhk].filter(Boolean).join("-"));
+  const slug = receipt.slug ?? `${base || "obekt"}-${receipt.id}`;
+  const points = stageLinesToPoints(stages);
+  const closedAt = order?.completedAt ?? new Date();
+
+  await db.transaction(async (tx) => {
+    await tx.update(receiptsTable).set({
+      isPublished: true,
+      publishedAt: new Date(),
+      isIndexable: true,
+      publishConsent: true,
+      slug,
+      objectType: receipt.objectType ?? "project",
+    }).where(eq(receiptsTable.id, id));
+
+    await tx.delete(pricePointsTable).where(eq(pricePointsTable.receiptId, id));
+    if (points.length > 0) {
+      await tx.insert(pricePointsTable).values(
+        points.map((p) => ({
+          orderId: receipt.orderId,
+          receiptId: receipt.id,
+          masterId: receipt.masterId,
+          workTypeId: p.workTypeId,
+          unit: p.unit,
+          quantity: p.quantity != null ? String(p.quantity) : null,
+          unitPrice: String(p.unitPrice),
+          total: String(p.total),
+          city: order?.city ?? receipt.city,
+          district: order?.district ?? receipt.district ?? null,
+          zhk: receipt.zhk ?? null,
+          source: receipt.source ?? "platform",
+          closedAt,
+        })),
+      );
+    }
+  });
+
+  recomputePriceAggregates().catch((e) => console.error("[receipts/publish recompute]", e instanceof Error ? e.message : e));
+
+  res.json({ ok: true, slug, url: `/raboty/${slug}`, pricePoints: points.length });
 });
 
 // ─── CRM: POST /api/receipts/crm — Admin/operator creates receipt ─────────────
@@ -425,10 +495,12 @@ router.post("/", async (req: any, res) => {
   const masterId = req.session?.masterId;
   if (!masterId) return res.status(401).json({ error: "Не авторизован" });
 
-  const { orderId, lineItems, prepaymentAmount, notes } = req.body;
+  const { orderId, lineItems, stages, prepaymentAmount, notes, area, zhk, objectType } = req.body;
   if (!orderId) return res.status(400).json({ error: "Не указан orderId" });
-  if (!Array.isArray(lineItems) || lineItems.length === 0) return res.status(400).json({ error: "Добавьте хотя бы одну позицию" });
-  if (!prepaymentAmount || Number(prepaymentAmount) <= 0) return res.status(400).json({ error: "Укажите сумму предоплаты" });
+  const hasStages = Array.isArray(stages) && stages.length > 0;
+  const validItems = hasStages ? stagesToLineItems(stages) : (Array.isArray(lineItems) ? parseLineItems(lineItems) : []);
+  if (validItems.length === 0) return res.status(400).json({ error: "Добавьте хотя бы одну позицию или этап" });
+  if (!hasStages && (!prepaymentAmount || Number(prepaymentAmount) <= 0)) return res.status(400).json({ error: "Укажите сумму предоплаты" });
 
   const [order] = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.masterId, masterId), isNull(ordersTable.deletedAt)));
@@ -438,10 +510,7 @@ router.post("/", async (req: any, res) => {
     ? await db.select().from(leadsTable).where(eq(leadsTable.id, order.leadId))
     : [];
 
-  const validItems = parseLineItems(lineItems);
-  if (validItems.length === 0) return res.status(400).json({ error: "Все позиции должны иметь описание и цену" });
-
-  const totalAmount = validItems.reduce((sum, i) => sum + lineTotal(i), 0);
+  const totalAmount = hasStages ? stagesTotal(stages) : validItems.reduce((sum, i) => sum + lineTotal(i), 0);
   const token = crypto.randomBytes(20).toString("hex");
 
   const [receipt] = await db.insert(receiptsTable).values({
@@ -455,8 +524,12 @@ router.post("/", async (req: any, res) => {
     district: order.district ?? null,
     lineItems: validItems,
     totalAmount: String(totalAmount),
-    prepaymentAmount: String(Number(prepaymentAmount)),
+    prepaymentAmount: String(Number(prepaymentAmount) > 0 ? Number(prepaymentAmount) : 0),
     notes: notes?.trim() || null,
+    stages: hasStages ? stages : [],
+    area: area != null && Number.isFinite(Number(area)) ? String(Number(area)) : null,
+    zhk: (typeof zhk === "string" && zhk.trim()) || null,
+    objectType: (typeof objectType === "string" && objectType) || null,
   }).returning();
 
   // Sync proposed_amount to order so FOMO block is lifted
