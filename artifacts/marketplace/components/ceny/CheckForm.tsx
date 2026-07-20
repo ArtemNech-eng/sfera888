@@ -35,6 +35,7 @@ interface CheckResult {
   city: { slug: string; name: string };
   items: ResultItem[];
   summary: { green: number; yellow: number; red: number; unknown: number };
+  suggestedService?: { slug: string; name: string } | null;
 }
 
 const VERDICT: Record<Verdict, { label: string; fg: string; bg: string }> = {
@@ -46,12 +47,29 @@ const VERDICT: Record<Verdict, { label: string; fg: string; bg: string }> = {
 
 const EMPTY: Row = { description: "", quantity: "", unit: "м²", price: "" };
 
-export function CheckForm({ cities }: { cities: CityOpt[] }) {
+export interface SharedResult {
+  g: number;
+  y: number;
+  r: number;
+  u: number;
+  cityName: string | null;
+  total: number;
+}
+
+export function CheckForm({ cities, shared }: { cities: CityOpt[]; shared?: SharedResult | null }) {
   const [citySlug, setCitySlug] = useState(cities[0]?.slug ?? "krasnodar");
   const [rows, setRows] = useState<Row[]>([{ ...EMPTY }, { ...EMPTY }, { ...EMPTY }]);
   const [result, setResult] = useState<CheckResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Конверсия в лид (Req 7.3).
+  const [leadName, setLeadName] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
+  const [leadConsent, setLeadConsent] = useState(false);
+  const [leadStatus, setLeadStatus] = useState<"idle" | "sending" | "done">("idle");
+  const [leadError, setLeadError] = useState<string | null>(null);
 
   function update(i: number, patch: Partial<Row>) {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -98,14 +116,85 @@ export function CheckForm({ cities }: { cities: CityOpt[] }) {
     }
   }
 
+  /** Ссылка с зашитым итогом — для превью в мессенджерах (OG) и лендинга. */
+  function buildShareUrl(res: CheckResult): string {
+    const origin = typeof location !== "undefined" ? location.origin : "https://chestnye-mastera.ru";
+    const q = new URLSearchParams({
+      g: String(res.summary.green),
+      y: String(res.summary.yellow),
+      r: String(res.summary.red),
+      u: String(res.summary.unknown),
+      cn: res.city.name,
+    });
+    return `${origin}/proverit-smetu?${q.toString()}`;
+  }
+
+  async function submitLead() {
+    if (!result || leadStatus === "sending") return;
+    const phone = leadPhone.trim();
+    if (phone.length < 5) {
+      setLeadError("Укажите телефон");
+      return;
+    }
+    if (!leadConsent) {
+      setLeadError("Нужно согласие на обработку данных");
+      return;
+    }
+    const serviceSlug = result.suggestedService?.slug;
+    if (!serviceSlug) {
+      setLeadError("Сервис временно недоступен, попробуйте позже");
+      return;
+    }
+    setLeadStatus("sending");
+    setLeadError(null);
+    const s = result.summary;
+    const comment =
+      `Проверка сметы: ${s.green} по рынку, ${s.yellow} выше рынка, ${s.red} завышено` +
+      (result.suggestedService ? ` · интересует: ${result.suggestedService.name}` : "");
+    try {
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: leadName.trim(),
+          phone,
+          comment,
+          consent: true,
+          citySlug: result.city.slug,
+          serviceSlug,
+          sourcePageType: "smeta_check",
+          sourcePageUrl: typeof location !== "undefined" ? location.href : undefined,
+          formStartedAt: Date.now() - 3000,
+        }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (res.ok && data.ok) {
+        setLeadStatus("done");
+      } else {
+        setLeadStatus("idle");
+        setLeadError("Не удалось отправить заявку. Попробуйте позже.");
+      }
+    } catch {
+      setLeadStatus("idle");
+      setLeadError("Сеть недоступна. Попробуйте позже.");
+    }
+  }
+
   function share() {
     if (!result) return;
     const s = result.summary;
     const text = `Проверил смету на ремонт в ${result.city.name} на «Честных мастерах»: ${s.green} по рынку, ${s.yellow} выше рынка, ${s.red} завышено.`;
+    const url = buildShareUrl(result);
     if (typeof navigator !== "undefined" && navigator.share) {
-      navigator.share({ title: "Проверка сметы", text, url: typeof location !== "undefined" ? location.href : undefined }).catch(() => {});
+      navigator.share({ title: "Проверка сметы", text, url }).catch(() => {});
     } else if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(`${text} ${typeof location !== "undefined" ? location.href : ""}`).catch(() => {});
+      navigator.clipboard
+        .writeText(`${text} ${url}`)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+        })
+        .catch(() => {});
     }
   }
 
@@ -118,6 +207,33 @@ export function CheckForm({ cities }: { cities: CityOpt[] }) {
           Вставьте позиции из вашей сметы — сравним каждую с реальными ценами подтверждённых сделок в вашем
           городе и покажем, где переплата.
         </p>
+
+        {shared && !result ? (
+          <div
+            style={{
+              marginTop: 16,
+              padding: "14px 18px",
+              background: "var(--z-accent-soft)",
+              border: "1px solid var(--z-line)",
+              borderRadius: "var(--z-radius)",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontSize: 14.5, fontWeight: 600, color: "var(--z-ink, #141414)" }}>
+              Кто-то проверил {shared.total}{" "}
+              {shared.cityName ? `поз. сметы в ${shared.cityName}` : "позиций сметы"}:
+            </span>
+            <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap" }}>
+              <Pill v="green" n={shared.g} />
+              <Pill v="yellow" n={shared.y} />
+              <Pill v="red" n={shared.r} />
+            </span>
+            <span style={{ fontSize: 13.5, color: "var(--z-muted)" }}>Проверьте и свою смету ↓</span>
+          </div>
+        ) : null}
 
         <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <label style={{ fontSize: 14, fontWeight: 600, color: "var(--z-muted)" }}>Город:</label>
@@ -191,10 +307,90 @@ export function CheckForm({ cities }: { cities: CityOpt[] }) {
                 );
               })}
             </div>
-            <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <button type="button" className="zen-btn" onClick={share}>Поделиться результатом</button>
               <a className="zen-btn zen-btn--ghost" href="/mastera">Найти честного мастера</a>
+              {copied ? <span style={{ fontSize: 13, color: "var(--z-muted)" }}>Ссылка скопирована ✓</span> : null}
             </div>
+
+            {/* Конверсия в лид (Req 7.3) */}
+            {result.suggestedService ? (
+              <div
+                style={{
+                  marginTop: 20,
+                  background: "var(--z-surface)",
+                  border: "1px solid var(--z-line)",
+                  borderRadius: "var(--z-radius)",
+                  boxShadow: "var(--z-shadow)",
+                  padding: "20px 20px 22px",
+                }}
+              >
+                {leadStatus === "done" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={{ fontSize: 17, fontWeight: 700, color: "var(--z-ink, #141414)" }}>
+                      Заявка принята ✓
+                    </span>
+                    <span style={{ fontSize: 14, color: "var(--z-muted)" }}>
+                      Скоро с вами свяжется оператор и подберёт проверенного мастера в {result.city.name}. Работаем по
+                      реальным ценам — без накруток.
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--z-ink, #141414)" }}>
+                      {result.summary.red > 0
+                        ? "Нашли переплату? Подберём мастера по реальным ценам"
+                        : "Нужен проверенный мастер под эту смету?"}
+                    </h3>
+                    <p style={{ fontSize: 13.5, color: "var(--z-muted)", margin: "6px 0 14px" }}>
+                      Оставьте телефон — оператор бесплатно подберёт мастера в {result.city.name}. Никакого спама, только
+                      по вашей заявке.
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <input
+                        className="zen-input"
+                        placeholder="Ваше имя"
+                        value={leadName}
+                        onChange={(e) => setLeadName(e.target.value)}
+                      />
+                      <input
+                        className="zen-input"
+                        type="tel"
+                        inputMode="tel"
+                        placeholder="+7 999 123-45-67"
+                        value={leadPhone}
+                        onChange={(e) => setLeadPhone(e.target.value)}
+                      />
+                    </div>
+                    <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 12, fontSize: 12.5, color: "var(--z-muted)" }}>
+                      <input
+                        type="checkbox"
+                        checked={leadConsent}
+                        onChange={(e) => setLeadConsent(e.target.checked)}
+                        style={{ marginTop: 2 }}
+                      />
+                      <span>
+                        Соглашаюсь с{" "}
+                        <a href="/policy/privacy" style={{ textDecoration: "underline" }}>политикой конфиденциальности</a> и{" "}
+                        <a href="/policy/terms" style={{ textDecoration: "underline" }}>пользовательским соглашением</a>.
+                      </span>
+                    </label>
+                    {leadError ? (
+                      <div className="zen-alert zen-alert--err" style={{ marginTop: 10 }}>{leadError}</div>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="zen-btn"
+                      style={{ marginTop: 14 }}
+                      onClick={submitLead}
+                      disabled={leadStatus === "sending"}
+                    >
+                      {leadStatus === "sending" ? "Отправляю…" : "Подобрать мастера"}
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>

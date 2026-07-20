@@ -164,10 +164,11 @@ export async function POST(req: NextRequest) {
     "service-city",
     "master",
     "design_waitlist",
+    "smeta_check",
   ]);
-  let sourcePageType: "service-city" | "master" | "design_waitlist";
+  let sourcePageType: "service-city" | "master" | "design_waitlist" | "smeta_check";
   if (typeof payload.sourcePageType === "string" && allowedPageTypes.has(payload.sourcePageType)) {
-    sourcePageType = payload.sourcePageType as "service-city" | "master" | "design_waitlist";
+    sourcePageType = payload.sourcePageType as "service-city" | "master" | "design_waitlist" | "smeta_check";
   } else {
     sourcePageType = attachedMasterId !== undefined ? "master" : "service-city";
   }
