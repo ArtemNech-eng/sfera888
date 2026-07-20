@@ -159,3 +159,87 @@ export function verdictForPrice(unitPrice: number, p50: number | null, p75: numb
   if (unitPrice <= p50 * 1.5) return "yellow";
   return "red";
 }
+
+// ── Объект: этапы сметы → плоские позиции / ценовые точки ──────────────────────
+
+export interface ObjStageLine {
+  workTypeId?: number | null;
+  name?: string;
+  description?: string;
+  unit?: string | null;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  price?: number | null;
+  sum?: number | null;
+}
+export interface ObjStage {
+  title?: string;
+  order?: number;
+  lineItems?: ObjStageLine[];
+}
+
+function lineUnitPrice(li: ObjStageLine): number {
+  const up = Number(li.unitPrice ?? li.price);
+  return Number.isFinite(up) && up > 0 ? up : 0;
+}
+function lineSum(li: ObjStageLine): number {
+  if (li.sum != null && Number.isFinite(Number(li.sum)) && Number(li.sum) > 0) return Number(li.sum);
+  const up = lineUnitPrice(li);
+  const q = Number(li.quantity);
+  return Number.isFinite(q) && q > 0 ? up * q : up;
+}
+
+/** Плоские позиции (legacy LineItem) из этапов — для обратной совместимости receipts.lineItems. */
+export function stagesToLineItems(stages: ObjStage[]): Array<{ description: string; unit?: string; quantity?: number; price: number }> {
+  const out: Array<{ description: string; unit?: string; quantity?: number; price: number }> = [];
+  for (const st of stages ?? []) {
+    for (const li of st.lineItems ?? []) {
+      const price = lineUnitPrice(li);
+      const description = (li.name ?? li.description ?? "").trim();
+      if (!description || price <= 0) continue;
+      const item: { description: string; unit?: string; quantity?: number; price: number } = { description, price };
+      if (li.unit && String(li.unit).trim()) item.unit = String(li.unit).trim();
+      const q = Number(li.quantity);
+      if (Number.isFinite(q) && q > 0) item.quantity = q;
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/** Итоговая сумма Объекта по этапам. */
+export function stagesTotal(stages: ObjStage[]): number {
+  let total = 0;
+  for (const st of stages ?? []) for (const li of st.lineItems ?? []) total += lineSum(li);
+  return Math.round(total * 100) / 100;
+}
+
+export interface StagePricePoint {
+  workTypeId: number;
+  unit: string | null;
+  quantity: number | null;
+  unitPrice: number;
+  total: number;
+}
+
+/** Нормализованные ценовые точки из этапов — только позиции с work_type_id и ценой. */
+export function stageLinesToPoints(stages: ObjStage[]): StagePricePoint[] {
+  const out: StagePricePoint[] = [];
+  for (const st of stages ?? []) {
+    for (const li of st.lineItems ?? []) {
+      const wt = Number(li.workTypeId);
+      const up = lineUnitPrice(li);
+      if (!Number.isFinite(wt) || wt <= 0 || up <= 0) continue;
+      const q = Number(li.quantity);
+      const hasQty = Number.isFinite(q) && q > 0;
+      out.push({
+        workTypeId: wt,
+        unit: (li.unit && String(li.unit).trim()) || null,
+        quantity: hasQty ? q : null,
+        unitPrice: Math.round(up * 100) / 100,
+        total: Math.round(lineSum(li) * 100) / 100,
+      });
+    }
+  }
+  return out;
+}
