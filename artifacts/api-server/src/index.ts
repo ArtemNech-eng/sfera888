@@ -227,6 +227,10 @@ INSERT INTO work_types (slug, name, category, default_unit, synonyms, sort_order
   ('zamena-smesitelya','Замена смесителя','task','шт',ARRAY['замена смесител'],400),
   ('zamena-zamka','Замена замка','task','шт',ARRAY['замена замка'],410),
   ('naveska-sborka','Навеска и сборка','task','шт',ARRAY['навеск','сборк','повесить'],420),
+  ('gidroizolyaciya','Гидроизоляция','work','м²',ARRAY['гидроизоляц'],105),
+  ('ugolki-raskladki','Уголки и раскладки','work','шт',ARRAY['уголк','раскладк'],225),
+  ('rabota-s-proemami','Работа с проёмами','work','шт',ARRAY['проём','проем','дверных проём'],226),
+  ('zamena-stoleshnicy','Замена столешницы','task','шт',ARRAY['столешниц'],440),
   ('melkiy-remont','Мелкий ремонт (муж на час)','task','час',ARRAY['муж на час','мелкий ремонт'],430)
 ON CONFLICT (slug) DO NOTHING;
   `));
