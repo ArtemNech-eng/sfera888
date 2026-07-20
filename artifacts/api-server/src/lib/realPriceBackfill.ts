@@ -1,4 +1,4 @@
-import { db, ordersTable, receiptsTable, workTypesTable, pricePointsTable, type LineItem } from "@workspace/db";
+import { db, ordersTable, receiptsTable, workTypesTable, pricePointsTable, mastersTable, type LineItem } from "@workspace/db";
 import { and, eq, isNull, inArray } from "drizzle-orm";
 import { derivePricePoint, type WorkTypeLite } from "./realPrice.js";
 import { recomputePriceAggregates } from "./priceAggregation.js";
@@ -54,6 +54,10 @@ export async function runRealPriceBackfill(opts: { apply: boolean }): Promise<Ba
     .where(and(eq(ordersTable.status, "completed"), isNull(ordersTable.deletedAt)));
   const ordersById = new Map(orders.map((o) => [o.id, o]));
 
+  // Валидные мастера — чтобы «осиротевший» master_id (мастер удалён) не ронял
+  // вставку по FK price_points_master_id_fkey. Отсутствующий → master_id = NULL.
+  const validMasterIds = new Set((await db.select({ id: mastersTable.id }).from(mastersTable)).map((m) => m.id));
+
   if (orders.length === 0) {
     return { apply, completedOrders: 0, receipts: 0, lineItems: 0, matched: 0, unmatched: 0, topUnmatched: [], pointsBuilt: 0 };
   }
@@ -105,7 +109,7 @@ export async function runRealPriceBackfill(opts: { apply: boolean }): Promise<Ba
       points.push({
         orderId: r.orderId,
         receiptId: r.id,
-        masterId: r.masterId ?? null,
+        masterId: r.masterId != null && validMasterIds.has(r.masterId) ? r.masterId : null,
         workTypeId: dp.workTypeId,
         unit: dp.unit,
         quantity: dp.quantity != null ? String(dp.quantity) : null,
