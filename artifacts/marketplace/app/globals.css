@@ -24,13 +24,13 @@
   --color-muted: #57534E;
   --color-faint: #A8A29E;
 
-  /* Surfaces — светлый нейтральный (Zen-направление, не кремовый). */
-  --color-background: #F6F7F8;       /* page bg, светло-серый нейтральный */
-  --color-cream-deep: #EEF0F2;       /* alt section accent, нейтральный */
+  /* Surfaces — тёплый off-white (premium magazine, не холодный серый). */
+  --color-background: #F7F5F2;       /* page bg, тёплый off-white */
+  --color-cream-deep: #F0EDE8;       /* alt section accent, тёплый */
   --color-surface: #FFFFFF;
   --color-surface-elevated: #FFFFFF;
-  --color-border: #ECECEC;           /* нейтральный hairline */
-  --color-border-strong: #DFE1E4;
+  --color-border: #E7E2DB;           /* тёплый hairline */
+  --color-border-strong: #DCD6CD;
 
   /* Primary — warm orange. Используется для ТЕКСТА/ссылок/иконок/цифр/
      прогресс-баров/focus (читается на креме, в отличие от жёлтого). */
@@ -132,21 +132,22 @@ body {
   flex-direction: column;
 }
 
-/* Display heading — гротеск (Zen-направление). Раньше был serif Lora;
-   заменён на Manrope bold во всём сайте по требованию (без серифа). */
+/* Display heading — серифный Lora (premium/журнальный тон). Кириллица
+   поддерживается (Fraunces — нет, поэтому Lora). Гротеск-вариант остался в
+   body/UI. Возврат серифа в заголовки по редизайну home (city + magazine). */
 .font-display {
-  font-family: var(--font-sans);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
+  font-family: var(--font-display-stack);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.07;
 }
 
-/* Legacy alias — тоже гротеск. */
+/* Legacy alias — тоже сериф. */
 .font-editorial {
-  font-family: var(--font-sans);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.08;
+  font-family: var(--font-display-stack);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
 }
 
 /* Eyebrow label — MBK-style mono caps with tracking. Used as section
@@ -164,11 +165,11 @@ body {
   color: var(--color-primary);
 }
 
-/* Yellow marker-highlight — подсветка ключевых слов в заголовках.
-   Используется как <span class="hl">слово</span>: жёлтая «маркерная»
-   полоса под текстом. */
+/* Marker-highlight — мягкая тёплая подсветка ключевых слов в заголовках.
+   Раньше был жёлтый (color-cta) — «удешевлял». Теперь мягкий персиковый
+   (primary-soft): премиальнее, не кричит. */
 .hl {
-  background-image: linear-gradient(transparent 60%, var(--color-cta) 60%);
+  background-image: linear-gradient(transparent 60%, var(--color-primary-soft) 60%);
   padding: 0 0.12em;
 }
 

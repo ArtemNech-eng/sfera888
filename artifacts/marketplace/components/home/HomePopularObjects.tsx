@@ -48,10 +48,10 @@ export function HomePopularObjects({ cases }: Props) {
           </Link>
         </div>
 
-        <ul className="mt-10 grid gap-x-4 gap-y-10 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <ul className="mt-10 masonry">
           {isDemoMode
             ? DEMO_CASES.slice(0, 8).map((d, idx) => (
-                <li key={d.id}>
+                <li key={d.id} className="masonry-item">
                   <CaseCard
                     href="/raboty"
                     cover={d.imageUrl}
@@ -64,7 +64,7 @@ export function HomePopularObjects({ cases }: Props) {
                 </li>
               ))
             : realVisible.map((c, idx) => (
-                <li key={c.id}>
+                <li key={c.id} className="masonry-item">
                   <CaseCard
                     {...rabotyToCaseCardProps(c)}
                     aspectVariant={pickAspect(idx)}

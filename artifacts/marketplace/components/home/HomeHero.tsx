@@ -24,17 +24,13 @@ export function HomeHero() {
 
   return (
     <section className="relative overflow-hidden bg-[var(--color-background)]">
-      {/* Персиковый градиент — MBK-feel */}
+      {/* Очень мягкий тёплый вош — премиально, без «кричащего» персикового блоба */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "linear-gradient(135deg, #FDEBD8 0%, #FBF1E4 45%, transparent 100%)",
+            "linear-gradient(160deg, #FBF6EF 0%, var(--color-background) 55%, transparent 100%)",
         }}
-      />
-      <div
-        className="pointer-events-none absolute -top-24 right-0 h-[420px] w-[420px] rounded-full opacity-50 blur-3xl"
-        style={{ background: "radial-gradient(circle, #FBD9B5 0%, transparent 70%)" }}
       />
       <div className="relative mx-auto max-w-6xl px-4 pb-16 pt-10 sm:px-6 sm:pb-24 sm:pt-16">
         <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,_1fr)_minmax(0,_1.05fr)] lg:gap-14">
@@ -54,7 +50,7 @@ export function HomeHero() {
             <div className="mt-7">
               <Link
                 href="/raboty"
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-cta)] px-7 text-base font-semibold text-[var(--color-on-cta)] shadow-cozy-md transition hover:bg-[var(--color-cta-hover)]"
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-text)] px-7 text-base font-semibold text-white shadow-cozy-md transition hover:bg-black"
               >
                 Смотреть ремонты
                 <svg
@@ -73,6 +69,18 @@ export function HomeHero() {
                 </svg>
               </Link>
             </div>
+            {/* Клиентская гарантия цены — снимает мысль о переплате, тон «платформа помогает» */}
+            <ul className="mt-7 flex flex-col gap-2.5 text-sm text-[var(--color-muted)] sm:text-[15px]">
+              <li className="flex items-center gap-2.5">
+                <Check /> Подбор мастера — <span className="font-semibold text-[var(--color-text)]">бесплатно</span>
+              </li>
+              <li className="flex items-center gap-2.5">
+                <Check /> Оплата напрямую мастеру за согласованную работу
+              </li>
+              <li className="flex items-center gap-2.5">
+                <Check /> Без наценки платформы на стоимость ремонта
+              </li>
+            </ul>
           </div>
 
           {/* ── Photo collage column ────────────────────────── */}
@@ -117,5 +125,19 @@ export function HomeHero() {
         </div>
       </div>
     </section>
+  );
+}
+
+/** Мягкая «галочка» для клиентских гарантий под CTA. */
+function Check() {
+  return (
+    <span
+      aria-hidden
+      className="inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+    </span>
   );
 }
