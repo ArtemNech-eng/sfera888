@@ -35,6 +35,7 @@ interface CheckResult {
   city: { slug: string; name: string };
   items: ResultItem[];
   summary: { green: number; yellow: number; red: number; unknown: number };
+  suggestedService?: { slug: string; name: string } | null;
 }
 
 const VERDICT: Record<Verdict, { label: string; fg: string; bg: string }> = {
@@ -62,6 +63,13 @@ export function CheckForm({ cities, shared }: { cities: CityOpt[]; shared?: Shar
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Конверсия в лид (Req 7.3).
+  const [leadName, setLeadName] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
+  const [leadConsent, setLeadConsent] = useState(false);
+  const [leadStatus, setLeadStatus] = useState<"idle" | "sending" | "done">("idle");
+  const [leadError, setLeadError] = useState<string | null>(null);
 
   function update(i: number, patch: Partial<Row>) {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -119,6 +127,57 @@ export function CheckForm({ cities, shared }: { cities: CityOpt[]; shared?: Shar
       cn: res.city.name,
     });
     return `${origin}/proverit-smetu?${q.toString()}`;
+  }
+
+  async function submitLead() {
+    if (!result || leadStatus === "sending") return;
+    const phone = leadPhone.trim();
+    if (phone.length < 5) {
+      setLeadError("Укажите телефон");
+      return;
+    }
+    if (!leadConsent) {
+      setLeadError("Нужно согласие на обработку данных");
+      return;
+    }
+    const serviceSlug = result.suggestedService?.slug;
+    if (!serviceSlug) {
+      setLeadError("Сервис временно недоступен, попробуйте позже");
+      return;
+    }
+    setLeadStatus("sending");
+    setLeadError(null);
+    const s = result.summary;
+    const comment =
+      `Проверка сметы: ${s.green} по рынку, ${s.yellow} выше рынка, ${s.red} завышено` +
+      (result.suggestedService ? ` · интересует: ${result.suggestedService.name}` : "");
+    try {
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: leadName.trim(),
+          phone,
+          comment,
+          consent: true,
+          citySlug: result.city.slug,
+          serviceSlug,
+          sourcePageType: "smeta_check",
+          sourcePageUrl: typeof location !== "undefined" ? location.href : undefined,
+          formStartedAt: Date.now() - 3000,
+        }),
+      });
+      const data = await res.json().catch(() => ({ ok: false }));
+      if (res.ok && data.ok) {
+        setLeadStatus("done");
+      } else {
+        setLeadStatus("idle");
+        setLeadError("Не удалось отправить заявку. Попробуйте позже.");
+      }
+    } catch {
+      setLeadStatus("idle");
+      setLeadError("Сеть недоступна. Попробуйте позже.");
+    }
   }
 
   function share() {
@@ -253,6 +312,85 @@ export function CheckForm({ cities, shared }: { cities: CityOpt[]; shared?: Shar
               <a className="zen-btn zen-btn--ghost" href="/mastera">Найти честного мастера</a>
               {copied ? <span style={{ fontSize: 13, color: "var(--z-muted)" }}>Ссылка скопирована ✓</span> : null}
             </div>
+
+            {/* Конверсия в лид (Req 7.3) */}
+            {result.suggestedService ? (
+              <div
+                style={{
+                  marginTop: 20,
+                  background: "var(--z-surface)",
+                  border: "1px solid var(--z-line)",
+                  borderRadius: "var(--z-radius)",
+                  boxShadow: "var(--z-shadow)",
+                  padding: "20px 20px 22px",
+                }}
+              >
+                {leadStatus === "done" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={{ fontSize: 17, fontWeight: 700, color: "var(--z-ink, #141414)" }}>
+                      Заявка принята ✓
+                    </span>
+                    <span style={{ fontSize: 14, color: "var(--z-muted)" }}>
+                      Скоро с вами свяжется оператор и подберёт проверенного мастера в {result.city.name}. Работаем по
+                      реальным ценам — без накруток.
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "var(--z-ink, #141414)" }}>
+                      {result.summary.red > 0
+                        ? "Нашли переплату? Подберём мастера по реальным ценам"
+                        : "Нужен проверенный мастер под эту смету?"}
+                    </h3>
+                    <p style={{ fontSize: 13.5, color: "var(--z-muted)", margin: "6px 0 14px" }}>
+                      Оставьте телефон — оператор бесплатно подберёт мастера в {result.city.name}. Никакого спама, только
+                      по вашей заявке.
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <input
+                        className="zen-input"
+                        placeholder="Ваше имя"
+                        value={leadName}
+                        onChange={(e) => setLeadName(e.target.value)}
+                      />
+                      <input
+                        className="zen-input"
+                        type="tel"
+                        inputMode="tel"
+                        placeholder="+7 999 123-45-67"
+                        value={leadPhone}
+                        onChange={(e) => setLeadPhone(e.target.value)}
+                      />
+                    </div>
+                    <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 12, fontSize: 12.5, color: "var(--z-muted)" }}>
+                      <input
+                        type="checkbox"
+                        checked={leadConsent}
+                        onChange={(e) => setLeadConsent(e.target.checked)}
+                        style={{ marginTop: 2 }}
+                      />
+                      <span>
+                        Соглашаюсь с{" "}
+                        <a href="/policy/privacy" style={{ textDecoration: "underline" }}>политикой конфиденциальности</a> и{" "}
+                        <a href="/policy/terms" style={{ textDecoration: "underline" }}>пользовательским соглашением</a>.
+                      </span>
+                    </label>
+                    {leadError ? (
+                      <div className="zen-alert zen-alert--err" style={{ marginTop: 10 }}>{leadError}</div>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="zen-btn"
+                      style={{ marginTop: 14 }}
+                      onClick={submitLead}
+                      disabled={leadStatus === "sending"}
+                    >
+                      {leadStatus === "sending" ? "Отправляю…" : "Подобрать мастера"}
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>

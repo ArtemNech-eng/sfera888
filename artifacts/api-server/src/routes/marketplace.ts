@@ -1801,7 +1801,7 @@ router.post("/real-price/check", async (req, res) => {
       return;
     }
 
-    const workTypes: WorkTypeLite[] = (
+    const workTypes: (WorkTypeLite & { serviceTypeId: number | null })[] = (
       await db
         .select({
           id: workTypesTable.id,
@@ -1810,6 +1810,7 @@ router.post("/real-price/check", async (req, res) => {
           category: workTypesTable.category,
           defaultUnit: workTypesTable.defaultUnit,
           synonyms: workTypesTable.synonyms,
+          serviceTypeId: workTypesTable.serviceTypeId,
         })
         .from(workTypesTable)
         .where(eq(workTypesTable.isActive, true))
@@ -1822,6 +1823,10 @@ router.post("/real-price/check", async (req, res) => {
       .where(and(eq(priceAggregatesTable.city, city.name), eq(priceAggregatesTable.keyType, "work_city")));
     const aggByWork = new Map(aggRows.map((a) => [a.workTypeId, a]));
 
+    // Копим «интерес» к услуге по совпавшим видам работ — для подсказки услуги
+    // при конверсии в лид (Req 7.3). Вес — сумма позиции (кол-во×цена), иначе 1.
+    const serviceWeights = new Map<number, number>();
+
     const items = (rawItems as Array<Record<string, unknown>>).slice(0, 60).map((li) => {
       const description = String(li?.["description"] ?? "").trim().slice(0, 200);
       const price = Number(li?.["price"]);
@@ -1832,6 +1837,10 @@ router.post("/real-price/check", async (req, res) => {
         return { description, price: Number.isFinite(price) ? price : null, matched: null, yourUnitPrice: null, verdict: "unknown" as const, note: "не распознан вид работ" };
       }
       const wt = wtById.get(dp.workTypeId);
+      if (wt?.serviceTypeId != null) {
+        const w = (dp.quantity != null ? dp.unitPrice * dp.quantity : dp.unitPrice) || 1;
+        serviceWeights.set(wt.serviceTypeId, (serviceWeights.get(wt.serviceTypeId) ?? 0) + w);
+      }
       const matched = { name: wt?.name ?? "", unit: dp.unit };
       const agg = aggByWork.get(dp.workTypeId) ?? null;
       if (!agg || agg.n < 3) {
@@ -1859,7 +1868,36 @@ router.post("/real-price/check", async (req, res) => {
     const summary = { green: 0, yellow: 0, red: 0, unknown: 0 };
     for (const it of items) summary[it.verdict] += 1;
 
-    res.json({ city: { slug: city.slug, name: city.name }, items, summary });
+    // Подсказка услуги для лида: доминирующая по «интересу» услуга совпавших
+    // видов работ; иначе — первая активная услуга со slug (общий ремонт).
+    let suggestedService: { slug: string; name: string } | null = null;
+    let dominantServiceId: number | null = null;
+    let best = -1;
+    for (const [sid, w] of serviceWeights) {
+      if (w > best) {
+        best = w;
+        dominantServiceId = sid;
+      }
+    }
+    if (dominantServiceId != null) {
+      const [s] = await db
+        .select({ slug: serviceTypesTable.slug, name: serviceTypesTable.name })
+        .from(serviceTypesTable)
+        .where(and(eq(serviceTypesTable.id, dominantServiceId), eq(serviceTypesTable.isActive, true), isNotNull(serviceTypesTable.slug)))
+        .limit(1);
+      if (s?.slug) suggestedService = { slug: s.slug, name: s.name };
+    }
+    if (!suggestedService) {
+      const [fallback] = await db
+        .select({ slug: serviceTypesTable.slug, name: serviceTypesTable.name })
+        .from(serviceTypesTable)
+        .where(and(eq(serviceTypesTable.isActive, true), isNotNull(serviceTypesTable.slug)))
+        .orderBy(asc(serviceTypesTable.sortOrder), asc(serviceTypesTable.id))
+        .limit(1);
+      if (fallback?.slug) suggestedService = { slug: fallback.slug, name: fallback.name };
+    }
+
+    res.json({ city: { slug: city.slug, name: city.name }, items, summary, suggestedService });
   } catch (e) {
     console.error("[marketplace/real-price/check]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
