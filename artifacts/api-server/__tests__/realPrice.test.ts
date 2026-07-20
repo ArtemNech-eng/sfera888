@@ -156,3 +156,40 @@ test("stageLinesToPoints: только позиции с work_type_id и цен�
   assert.equal(pts[1]!.workTypeId, 3);
   assert.equal(pts[1]!.total, 19000); // sum
 });
+
+// ── meetsCaseContentThreshold (Req 6.2) ──────────────────────────────────────
+import { meetsCaseContentThreshold } from "../src/lib/realPrice.js";
+
+const RICH_STAGES: ObjStage[] = [
+  { title: "Работы", order: 0, lineItems: [{ workTypeId: 1, name: "Штукатурка", unit: "м²", quantity: 20, unitPrice: 700 }] },
+];
+const baseCase = {
+  objectType: "project" as string | null,
+  stages: RICH_STAGES,
+  area: 54 as number | null,
+  publishConsent: true,
+  photosBeforeCount: 2,
+  photosAfterCount: 4,
+};
+
+test("meetsCaseContentThreshold: богатый проект проходит", () => {
+  assert.equal(meetsCaseContentThreshold(baseCase), true);
+});
+test("meetsCaseContentThreshold: task не проходит", () => {
+  assert.equal(meetsCaseContentThreshold({ ...baseCase, objectType: "task" }), false);
+});
+test("meetsCaseContentThreshold: без согласия не проходит", () => {
+  assert.equal(meetsCaseContentThreshold({ ...baseCase, publishConsent: false }), false);
+});
+test("meetsCaseContentThreshold: без площади не проходит", () => {
+  assert.equal(meetsCaseContentThreshold({ ...baseCase, area: null }), false);
+});
+test("meetsCaseContentThreshold: фото после < 3 не проходит", () => {
+  assert.equal(meetsCaseContentThreshold({ ...baseCase, photosAfterCount: 2 }), false);
+});
+test("meetsCaseContentThreshold: фото до < 1 не проходит", () => {
+  assert.equal(meetsCaseContentThreshold({ ...baseCase, photosBeforeCount: 0 }), false);
+});
+test("meetsCaseContentThreshold: пустая смета не проходит", () => {
+  assert.equal(meetsCaseContentThreshold({ ...baseCase, stages: [] }), false);
+});
