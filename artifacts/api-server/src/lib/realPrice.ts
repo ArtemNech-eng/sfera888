@@ -142,3 +142,20 @@ export function derivePricePoint(li: RawLineItem, workTypes: WorkTypeLite[]): De
     total: hasUnitBasis ? round2(price * qty!) : round2(price),
   };
 }
+
+export type PriceVerdict = "green" | "yellow" | "red" | "unknown";
+
+/**
+ * Вердикт «светофора» для проверки чужой сметы (spec: .kiro/specs/real-price, Req 7).
+ * Сравнивает цену за единицу с медианой рынка:
+ *   - green  — в пределах рынка (≤ P75);
+ *   - yellow — выше рынка, но до 1,5× медианы;
+ *   - red    — в 1,5× и выше медианы;
+ *   - unknown — нет медианы (мало данных) → сравнить нельзя.
+ */
+export function verdictForPrice(unitPrice: number, p50: number | null, p75: number | null): PriceVerdict {
+  if (p50 == null || !(p50 > 0) || !Number.isFinite(unitPrice) || unitPrice <= 0) return "unknown";
+  if (p75 != null && unitPrice <= p75) return "green";
+  if (unitPrice <= p50 * 1.5) return "yellow";
+  return "red";
+}

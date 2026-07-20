@@ -38,6 +38,7 @@ import { z } from "zod";
 import { notifyManagerNewLead } from "../managerBot.js";
 import { computeEstimate, isCalcCategory } from "../lib/calculatorEngine.js";
 import { getCachedMarketStats, setCachedMarketStats, type MarketStatsResponse } from "../lib/marketStatsCache.js";
+import { matchWorkType, derivePricePoint, verdictForPrice, type WorkTypeLite } from "../lib/realPrice.js";
 
 declare const console: { error: (...args: unknown[]) => void };
 
@@ -1768,6 +1769,98 @@ router.get("/real-price/:workSlug/:citySlug", async (req, res) => {
     });
   } catch (e) {
     console.error("[marketplace/real-price]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─── POST /real-price/check — проверятор чужой сметы (spec: real-price, Req 7) ─
+// Тело: { citySlug, items:[{description, unit?, quantity?, price}] }. Для каждой
+// позиции: нормализация к словарю → сравнение цены за единицу с медианой рынка
+// → вердикт «светофора» (green/yellow/red/unknown). Данных нет/мало → unknown.
+router.post("/real-price/check", async (req, res) => {
+  const body = (req.body ?? {}) as { citySlug?: unknown; items?: unknown };
+  const citySlug = String(body.citySlug ?? "").trim();
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+  if (!citySlug || rawItems.length === 0) {
+    res.status(400).json({ error: "missing_params" });
+    return;
+  }
+  if (rawItems.length > 60) {
+    res.status(400).json({ error: "too_many_items" });
+    return;
+  }
+  try {
+    const [city] = await db
+      .select({ slug: citiesTable.slug, name: citiesTable.name })
+      .from(citiesTable)
+      .where(and(eq(citiesTable.slug, citySlug), eq(citiesTable.isActive, true)))
+      .limit(1);
+    if (!city) {
+      res.status(404).json({ error: "city_not_found" });
+      return;
+    }
+
+    const workTypes: WorkTypeLite[] = (
+      await db
+        .select({
+          id: workTypesTable.id,
+          slug: workTypesTable.slug,
+          name: workTypesTable.name,
+          category: workTypesTable.category,
+          defaultUnit: workTypesTable.defaultUnit,
+          synonyms: workTypesTable.synonyms,
+        })
+        .from(workTypesTable)
+        .where(eq(workTypesTable.isActive, true))
+    ).map((w) => ({ ...w, synonyms: w.synonyms ?? [] }));
+    const wtById = new Map(workTypes.map((w) => [w.id, w]));
+
+    const aggRows = await db
+      .select()
+      .from(priceAggregatesTable)
+      .where(and(eq(priceAggregatesTable.city, city.name), eq(priceAggregatesTable.keyType, "work_city")));
+    const aggByWork = new Map(aggRows.map((a) => [a.workTypeId, a]));
+
+    const items = (rawItems as Array<Record<string, unknown>>).slice(0, 60).map((li) => {
+      const description = String(li?.["description"] ?? "").trim().slice(0, 200);
+      const price = Number(li?.["price"]);
+      const unit = li?.["unit"] != null ? String(li["unit"]).trim().slice(0, 24) : null;
+      const quantity = li?.["quantity"] != null && Number.isFinite(Number(li["quantity"])) ? Number(li["quantity"]) : null;
+      const dp = derivePricePoint({ description, unit, quantity, price }, workTypes);
+      if (!dp) {
+        return { description, price: Number.isFinite(price) ? price : null, matched: null, yourUnitPrice: null, verdict: "unknown" as const, note: "не распознан вид работ" };
+      }
+      const wt = wtById.get(dp.workTypeId);
+      const matched = { name: wt?.name ?? "", unit: dp.unit };
+      const agg = aggByWork.get(dp.workTypeId) ?? null;
+      if (!agg || agg.n < 3) {
+        return { description, price, matched, yourUnitPrice: dp.unitPrice, verdict: "unknown" as const, note: "мало подтверждённых сделок по этому виду работ" };
+      }
+      if (dp.quantity == null) {
+        return { description, price, matched, yourUnitPrice: dp.unitPrice, verdict: "unknown" as const, note: "укажите количество и единицу — иначе не сравнить с ценой за единицу" };
+      }
+      const p50 = agg.p50 != null ? Number(agg.p50) : null;
+      const p25 = agg.p25 != null ? Number(agg.p25) : null;
+      const p75 = agg.p75 != null ? Number(agg.p75) : null;
+      return {
+        description,
+        matched,
+        yourUnitPrice: dp.unitPrice,
+        quantity: dp.quantity,
+        median: p50,
+        p25,
+        p75,
+        n: agg.n,
+        verdict: verdictForPrice(dp.unitPrice, p50, p75),
+      };
+    });
+
+    const summary = { green: 0, yellow: 0, red: 0, unknown: 0 };
+    for (const it of items) summary[it.verdict] += 1;
+
+    res.json({ city: { slug: city.slug, name: city.name }, items, summary });
+  } catch (e) {
+    console.error("[marketplace/real-price/check]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
   }
 });
