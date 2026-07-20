@@ -605,3 +605,27 @@ export function localFeedCategoryLabel(value: string | null): string | null {
   const found = LOCAL_FEED_CATEGORIES.find((c) => c.value === value);
   return found ? found.label : null;
 }
+
+// ── Real Price — агрегаты цен для страниц /ceny (spec: .kiro/specs/real-price) ─
+export interface PriceAggregateDTO {
+  keyType: "work_city" | "work_zhk";
+  workTypeId: number;
+  city: string;
+  district: string; // ЖК/район для work_zhk; '' для work_city
+  unit: string | null;
+  /** numeric → string по проводу; парсить на месте. */
+  p25: string | null;
+  p50: string | null;
+  p75: string | null;
+  n: number;
+  series12m: Array<{ month: string; p50: number; n: number }>;
+  isIndexable: boolean;
+  updatedAt: string;
+}
+
+export interface RealPriceResponse {
+  workType: { slug: string; name: string; category: string; unit: string | null };
+  city: { slug: string; name: string };
+  cityAggregate: PriceAggregateDTO | null;
+  zhk: PriceAggregateDTO[];
+}

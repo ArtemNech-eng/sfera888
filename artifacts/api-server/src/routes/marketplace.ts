@@ -29,6 +29,8 @@ import {
   ordersTable,
   userSavesTable,
   designsTable,
+  workTypesTable,
+  priceAggregatesTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
@@ -1712,6 +1714,60 @@ router.get("/saves", async (req, res) => {
     });
   } catch (e: unknown) {
     console.error("[marketplace/saves]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─── GET /real-price/:workSlug/:citySlug ─────────────────────────────────────
+// Real Price (spec: .kiro/specs/real-price). Публичный агрегат цен для страниц
+// /ceny: (вид работ × город) + разбивка по ЖК. Данные из price_aggregates
+// (percentile-медиана, порог индексации). Auth — bearer (router-level).
+router.get("/real-price/:workSlug/:citySlug", async (req, res) => {
+  const workSlug = String(req.params["workSlug"] ?? "").trim();
+  const citySlug = String(req.params["citySlug"] ?? "").trim();
+  if (!workSlug || !citySlug) {
+    res.status(400).json({ error: "missing_params" });
+    return;
+  }
+  try {
+    const [workType] = await db
+      .select({ id: workTypesTable.id, slug: workTypesTable.slug, name: workTypesTable.name, category: workTypesTable.category, defaultUnit: workTypesTable.defaultUnit })
+      .from(workTypesTable)
+      .where(and(eq(workTypesTable.slug, workSlug), eq(workTypesTable.isActive, true)))
+      .limit(1);
+    if (!workType) {
+      res.status(404).json({ error: "work_type_not_found" });
+      return;
+    }
+    const [city] = await db
+      .select({ slug: citiesTable.slug, name: citiesTable.name })
+      .from(citiesTable)
+      .where(and(eq(citiesTable.slug, citySlug), eq(citiesTable.isActive, true)))
+      .limit(1);
+    if (!city) {
+      res.status(404).json({ error: "city_not_found" });
+      return;
+    }
+
+    const rows = await db
+      .select()
+      .from(priceAggregatesTable)
+      .where(and(eq(priceAggregatesTable.workTypeId, workType.id), eq(priceAggregatesTable.city, city.name)));
+
+    const cityAggregate = rows.find((r) => r.keyType === "work_city") ?? null;
+    const zhk = rows
+      .filter((r) => r.keyType === "work_zhk")
+      .sort((a, b) => b.n - a.n);
+
+    setOkCache(res);
+    res.json({
+      workType: { slug: workType.slug, name: workType.name, category: workType.category, unit: workType.defaultUnit },
+      city: { slug: city.slug, name: city.name },
+      cityAggregate,
+      zhk,
+    });
+  } catch (e) {
+    console.error("[marketplace/real-price]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
   }
 });

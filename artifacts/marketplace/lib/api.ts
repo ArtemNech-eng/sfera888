@@ -516,3 +516,21 @@ export async function fetchPublishedDesignSlugs(): Promise<string[]> {
     return [];
   }
 }
+
+/**
+ * Real Price — агрегат цен по (вид работ × город) + разбивка по ЖК для страниц
+ * /ceny (spec: .kiro/specs/real-price). 404 → null (caller вызывает notFound()).
+ */
+export async function fetchRealPrice(
+  workSlug: string,
+  citySlug: string,
+): Promise<import("./types").RealPriceResponse | null> {
+  try {
+    return await call<import("./types").RealPriceResponse>(
+      `/real-price/${encodeURIComponent(workSlug)}/${encodeURIComponent(citySlug)}`,
+    );
+  } catch (e) {
+    if (e instanceof MarketplaceApiError && e.status === 404) return null;
+    throw e;
+  }
+}
