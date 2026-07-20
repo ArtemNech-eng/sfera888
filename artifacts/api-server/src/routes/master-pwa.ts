@@ -41,6 +41,7 @@ import {
   getObjectForOrder,
   saveObject,
   publishObjectForMaster,
+  autoPublishObjectOnCompletion,
 } from "../lib/objectService.js";
 const authRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 5 });
 const registerRateLimit = createRateLimiter({ windowMs: 60_000, maxAttempts: 3 });
@@ -1194,6 +1195,13 @@ router.post("/orders/:id/complete", requireMasterPwa, async (req, res) => {
   await recordOrderCompleted(masterId).catch(e =>
     console.error("[master-pwa] recordOrderCompleted error:", e),
   );
+
+  // Real Price: авто-публикация богатого проекта с согласием клиента (Req 6.2).
+  autoPublishObjectOnCompletion(masterId, orderId)
+    .then((published) => {
+      if (published) console.log(`[master-pwa] Объект заказа ${orderId} авто-опубликован при завершении`);
+    })
+    .catch((e) => console.error("[master-pwa] autoPublishObjectOnCompletion error:", e instanceof Error ? e.message : e));
 
   res.json({ success: true });
 });

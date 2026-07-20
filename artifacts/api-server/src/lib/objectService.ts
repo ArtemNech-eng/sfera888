@@ -28,7 +28,7 @@ import {
 import { eq, and, isNull, asc, desc } from "drizzle-orm";
 import crypto from "crypto";
 import { slugify } from "./slug.js";
-import { stagesToLineItems, stagesTotal, stageLinesToPoints, type ObjStage } from "./realPrice.js";
+import { stagesToLineItems, stagesTotal, stageLinesToPoints, meetsCaseContentThreshold, type ObjStage } from "./realPrice.js";
 import { recomputePriceAggregates } from "./priceAggregation.js";
 import { getCommissionSettings, calculateCommission } from "./commission.js";
 import { checkFomoTransition } from "./fomoBlock.js";
@@ -423,4 +423,30 @@ export async function publishObjectForMaster(
   revalidateMarketplacePaths(casePublicationPaths(master?.slug ?? null, slug)).catch(() => {});
 
   return done({ slug, url: `/raboty/${slug}`, pricePoints: points.length });
+}
+
+/**
+ * Авто-публикация проекта при завершении заказа (Req 6.2). Ничего не делает,
+ * если Объекта нет, он уже опубликован, это не `project`, нет согласия клиента
+ * или контент «беден» (фото до ≥1, после ≥3, площадь, построчная смета).
+ * Fire-and-forget из хука завершения заказа — не влияет на ответ клиенту.
+ */
+export async function autoPublishObjectOnCompletion(masterId: number, orderId: number): Promise<boolean> {
+  const receipt = await latestReceiptForOrder(masterId, orderId);
+  if (!receipt || receipt.isPublished) return false;
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  const stages = (Array.isArray(receipt.stages) ? receipt.stages : []) as ObjStage[];
+  const rich = meetsCaseContentThreshold({
+    objectType: receipt.objectType ?? null,
+    stages,
+    area: receipt.area != null ? Number(receipt.area) : null,
+    publishConsent: receipt.publishConsent,
+    photosBeforeCount: ((order?.photosBefore as string[] | null) ?? []).length,
+    photosAfterCount: ((order?.photosAfter as string[] | null) ?? []).length,
+  });
+  if (!rich) return false;
+
+  const res = await publishObjectForMaster(masterId, receipt.id, {});
+  return res.ok;
 }

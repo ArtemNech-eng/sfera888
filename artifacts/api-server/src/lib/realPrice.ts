@@ -243,3 +243,26 @@ export function stageLinesToPoints(stages: ObjStage[]): StagePricePoint[] {
   }
   return out;
 }
+
+/**
+ * Порог «богатого контента» для авто-публикации проекта при завершении заказа
+ * (Req 6.2): только `project`, с согласием клиента, площадью, построчной сметой
+ * и фото до ≥1 / после ≥3. Задачи (`task`) кейс-страницу не получают (Req 6.3).
+ */
+export interface CaseContentInput {
+  objectType: string | null;
+  stages: ObjStage[];
+  area: number | null;
+  publishConsent: boolean;
+  photosBeforeCount: number;
+  photosAfterCount: number;
+}
+
+export function meetsCaseContentThreshold(input: CaseContentInput): boolean {
+  if (input.objectType !== "project") return false;
+  if (!input.publishConsent) return false;
+  if (input.area == null || !Number.isFinite(input.area) || input.area <= 0) return false;
+  if (input.photosBeforeCount < 1) return false;
+  if (input.photosAfterCount < 3) return false;
+  return stagesToLineItems(input.stages).length > 0;
+}
