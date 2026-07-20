@@ -349,6 +349,9 @@ export function OrderDetailView({ id }: Props) {
         />
       ) : null}
 
+      {/* Object / case editor entry — active & completed orders */}
+      {source !== "available" ? <ObjectEditorLink orderId={item.id} /> : null}
+
       {/* Actions */}
       {source === "available" ? (
         <AvailableActions
@@ -432,6 +435,30 @@ function SourceBadge({
     );
   }
   return null;
+}
+
+function ObjectEditorLink({ orderId }: { orderId: number }) {
+  return (
+    <Link
+      href={`/cabinet/orders/${orderId}/object`}
+      className="group flex items-center gap-4 rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm transition hover:border-[var(--color-primary)] hover:shadow-md sm:p-6"
+    >
+      <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-xl">
+        📇
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold text-[var(--color-text)]">Карточка Объекта</span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-muted)]">
+          Смета по этапам, фото до/после и публикация кейса на сайте.
+        </span>
+      </span>
+      <span className="flex-shrink-0 text-[var(--color-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-primary)]">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+      </span>
+    </Link>
+  );
 }
 
 function MetaGrid({ item }: { item: OrderListItem }) {
