@@ -46,12 +46,22 @@ const VERDICT: Record<Verdict, { label: string; fg: string; bg: string }> = {
 
 const EMPTY: Row = { description: "", quantity: "", unit: "м²", price: "" };
 
-export function CheckForm({ cities }: { cities: CityOpt[] }) {
+export interface SharedResult {
+  g: number;
+  y: number;
+  r: number;
+  u: number;
+  cityName: string | null;
+  total: number;
+}
+
+export function CheckForm({ cities, shared }: { cities: CityOpt[]; shared?: SharedResult | null }) {
   const [citySlug, setCitySlug] = useState(cities[0]?.slug ?? "krasnodar");
   const [rows, setRows] = useState<Row[]>([{ ...EMPTY }, { ...EMPTY }, { ...EMPTY }]);
   const [result, setResult] = useState<CheckResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   function update(i: number, patch: Partial<Row>) {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -98,14 +108,34 @@ export function CheckForm({ cities }: { cities: CityOpt[] }) {
     }
   }
 
+  /** Ссылка с зашитым итогом — для превью в мессенджерах (OG) и лендинга. */
+  function buildShareUrl(res: CheckResult): string {
+    const origin = typeof location !== "undefined" ? location.origin : "https://chestnye-mastera.ru";
+    const q = new URLSearchParams({
+      g: String(res.summary.green),
+      y: String(res.summary.yellow),
+      r: String(res.summary.red),
+      u: String(res.summary.unknown),
+      cn: res.city.name,
+    });
+    return `${origin}/proverit-smetu?${q.toString()}`;
+  }
+
   function share() {
     if (!result) return;
     const s = result.summary;
     const text = `Проверил смету на ремонт в ${result.city.name} на «Честных мастерах»: ${s.green} по рынку, ${s.yellow} выше рынка, ${s.red} завышено.`;
+    const url = buildShareUrl(result);
     if (typeof navigator !== "undefined" && navigator.share) {
-      navigator.share({ title: "Проверка сметы", text, url: typeof location !== "undefined" ? location.href : undefined }).catch(() => {});
+      navigator.share({ title: "Проверка сметы", text, url }).catch(() => {});
     } else if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(`${text} ${typeof location !== "undefined" ? location.href : ""}`).catch(() => {});
+      navigator.clipboard
+        .writeText(`${text} ${url}`)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+        })
+        .catch(() => {});
     }
   }
 
@@ -118,6 +148,33 @@ export function CheckForm({ cities }: { cities: CityOpt[] }) {
           Вставьте позиции из вашей сметы — сравним каждую с реальными ценами подтверждённых сделок в вашем
           городе и покажем, где переплата.
         </p>
+
+        {shared && !result ? (
+          <div
+            style={{
+              marginTop: 16,
+              padding: "14px 18px",
+              background: "var(--z-accent-soft)",
+              border: "1px solid var(--z-line)",
+              borderRadius: "var(--z-radius)",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontSize: 14.5, fontWeight: 600, color: "var(--z-ink, #141414)" }}>
+              Кто-то проверил {shared.total}{" "}
+              {shared.cityName ? `поз. сметы в ${shared.cityName}` : "позиций сметы"}:
+            </span>
+            <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap" }}>
+              <Pill v="green" n={shared.g} />
+              <Pill v="yellow" n={shared.y} />
+              <Pill v="red" n={shared.r} />
+            </span>
+            <span style={{ fontSize: 13.5, color: "var(--z-muted)" }}>Проверьте и свою смету ↓</span>
+          </div>
+        ) : null}
 
         <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <label style={{ fontSize: 14, fontWeight: 600, color: "var(--z-muted)" }}>Город:</label>
@@ -191,9 +248,10 @@ export function CheckForm({ cities }: { cities: CityOpt[] }) {
                 );
               })}
             </div>
-            <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <button type="button" className="zen-btn" onClick={share}>Поделиться результатом</button>
               <a className="zen-btn zen-btn--ghost" href="/mastera">Найти честного мастера</a>
+              {copied ? <span style={{ fontSize: 13, color: "var(--z-muted)" }}>Ссылка скопирована ✓</span> : null}
             </div>
           </section>
         ) : null}
