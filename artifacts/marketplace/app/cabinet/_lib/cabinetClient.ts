@@ -573,6 +573,100 @@ export const cabinetPortfolio = {
 };
 
 
+// ── Объект (Real Price) — карточка-кейс по этапам ────────────────────────────
+
+/** Вид работ из словаря — для пикера позиций этапа. */
+export interface WorkTypeOption {
+  id: number;
+  slug: string;
+  name: string;
+  category: string;
+  defaultUnit: string | null;
+  sortOrder: number;
+}
+
+/** Позиция сметы внутри этапа Объекта. */
+export interface ObjectStageLine {
+  workTypeId?: number | null;
+  name: string;
+  unit?: string;
+  quantity?: number;
+  unitPrice: number;
+  sum?: number;
+}
+
+/** Этап сметы Объекта (Демонтаж → Черновые → Плитка → …). */
+export interface ObjectStage {
+  title: string;
+  order: number;
+  lineItems: ObjectStageLine[];
+}
+
+/** Опубликованный/черновой Объект. */
+export interface ObjectView {
+  id: number;
+  orderId: number;
+  objectType: string | null;
+  serviceType: string;
+  city: string;
+  district: string | null;
+  zhk: string | null;
+  area: number | null;
+  stages: ObjectStage[];
+  totalAmount: number;
+  notes: string | null;
+  isPublished: boolean;
+  publishedAt: string | null;
+  isIndexable: boolean;
+  publishConsent: boolean;
+  slug: string | null;
+  publicUrl: string | null;
+}
+
+/** Контекст заказа для экрана редактора Объекта. */
+export interface ObjectOrderContext {
+  orderId: number;
+  serviceType: string;
+  city: string;
+  district: string | null;
+  area: number | null;
+  status: string;
+  completedAt: string | null;
+  photosBefore: string[];
+  photosAfter: string[];
+}
+
+export interface ObjectForOrderResponse {
+  order: ObjectOrderContext;
+  object: ObjectView | null;
+}
+
+export interface SaveObjectInput {
+  orderId: number;
+  stages: ObjectStage[];
+  area?: number | null;
+  zhk?: string | null;
+  objectType?: string | null;
+  notes?: string | null;
+  publishConsent?: boolean;
+}
+
+export interface PublishObjectResponse {
+  ok: true;
+  slug: string;
+  url: string;
+  pricePoints: number;
+}
+
+export const cabinetObjects = {
+  workTypes: () => req<WorkTypeOption[]>("GET", "/work-types"),
+  get: (orderId: number) => req<ObjectForOrderResponse>("GET", `/objects/${orderId}`),
+  save: (input: SaveObjectInput) => req<ObjectView>("POST", "/objects", input),
+  publish: (id: number, consent: boolean) =>
+    req<PublishObjectResponse>("POST", `/objects/${id}/publish`, { consent }),
+};
+
+
 // ── Chat ────────────────────────────────────────────────────────────────────
 
 export interface ChatMessage {
