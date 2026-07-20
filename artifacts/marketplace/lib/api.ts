@@ -534,3 +534,21 @@ export async function fetchRealPrice(
     throw e;
   }
 }
+
+/**
+ * Real Price — опубликованный Объект как кейс-страница `/raboty/{slug}`. 404 → null.
+ * Фото абсолютизируем (могут приходить api-server-relative путями).
+ */
+export async function fetchObjectCase(
+  slug: string,
+): Promise<import("./types").ObjectCaseResponse | null> {
+  try {
+    const data = await call<import("./types").ObjectCaseResponse>(`/object/${encodeURIComponent(slug)}`);
+    data.object.photosBefore = (data.object.photosBefore ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+    data.object.photosAfter = (data.object.photosAfter ?? []).map((u) => absolutizeApiUrl(u)).filter((u): u is string => !!u);
+    return data;
+  } catch (e) {
+    if (e instanceof MarketplaceApiError && e.status === 404) return null;
+    throw e;
+  }
+}

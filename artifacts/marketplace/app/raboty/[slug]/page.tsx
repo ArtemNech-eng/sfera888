@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
-import { fetchRabotyCase, fetchCities, fetchServices, fetchMarketStats } from "../../../lib/api";
+import { fetchRabotyCase, fetchObjectCase, fetchCities, fetchServices, fetchMarketStats } from "../../../lib/api";
+import { ObjectCaseView } from "../../../components/raboty/ObjectCaseView";
 import { publicUrl } from "../../../lib/env";
 import {
   breadcrumbJsonLd,
@@ -50,6 +51,16 @@ export async function generateMetadata(
   { params }: { params: Promise<RouteParams> },
 ): Promise<Metadata> {
   const { slug } = await params;
+  const objectCase = await fetchObjectCase(slug).catch(() => null);
+  if (objectCase) {
+    const oc = objectCase.object;
+    const locp = [oc.zhk, oc.district].filter(Boolean)[0];
+    return {
+      title: `${oc.serviceType}${oc.area ? `, ${Math.round(parseFloat(oc.area))} м²` : ""} в ${oc.city} — смета и цена`,
+      description: `Реальный ремонт «${oc.serviceType}» в ${locp ? `${locp}, ` : ""}${oc.city}: смета по этапам, фото, мастер. Подтверждённая сделка на платформе.`,
+      alternates: { canonical: `/raboty/${slug}` },
+    };
+  }
   const data = await fetchRabotyCase(slug);
   if (!data) return { robots: { index: false, follow: false } };
 
@@ -126,6 +137,8 @@ export default async function RabotyCasePage(
     fetchCities().catch(() => []),
     fetchServices().catch(() => []),
   ]);
+  const objectCase = await fetchObjectCase(slug).catch(() => null);
+  if (objectCase) return <ObjectCaseView data={objectCase} />;
   if (!data) notFound();
 
   const { portfolio, master, similar, masterStats, isSavedByCurrentUser } = data;

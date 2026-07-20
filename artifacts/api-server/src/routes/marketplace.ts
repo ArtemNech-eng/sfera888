@@ -31,6 +31,7 @@ import {
   designsTable,
   workTypesTable,
   priceAggregatesTable,
+  receiptsTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
@@ -1861,6 +1862,66 @@ router.post("/real-price/check", async (req, res) => {
     res.json({ city: { slug: city.slug, name: city.name }, items, summary });
   } catch (e) {
     console.error("[marketplace/real-price/check]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─── GET /object/:slug — публичная кейс-страница Объекта (Real Price) ─────────
+// Опубликованный Объект (receipt is_published) со сметой по этапам, фото до/после
+// (с заказа) и мастером (без данных клиента/точного адреса — приватность Req 9).
+router.get("/object/:slug", async (req, res) => {
+  const slug = String(req.params["slug"] ?? "").trim();
+  if (!slug) {
+    res.status(400).json({ error: "missing_slug" });
+    return;
+  }
+  try {
+    const [obj] = await db
+      .select()
+      .from(receiptsTable)
+      .where(and(eq(receiptsTable.slug, slug), eq(receiptsTable.isPublished, true)))
+      .limit(1);
+    if (!obj) {
+      res.status(404).json({ error: "object_not_found" });
+      return;
+    }
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, obj.orderId)).limit(1);
+    const [master] = obj.masterId
+      ? await db.select().from(mastersTable).where(eq(mastersTable.id, obj.masterId)).limit(1)
+      : [];
+
+    setOkCache(res);
+    res.json({
+      object: {
+        slug: obj.slug,
+        objectType: obj.objectType,
+        serviceType: obj.serviceType,
+        city: obj.city,
+        district: obj.district,
+        zhk: obj.zhk,
+        area: obj.area,
+        totalAmount: obj.totalAmount,
+        stages: obj.stages ?? [],
+        publishedAt: obj.publishedAt,
+        photosBefore: order?.photosBefore ?? [],
+        photosAfter: order?.photosAfter ?? [],
+        durationDays: null,
+      },
+      master:
+        master && master.isPublished
+          ? {
+              slug: master.slug,
+              name: master.publicTitle?.trim() || master.alias?.trim() || `Мастер #${master.id}`,
+              specialization: master.specialization,
+              city: master.city,
+              rating: master.publicRating ?? master.rating,
+              reviewsCount: master.publicReviewsCount ?? 0,
+              yearsExperience: master.yearsExperience,
+            }
+          : null,
+    });
+  } catch (e) {
+    console.error("[marketplace/object]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
   }
 });
