@@ -47,6 +47,7 @@ import communityModerationRouter from "./community/moderation.js";
 import communityAiUtilityRouter from "./community/ai-utility.js";
 import communitySitemapRouter from "./community/sitemap.js";
 import communityThreadsRouter from "./community/threads.js";
+import realPriceRouter from "./real-price.js";
 import { sendPushToAllOperators } from "../lib/operatorPush.js";
 import { buildItems } from "./dashboard-action-items.js";
 import { requireRole } from "../middlewares/requireAuth.js";
@@ -112,6 +113,7 @@ router.use("/community/moderation", communityModerationRouter);
 router.use("/community/ai-utility", communityAiUtilityRouter);
 router.use("/community/sitemap", communitySitemapRouter);
 router.use("/community/threads", communityThreadsRouter);
+router.use("/real-price", realPriceRouter);
 // Push subscription endpoint for operators (CRM)
 router.post("/push/operator-subscribe", ops, async (req: any, res: any) => {
   const { endpoint, p256dh, auth } = req.body ?? {};
