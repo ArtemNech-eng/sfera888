@@ -86,3 +86,4 @@ export * from "./zhk-weekly-activity";
 // ── Real Price — Объект(смета)→страница→цены (spec: .kiro/specs/real-price) ──
 export * from "./work-types";
 export * from "./price-points";
+export * from "./price-aggregates";
