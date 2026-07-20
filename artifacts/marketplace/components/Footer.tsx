@@ -57,6 +57,8 @@ export async function Footer() {
               { href: "/raboty", label: "Идеи" },
               { href: "/dizajn", label: "AI-дизайн" },
               { href: "/kalkulyator", label: "Калькулятор" },
+              { href: "/proverit-smetu", label: "Проверить смету" },
+              { href: "/indeks", label: "Индекс цен" },
               { href: "/uslugi", label: "Услуги" },
               { href: "/mastera", label: "Мастера" },
             ]}

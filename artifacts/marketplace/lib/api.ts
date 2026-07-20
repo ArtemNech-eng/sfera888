@@ -552,3 +552,19 @@ export async function fetchObjectCase(
     throw e;
   }
 }
+
+/**
+ * Real Price — индекс цен на ремонт по месяцам (Req 8). `citySlug` не задан →
+ * национальный уровень. 404 (город не найден) → null.
+ */
+export async function fetchPriceIndex(
+  citySlug?: string,
+): Promise<import("./types").PriceIndexResponse | null> {
+  const qs = citySlug ? `?city=${encodeURIComponent(citySlug)}` : "";
+  try {
+    return await call<import("./types").PriceIndexResponse>(`/price-index${qs}`);
+  } catch (e) {
+    if (e instanceof MarketplaceApiError && e.status === 404) return null;
+    throw e;
+  }
+}

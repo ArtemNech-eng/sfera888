@@ -31,6 +31,7 @@ import {
   designsTable,
   workTypesTable,
   priceAggregatesTable,
+  pricePointsTable,
   receiptsTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
@@ -40,6 +41,7 @@ import { notifyManagerNewLead } from "../managerBot.js";
 import { computeEstimate, isCalcCategory } from "../lib/calculatorEngine.js";
 import { getCachedMarketStats, setCachedMarketStats, type MarketStatsResponse } from "../lib/marketStatsCache.js";
 import { matchWorkType, derivePricePoint, verdictForPrice, type WorkTypeLite } from "../lib/realPrice.js";
+import { buildPriceIndex } from "../lib/priceIndex.js";
 
 declare const console: { error: (...args: unknown[]) => void };
 
@@ -1900,6 +1902,49 @@ router.post("/real-price/check", async (req, res) => {
     res.json({ city: { slug: city.slug, name: city.name }, items, summary, suggestedService });
   } catch (e) {
     console.error("[marketplace/real-price/check]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─── GET /price-index — индекс цен на ремонт по месяцам (Real Price, Req 8) ──
+// scope: ?city=<slug> (город) либо без параметра (страна). Считаем на лету из
+// price_points — данных немного, материализация избыточна.
+router.get("/price-index", async (req, res) => {
+  try {
+    const citySlug = typeof req.query["city"] === "string" ? req.query["city"].trim() : "";
+    let cityName: string | null = null;
+    let scope: { type: "national" } | { type: "city"; slug: string; name: string } = { type: "national" };
+    if (citySlug && citySlug !== "all") {
+      const [city] = await db
+        .select({ slug: citiesTable.slug, name: citiesTable.name })
+        .from(citiesTable)
+        .where(and(eq(citiesTable.slug, citySlug), eq(citiesTable.isActive, true)))
+        .limit(1);
+      if (!city) {
+        res.status(404).json({ error: "city_not_found" });
+        return;
+      }
+      cityName = city.name;
+      scope = { type: "city", slug: city.slug!, name: city.name };
+    }
+
+    const rows = await db
+      .select({
+        workTypeId: pricePointsTable.workTypeId,
+        unitPrice: pricePointsTable.unitPrice,
+        closedAt: pricePointsTable.closedAt,
+      })
+      .from(pricePointsTable)
+      .where(cityName ? eq(pricePointsTable.city, cityName) : isNotNull(pricePointsTable.workTypeId));
+
+    const index = buildPriceIndex(
+      rows.map((r) => ({ workTypeId: r.workTypeId, unitPrice: Number(r.unitPrice), closedAt: r.closedAt })),
+    );
+
+    setOkCache(res);
+    res.json({ scope, ...index });
+  } catch (e) {
+    console.error("[marketplace/price-index]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
   }
 });

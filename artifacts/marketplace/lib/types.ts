@@ -672,3 +672,25 @@ export interface ObjectCaseResponse {
     yearsExperience: number | null;
   } | null;
 }
+
+// ── Real Price — индекс цен (/indeks) ─────────────────────────────────────────
+export interface PriceIndexMonth {
+  month: string; // YYYY-MM
+  level: number | null;
+  n: number;
+  basket: number;
+  momPct: number | null;
+}
+export interface PriceIndexQuarter {
+  quarter: string;
+  level: number | null;
+  n: number;
+  qoqPct: number | null;
+}
+export interface PriceIndexResponse {
+  scope: { type: "national" } | { type: "city"; slug: string; name: string };
+  baseMonth: string | null;
+  months: PriceIndexMonth[];
+  quarters: PriceIndexQuarter[];
+  totalDeals: number;
+}
