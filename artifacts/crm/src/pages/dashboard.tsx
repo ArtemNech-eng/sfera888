@@ -22,11 +22,11 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "quarter", label: "Квартал" },
 ];
 
-async function fetchDashboard() {
+async function fetchDashboard(period: Period) {
   // Cache-buster: previous deployment returned 410 Gone for this URL, which
   // CDNs (Cloudflare) cache aggressively. Adding a unique query param forces
   // a fresh request to the origin server.
-  const url = `/api/analytics/dashboard-v2?_t=${Date.now()}`;
+  const url = `/api/analytics/dashboard-v2?period=${period}&_t=${Date.now()}`;
   const resp = await fetch(url, { credentials: "include" });
   if (!resp.ok) throw new Error("Failed to fetch dashboard");
   return resp.json();
@@ -40,8 +40,8 @@ function DashboardPage() {
   const refreshBtnRef = useRef<HTMLButtonElement>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["/api/analytics/dashboard-v2"],
-    queryFn: fetchDashboard,
+    queryKey: ["/api/analytics/dashboard-v2", period],
+    queryFn: () => fetchDashboard(period),
     staleTime: 30000,
     refetchInterval: 60000,
   });
@@ -147,7 +147,7 @@ function DashboardPage() {
 
         {/* KPI CARDS */}
         <div className="mb-6">
-          <KPICards data={summary} isLoading={isLoading} />
+          <KPICards data={summary} isLoading={isLoading} period={period} />
         </div>
 
         {/* STUCK ORDERS — 5 categories of issues that need operator attention */}

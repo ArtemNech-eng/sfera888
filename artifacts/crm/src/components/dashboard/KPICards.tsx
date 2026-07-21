@@ -12,6 +12,12 @@ interface KPIData {
   leads_month: number;
   leads_month_prev: number;
   lead_conversion_rate: number;
+  // Selected-period values (driven by the period tabs)
+  leads_period: number;
+  leads_period_prev: number;
+  lead_conversion_rate_period: number;
+  masters_new_period: number;
+  masters_new_period_prev: number;
   // Masters
   masters_active: number;
   masters_total: number;
@@ -21,6 +27,28 @@ interface KPIData {
   orders_pending: number;
   avito_balance: number;
 }
+
+type Period = "today" | "week" | "month" | "quarter";
+
+// Card title for the leads KPI + the "vs previous" delta label, per period.
+const LEADS_TITLE: Record<Period, string> = {
+  today: "Заявки сегодня",
+  week: "Заявки за неделю",
+  month: "Заявки за месяц",
+  quarter: "Заявки за квартал",
+};
+const CHANGE_LABEL: Record<Period, string> = {
+  today: "vs вчера",
+  week: "vs прошлая неделя",
+  month: "vs прошлый месяц",
+  quarter: "vs прошлый квартал",
+};
+const PERIOD_WORD: Record<Period, string> = {
+  today: "сегодня",
+  week: "за неделю",
+  month: "за месяц",
+  quarter: "за квартал",
+};
 
 interface KPICardProps {
   title: string;
@@ -120,9 +148,10 @@ function KPICard({
 interface Props {
   data: KPIData | undefined;
   isLoading: boolean;
+  period: Period;
 }
 
-export function KPICards({ data, isLoading }: Props) {
+export function KPICards({ data, isLoading, period }: Props) {
   if (isLoading || !data) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -144,30 +173,32 @@ export function KPICards({ data, isLoading }: Props) {
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       <KPICard
         index={0}
-        title="Заявки сегодня"
-        value={data.leads_today ?? 0}
-        prevValue={data.leads_today_prev ?? 0}
+        title={LEADS_TITLE[period]}
+        value={data.leads_period ?? 0}
+        prevValue={data.leads_period_prev ?? 0}
         icon={<Users size={18} color="#3B82F6" />}
         iconBg="bg-[#EFF6FF]"
+        changeLabel={CHANGE_LABEL[period]}
       />
       <KPICard
         index={1}
         title="Конверсия заявок"
-        value={data.lead_conversion_rate ?? 0}
+        value={data.lead_conversion_rate_period ?? 0}
         icon={<TrendingUp size={18} color="#34C759" />}
         iconBg="bg-[#E8F9EE]"
         formatValue={(v) => `${v}%`}
-        changeLabel="за месяц"
+        changeLabel={PERIOD_WORD[period]}
       />
       <KPICard
         index={2}
         title="Новых мастеров"
-        value={data.masters_new_today ?? 0}
-        prevValue={data.masters_new_today_prev ?? 0}
+        value={data.masters_new_period ?? 0}
+        prevValue={data.masters_new_period_prev ?? 0}
         icon={<UserPlus size={18} color="#8B5CF6" />}
         iconBg="bg-[#F3E8FF]"
         subLabel="из"
         subValue={String(data.masters_total ?? 0)}
+        changeLabel={CHANGE_LABEL[period]}
       />
       <KPICard
         index={3}

@@ -90,7 +90,7 @@ router.get("/avito-balance", adminOnly, async (_req, res) => {
 //     `marketplaceContext`, etc.)
 //   • Pre-build Map indexes for O(1) lookups during aggregation
 //   • Single-pass over each entity collection where possible
-router.get("/dashboard-v2", adminOnly, async (_req, res) => {
+router.get("/dashboard-v2", adminOnly, async (req, res) => {
   // Defensive: this URL was previously serving 410 Gone, which CDNs aggressively
   // cache. Force fresh response on every request.
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
@@ -103,6 +103,30 @@ router.get("/dashboard-v2", adminOnly, async (_req, res) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const cutoff24h = new Date(now.getTime() - 24 * 3600000);
+
+    // ── Selected period window + previous comparable window ────────────────
+    // Drives the KPI cards. `periodStart..now` is the current window; the KPI
+    // "vs" delta compares it against `prevStart..periodStart` (same length).
+    const rawPeriod = String(req.query.period ?? "month").toLowerCase();
+    const period = (["today", "week", "month", "quarter"].includes(rawPeriod)
+      ? rawPeriod
+      : "month") as "today" | "week" | "month" | "quarter";
+    let periodStart: Date;
+    let prevStart: Date;
+    if (period === "today") {
+      periodStart = todayStart;
+      prevStart = yesterdayStart;
+    } else if (period === "week") {
+      periodStart = new Date(todayStart.getTime() - 6 * 86400000); // last 7 days incl. today
+      prevStart = new Date(periodStart.getTime() - 7 * 86400000);
+    } else if (period === "quarter") {
+      const q = Math.floor(now.getMonth() / 3);
+      periodStart = new Date(now.getFullYear(), q * 3, 1);
+      prevStart = new Date(now.getFullYear(), q * 3 - 3, 1);
+    } else {
+      periodStart = monthStart;
+      prevStart = prevMonthStart;
+    }
 
     // ── Load only the columns we actually use, in parallel ─────────────────
     const [leads, orders, masters, txRows, avitoBalance] = await Promise.all([
@@ -201,6 +225,7 @@ router.get("/dashboard-v2", adminOnly, async (_req, res) => {
 
     // ── Summary (KPIData — matches KPICards.tsx) ───────────────────────────
     let leadsToday = 0, leadsYesterday = 0, leadsMonth = 0, leadsPrevMonth = 0, sentToWorkMonth = 0;
+    let leadsPeriod = 0, leadsPrevPeriod = 0, sentToWorkPeriod = 0;
     for (const l of leads) {
       if (l.createdAt >= todayStart) leadsToday++;
       else if (l.createdAt >= yesterdayStart) leadsYesterday++;
@@ -208,15 +233,26 @@ router.get("/dashboard-v2", adminOnly, async (_req, res) => {
         leadsMonth++;
         if (l.status === "sent_to_work") sentToWorkMonth++;
       } else if (l.createdAt >= prevMonthStart) leadsPrevMonth++;
+      // Selected-period counters (independent of the fixed windows above).
+      if (l.createdAt >= periodStart) {
+        leadsPeriod++;
+        if (l.status === "sent_to_work") sentToWorkPeriod++;
+      } else if (l.createdAt >= prevStart) leadsPrevPeriod++;
     }
     const leadConversionRate = leadsMonth > 0
       ? Math.round((sentToWorkMonth / leadsMonth) * 1000) / 10
       : 0;
+    const leadConversionRatePeriod = leadsPeriod > 0
+      ? Math.round((sentToWorkPeriod / leadsPeriod) * 1000) / 10
+      : 0;
     let activeMasters = 0, newMastersToday = 0, newMastersYesterday = 0;
+    let newMastersPeriod = 0, newMastersPrevPeriod = 0;
     for (const m of masters) {
       if (m.status === "active") activeMasters++;
       if (m.createdAt >= todayStart) newMastersToday++;
       else if (m.createdAt >= yesterdayStart) newMastersYesterday++;
+      if (m.createdAt >= periodStart) newMastersPeriod++;
+      else if (m.createdAt >= prevStart) newMastersPrevPeriod++;
     }
     let ordersPending = 0;
     for (const o of orders) {
@@ -225,11 +261,18 @@ router.get("/dashboard-v2", adminOnly, async (_req, res) => {
       }
     }
     const summary = {
+      period,
       leads_today: leadsToday,
       leads_today_prev: leadsYesterday,
       leads_month: leadsMonth,
       leads_month_prev: leadsPrevMonth,
       lead_conversion_rate: leadConversionRate,
+      // Selected-period KPI values consumed by KPICards.
+      leads_period: leadsPeriod,
+      leads_period_prev: leadsPrevPeriod,
+      lead_conversion_rate_period: leadConversionRatePeriod,
+      masters_new_period: newMastersPeriod,
+      masters_new_period_prev: newMastersPrevPeriod,
       masters_active: activeMasters,
       masters_total: masters.length,
       masters_new_today: newMastersToday,
