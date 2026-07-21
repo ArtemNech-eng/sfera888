@@ -172,6 +172,11 @@ function OrderCard({ order, variant }: { order: OrderListItem; variant: Tab }) {
                 ↻ Постоянный клиент
               </span>
             )}
+            {variant === "available" && order.responded && (
+              <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                ✓ Вы откликнулись
+              </span>
+            )}
           </div>
           {status && <StatusPill {...status} />}
         </div>
@@ -190,7 +195,7 @@ function OrderCard({ order, variant }: { order: OrderListItem; variant: Tab }) {
             ) : null}
           </div>
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)]">
-            {variant === "available" ? "Откликнуться" : "Открыть"}
+            {variant === "available" ? (order.responded ? "Вы откликнулись" : "Откликнуться") : "Открыть"}
             <ArrowIcon />
           </span>
         </div>

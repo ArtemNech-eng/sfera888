@@ -150,21 +150,13 @@ export function OrderDetailView({ id }: Props) {
 
   const handleRespond = async () => {
     if (!item) return;
-    setBusy(true);
-    try {
-      await cabinetOrders.respond(item.id, respondNote.trim() || undefined);
-      toast.success("Отклик отправлен — ждите, оператор передаст заказ");
+    const res = await withBusy(
+      () => cabinetOrders.respond(item.id, respondNote.trim() || undefined),
+      "Отклик отправлен — ждите, оператор передаст заказ",
+    );
+    if (res) {
       setRespondNote("");
       setRespondOpen(false);
-      // Once the dispatch is marked "responded" the order leaves the
-      // "available" feed, so refreshing this detail page would render a
-      // misleading "order not found" screen. Return to the list instead.
-      router.push("/cabinet/orders");
-    } catch (err) {
-      const msg = err instanceof CabinetApiError ? err.message : err instanceof Error ? err.message : "Ошибка";
-      toast.error(msg);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -369,6 +361,7 @@ export function OrderDetailView({ id }: Props) {
       {source === "available" ? (
         <AvailableActions
           busy={busy}
+          responded={!!item.responded}
           respondOpen={respondOpen}
           respondNote={respondNote}
           setRespondNote={setRespondNote}
@@ -498,6 +491,7 @@ function MetaGrid({ item }: { item: OrderListItem }) {
 
 function AvailableActions(props: {
   busy: boolean;
+  responded: boolean;
   respondOpen: boolean;
   respondNote: string;
   setRespondNote: (v: string) => void;
@@ -514,36 +508,54 @@ function AvailableActions(props: {
       <div>
         <h2 className="text-base font-bold text-[var(--color-text)]">Действия</h2>
         <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-          Откликнитесь на заявку — это бесплатно. Оператор свяжется и передаст заказ. Можно добавить заметку для клиента.
+          {props.responded
+            ? "Вы уже откликнулись на эту заявку. Дождитесь — оператор свяжется и передаст заказ."
+            : "Откликнитесь на заявку — это бесплатно. Оператор свяжется и передаст заказ. Можно добавить заметку для клиента."}
         </p>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={props.onRespond}
-          disabled={props.busy}
-          className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-5 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
-        >
-          <CheckIcon />
-          Откликнуться
-        </button>
-        <button
-          type="button"
-          onClick={props.toggleRespond}
-          className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-primary)]"
-        >
-          {props.respondOpen ? "Закрыть" : "Откликнуться с заметкой"}
-        </button>
-        <button
-          type="button"
-          onClick={props.toggleReject}
-          className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50"
-        >
-          {props.rejectOpen ? "Закрыть" : "Отклонить"}
-        </button>
-      </div>
+      {props.responded ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-700">
+            <CheckIcon />
+            Вы откликнулись
+          </span>
+          <button
+            type="button"
+            onClick={props.toggleReject}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+          >
+            {props.rejectOpen ? "Закрыть" : "Отозвать отклик"}
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={props.onRespond}
+            disabled={props.busy}
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-5 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
+          >
+            <CheckIcon />
+            Откликнуться
+          </button>
+          <button
+            type="button"
+            onClick={props.toggleRespond}
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-text)] transition hover:border-[var(--color-primary)]"
+          >
+            {props.respondOpen ? "Закрыть" : "Откликнуться с заметкой"}
+          </button>
+          <button
+            type="button"
+            onClick={props.toggleReject}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+          >
+            {props.rejectOpen ? "Закрыть" : "Отклонить"}
+          </button>
+        </div>
+      )}
 
-      {props.respondOpen ? (
+      {!props.responded && props.respondOpen ? (
         <div className="space-y-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4">
           <label className="block text-xs font-semibold text-[var(--color-text)]">
             Заметка для клиента (опционально)

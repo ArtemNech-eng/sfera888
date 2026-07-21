@@ -659,7 +659,10 @@ router.get("/orders/available", requireMasterPwa, async (req, res) => {
   const masterId = (req.session as any).masterId;
 
   const dispatches = await db.select().from(orderDispatchesTable)
-    .where(and(eq(orderDispatchesTable.masterId, masterId), eq(orderDispatchesTable.status, "sent")));
+    .where(and(
+      eq(orderDispatchesTable.masterId, masterId),
+      inArray(orderDispatchesTable.status, ["sent", "responded"]),
+    ));
 
   if (dispatches.length === 0) return res.json([]);
 
@@ -692,11 +695,14 @@ router.get("/orders/available", requireMasterPwa, async (req, res) => {
     scheduledAt: o.scheduledAt ?? null,
     comment: o.comment ?? null,
     dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
+    responded: dispatchByOrder.get(o.id)?.status === "responded",
   }));
 
   // Newest dispatched orders first, so a freshly broadcast order appears at the
-  // top of the master's feed (fall back to order id for a stable tiebreak).
+  // top of the master's feed. Orders the master hasn't answered yet rank above
+  // ones they've already responded to (those stay visible with a marker).
   result.sort((a, b) => {
+    if (a.responded !== b.responded) return a.responded ? 1 : -1;
     const ta = a.dispatchedAt ? new Date(a.dispatchedAt).getTime() : 0;
     const tb = b.dispatchedAt ? new Date(b.dispatchedAt).getTime() : 0;
     if (tb !== ta) return tb - ta;

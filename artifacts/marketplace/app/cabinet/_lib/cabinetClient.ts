@@ -362,6 +362,8 @@ export interface OrderListItem {
   dispatchedAt?: string | null;
   competitorCount?: number;
   isRepeatClient?: boolean;
+  // True on /orders/available when the master has already responded to this order.
+  responded?: boolean;
   // Master-side photo galleries (only on /orders/my).
   photosBefore?: string[];
   photosAfter?: string[];
