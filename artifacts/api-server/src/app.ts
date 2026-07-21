@@ -1085,7 +1085,16 @@ app.post("/api/manager-webhook", express.json(), async (req, res) => {
     // 4. Next.js static assets (JS/CSS bundles) — immutable-cached after first load
     app.use("/_next", proxy);
 
-    console.log(`[cabinet-proxy] /cabinet /login /_next /api/cabinet* → ${mktOrigin} ENABLED`);
+    // 5. Root-level PWA assets referenced by the cabinet manifest + SW registration.
+    //    The cabinet is installable only if its service worker and manifest icons
+    //    are reachable on THIS domain. They live at the marketplace root (public/),
+    //    so proxy those exact paths (the recruitment landing at "/" doesn't use them).
+    app.use("/sw.js", proxy);
+    app.use("/icon-192.svg", proxy);
+    app.use("/icon-512.svg", proxy);
+    app.use("/apple-touch-icon.svg", proxy);
+
+    console.log(`[cabinet-proxy] /cabinet /login /_next /sw.js /icon-*.svg /api/cabinet* → ${mktOrigin} ENABLED`);
   }
 }
 
