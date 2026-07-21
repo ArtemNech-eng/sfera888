@@ -8,19 +8,10 @@ interface Props {
   registered?: boolean;
 }
 
-const inputCls =
-  "w-full h-12 px-4 rounded-xl border border-[var(--color-border)] bg-white text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] text-base";
-
 /**
- * Cabinet login form.
- *
- * Posts to `/api/cabinet/auth/login` (proxy → master-pwa). On success the
- * api-server sets the `connect.sid` cookie via the proxy response, so the
- * router push to `/cabinet` immediately resolves with an authenticated SSR.
- *
- * Kept minimal for V1.5 Week 1: phone-or-login + password. Registration and
- * "forgot password" flows live on the master-pwa today and will be ported in
- * Week 2 of the migration.
+ * Posts to /api/cabinet/auth/login (proxy → master-pwa api-server).
+ * On success the api-server sets connect.sid via the proxy Set-Cookie chain,
+ * so the subsequent router.replace("/cabinet") lands on an authenticated SSR.
  */
 export function LoginForm({ next, registered }: Props) {
   const router = useRouter();
@@ -30,9 +21,9 @@ export function LoginForm({ next, registered }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!login || !password) {
+    if (!login.trim() || !password) {
       setError("Введите логин и пароль");
       return;
     }
@@ -42,92 +33,134 @@ export function LoginForm({ next, registered }: Props) {
       const res = await fetch("/api/cabinet/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login, password }),
+        body: JSON.stringify({ login: login.trim(), password }),
         credentials: "same-origin",
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error ?? data.message ?? "Не удалось войти");
+        setError(
+          (data as { error?: string; message?: string }).error ??
+          (data as { message?: string }).message ??
+          "Неверный логин или пароль",
+        );
         return;
       }
-      const target = next && next.startsWith("/cabinet") ? next : "/cabinet";
+      const target = next?.startsWith("/cabinet") ? next : "/cabinet";
       router.replace(target);
       router.refresh();
-    } catch (err) {
-      setError("Сервер недоступен. Попробуйте ещё раз.");
+    } catch {
+      setError("Нет связи с сервером. Проверьте интернет.");
     } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
-      {registered ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-          Аккаунт создан. Войдите, используя номер телефона как логин.
-        </div>
-      ) : null}
+  const inputBase =
+    "w-full h-12 rounded-2xl border border-white/20 bg-white/10 px-4 text-white placeholder:text-white/40 focus:border-white/50 focus:bg-white/15 focus:outline-none transition text-base backdrop-blur-sm";
 
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {registered && (
+        <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/20 px-4 py-3 text-sm font-medium text-emerald-200 backdrop-blur-sm">
+          ✅ Аккаунт создан — войдите по номеру телефона
+        </div>
+      )}
+
+      {/* Phone / login */}
       <div className="space-y-1.5">
-        <label htmlFor="cabinet-login" className="block text-sm font-medium text-[var(--color-text)]">
+        <label className="block text-sm font-medium text-white/80">
           Номер телефона или логин
         </label>
-        <input
-          id="cabinet-login"
-          name="login"
-          type="text"
-          autoComplete="username"
-          value={login}
-          onChange={(e) => setLogin(e.target.value)}
-          placeholder="+7 или логин"
-          className={inputCls}
-        />
+        <div className="relative">
+          <PhoneIcon />
+          <input
+            type="text"
+            autoComplete="username"
+            value={login}
+            onChange={(e) => { setLogin(e.target.value); setError(null); }}
+            placeholder="+7 или логин"
+            className={`${inputBase} pl-11`}
+          />
+        </div>
       </div>
 
+      {/* Password */}
       <div className="space-y-1.5">
-        <label htmlFor="cabinet-password" className="block text-sm font-medium text-[var(--color-text)]">
+        <label className="block text-sm font-medium text-white/80">
           Пароль
         </label>
         <div className="relative">
+          <LockIcon />
           <input
-            id="cabinet-password"
-            name="password"
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={`${inputCls} pr-12`}
+            onChange={(e) => { setPassword(e.target.value); setError(null); }}
+            placeholder="••••••••"
+            className={`${inputBase} pl-11 pr-20`}
           />
           <button
             type="button"
             onClick={() => setShowPassword((v) => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 px-1 text-sm text-[var(--color-muted)]"
-            aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-semibold text-white/60 hover:text-white transition"
           >
             {showPassword ? "Скрыть" : "Показать"}
           </button>
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>
-      ) : null}
+      {/* Error */}
+      {error && (
+        <div className="flex items-start gap-2 rounded-2xl border border-red-400/30 bg-red-500/20 px-4 py-3 text-sm text-red-200 backdrop-blur-sm">
+          <span className="mt-0.5 flex-shrink-0">⚠️</span>
+          <span>{error}</span>
+        </div>
+      )}
 
+      {/* Submit */}
       <button
         type="submit"
         disabled={loading}
-        className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-[var(--color-cta)] text-base font-semibold text-[var(--color-on-cta)] transition-opacity disabled:opacity-50"
+        className="relative w-full overflow-hidden rounded-2xl py-3.5 text-base font-bold text-white shadow-lg transition active:scale-[0.98] disabled:opacity-60"
+        style={{
+          background: "linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)",
+          boxShadow: "0 4px 20px rgba(13,148,136,0.4)",
+        }}
       >
         {loading ? (
-          <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+          <span className="inline-flex items-center gap-2">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            Входим…
+          </span>
         ) : (
-          "Войти"
+          "Войти в кабинет"
         )}
       </button>
 
-      <p className="text-center text-xs text-[var(--color-muted)]">
+      <p className="text-center text-xs text-white/40">
         Забыли пароль? Напишите менеджеру в Max-боте.
       </p>
     </form>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.27 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.18 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16z"/>
+      </svg>
+    </span>
+  );
+}
+
+function LockIcon() {
+  return (
+    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    </span>
   );
 }
