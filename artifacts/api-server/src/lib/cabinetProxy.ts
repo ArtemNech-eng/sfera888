@@ -73,9 +73,32 @@ export function createCabinetProxy(marketplaceOrigin: string) {
       if (!res.headersSent) res.status(502).send("Кабинет временно недоступен");
     });
 
-    // Forward request body for POST/PUT/PATCH (form uploads, JSON etc.)
+    // Forward request body.
+    // IMPORTANT: express.json() and express.urlencoded() run before this
+    // middleware and consume the raw stream — req.body holds the parsed result.
+    // For those content-types we re-serialize; for everything else (multipart,
+    // binary) the stream is untouched and we pipe it directly.
     if (req.method !== "GET" && req.method !== "HEAD") {
-      req.pipe(proxyReq, { end: true });
+      const ct = String(req.headers["content-type"] ?? "").toLowerCase();
+      const wasParserRun =
+        req.body !== undefined &&
+        (ct.includes("application/json") ||
+          ct.includes("application/x-www-form-urlencoded"));
+
+      if (wasParserRun) {
+        // Re-serialize the already-parsed body and fix content-length.
+        const raw = Buffer.from(
+          ct.includes("json")
+            ? JSON.stringify(req.body)
+            : new URLSearchParams(req.body as Record<string, string>).toString(),
+          "utf8",
+        );
+        proxyReq.setHeader("content-length", raw.length);
+        proxyReq.end(raw);
+      } else {
+        // Multipart / binary — stream not yet consumed, pipe directly.
+        req.pipe(proxyReq, { end: true });
+      }
     } else {
       proxyReq.end();
     }
