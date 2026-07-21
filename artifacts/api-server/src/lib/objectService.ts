@@ -28,6 +28,11 @@ import {
 import { eq, and, isNull, asc, desc } from "drizzle-orm";
 import crypto from "crypto";
 import { slugify } from "./slug.js";
+import {
+  canonicalReceiptIdsByOrder,
+  findDuplicateObjectOrders,
+  type DuplicateOrderObjects,
+} from "./objectDedupe.js";
 import { stagesToLineItems, stagesTotal, stageLinesToPoints, meetsCaseContentThreshold, type ObjStage } from "./realPrice.js";
 import { recomputePriceAggregates } from "./priceAggregation.js";
 import { getCommissionSettings, calculateCommission } from "./commission.js";
@@ -205,11 +210,18 @@ export async function listObjectsForMaster(masterId: number): Promise<ObjectSumm
     return st.length > 0 || r.receipt.isPublished;
   });
 
-  const sortKey = (r: (typeof objects)[number]) =>
-    (r.receipt.publishedAt ?? r.receipt.createdAt ?? new Date(0)).getTime();
-  objects.sort((a, b) => sortKey(b) - sortKey(a));
+  // 1 заказ = 1 Объект (Req 1.3): если по заказу несколько расписок-объектов,
+  // оставляем только каноническую (последнюю, max id) — как в getObjectForOrder.
+  const canonicalIds = canonicalReceiptIdsByOrder(
+    objects.map((r) => ({ id: r.receipt.id, orderId: r.receipt.orderId })),
+  );
+  const deduped = objects.filter((r) => canonicalIds.has(r.receipt.id));
 
-  return objects.map((r) => {
+  const sortKey = (r: (typeof deduped)[number]) =>
+    (r.receipt.publishedAt ?? r.receipt.createdAt ?? new Date(0)).getTime();
+  deduped.sort((a, b) => sortKey(b) - sortKey(a));
+
+  return deduped.map((r) => {
     const after = (r.photosAfter as string[] | null) ?? [];
     const before = (r.photosBefore as string[] | null) ?? [];
     const st = (Array.isArray(r.receipt.stages) ? r.receipt.stages : []) as ObjStage[];
@@ -233,6 +245,45 @@ export async function listObjectsForMaster(masterId: number): Promise<ObjectSumm
       coverPhoto: after[0] ?? before[0] ?? null,
     };
   });
+}
+
+// ─── Консолидация «1 заказ = 1 Объект» — dry-run отчёт (0.4) ──────────────────
+
+export interface ObjectConsolidationReport {
+  totalObjectReceipts: number;
+  ordersWithDuplicates: number;
+  duplicates: DuplicateOrderObjects[];
+}
+
+/**
+ * Dry-run отчёт консолидации (0.4, Req 1.3): какие заказы всё ещё имеют >1
+ * расписки-объекта. ТОЛЬКО ЧТЕНИЕ — физического слияния строк не делаем:
+ * `receipts` несёт 25+ зависимостей, поэтому реальное слияние выполняется
+ * вручную на стейджинге по этому отчёту. Пользовательский инвариант уже
+ * соблюдён на чтении — `listObjectsForMaster` дедуплицирует по канонической
+ * (последней) расписке заказа.
+ */
+export async function buildObjectConsolidationReport(): Promise<ObjectConsolidationReport> {
+  const rows = await db
+    .select({
+      id: receiptsTable.id,
+      orderId: receiptsTable.orderId,
+      isPublished: receiptsTable.isPublished,
+      stages: receiptsTable.stages,
+    })
+    .from(receiptsTable);
+  const objectRows = rows
+    .filter((r) => {
+      const st = Array.isArray(r.stages) ? r.stages : [];
+      return st.length > 0 || r.isPublished;
+    })
+    .map((r) => ({ id: r.id, orderId: r.orderId }));
+  const duplicates = findDuplicateObjectOrders(objectRows);
+  return {
+    totalObjectReceipts: objectRows.length,
+    ordersWithDuplicates: duplicates.length,
+    duplicates,
+  };
 }
 
 // ─── Создание / редактирование Объекта (upsert по заказу) ─────────────────────

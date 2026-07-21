@@ -17,6 +17,7 @@ import { backfillReceiptTransactions } from "./routes/receipts.js";
 import { runAvitoSchedule } from "./routes/avito.js";
 import { runTemplateScenario } from "./routes/ai-office.js";
 import { seedCommunityDemo, simulateCommunityActivity } from "./lib/communitySeed.js";
+import { recomputePriceAggregates } from "./lib/priceAggregation.js";
 
 const port = Number(process.env["PORT"] || "8080");
 
@@ -819,6 +820,7 @@ let morningBriefingFiredDate: string | null = null;
 let eveningReportFiredDate: string | null = null;
 let fridayWeeklySummaryFiredDate: string | null = null;
 let monthlyReportFiredDate: string | null = null;
+let priceAggregatesFiredDate: string | null = null;
 const autonomousCycleFiredHours = new Set<string>(); // "YYYY-MM-DD HH"
 
 setInterval(async () => {
@@ -829,6 +831,15 @@ setInterval(async () => {
     // Midnight: auto-mark non-responders as "not ready"
     if (hhmm === "00:00") {
       autoCheckinMidnight().catch(console.error);
+    }
+
+    // Real Price 1.4: nightly recompute of price aggregates (rebuilds series_12m).
+    if (hhmm === "03:30" && priceAggregatesFiredDate !== today) {
+      priceAggregatesFiredDate = today;
+      console.log("[real-price] Nightly price aggregates recompute (series_12m) at 03:30 MSK");
+      recomputePriceAggregates().catch((e) =>
+        console.error("[real-price] nightly recompute failed:", e),
+      );
     }
 
     if (hhmm === cfg.broadcastTime && checkinFiredDate !== today) {
