@@ -38,6 +38,13 @@ export const dynamic = "force-dynamic";
 const ALLOWED_HOSTS = new Set<string>([
   canonicalHost(),
   `www.${canonicalHost()}`,
+  // When the cabinet is served via reverse proxy on another domain (CABINET_PROXY_ORIGIN),
+  // that domain's Origin header must also be trusted for state-changing requests.
+  // Example: CABINET_PROXY_ORIGIN=sfera-master.ru
+  ...((process.env.CABINET_PROXY_ORIGIN ?? "")
+    .split(",")
+    .map((h) => h.trim().replace(/^https?:\/\//, ""))
+    .filter(Boolean)),
 ]);
 
 function isCsrfSafe(req: NextRequest): boolean {

@@ -25,6 +25,10 @@ export const dynamic = "force-dynamic";
 const ALLOWED_HOSTS = new Set<string>([
   canonicalHost(),
   `www.${canonicalHost()}`,
+  ...((process.env.CABINET_PROXY_ORIGIN ?? "")
+    .split(",")
+    .map((h) => h.trim().replace(/^https?:\/\//, ""))
+    .filter(Boolean)),
 ]);
 
 function isCsrfSafe(req: NextRequest): boolean {

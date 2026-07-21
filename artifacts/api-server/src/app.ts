@@ -1058,10 +1058,8 @@ app.post("/api/manager-webhook", express.json(), async (req, res) => {
 });
 
 // ── Cabinet reverse proxy (Вариант B) ────────────────────────────────────────
-// Когда CABINET_PROXY=1, кабинет мастера отдаётся через этот сервер (sfera-master.ru)
-// без редиректа — мастерское PWA продолжает работать без переустановки.
-// assetPrefix в marketplace Next.js обеспечивает, что JS/CSS грузятся напрямую
-// с chestnye-mastera.ru, через прокси идут только HTML-страницы + RSC-пейлоады.
+// Когда CABINET_PROXY=1, весь кабинет мастера (HTML, JS/CSS, API) проксируется
+// через этот сервер — старое PWA на sfera-master.ru работает без переустановки.
 {
   const cabinetProxyEnabled = /^(1|true|yes|on)$/i.test(process.env.CABINET_PROXY ?? "");
   if (cabinetProxyEnabled) {
@@ -1071,12 +1069,22 @@ app.post("/api/manager-webhook", express.json(), async (req, res) => {
       "https://chestnye-mastera.ru"
     ).replace(/\/+$/, "");
     const proxy = createCabinetProxy(mktOrigin);
-    // API routes BEFORE the generic /api router so they don't collide
+
+    // 1. Cabinet API routes — BEFORE generic /api router
     app.use("/api/cabinet-extra", proxy);
     app.use("/api/cabinet", proxy);
-    // Cabinet HTML pages + RSC navigation
+
+    // 2. Cabinet HTML + RSC client-side navigation
     app.use("/cabinet", proxy);
-    console.log(`[cabinet-proxy] /cabinet/* + /api/cabinet/* → ${mktOrigin} ENABLED`);
+
+    // 3. Login page — marketplace redirects here when session is missing
+    app.use("/login", proxy);
+
+    // 4. Next.js static assets — JS/CSS bundles (no assetPrefix needed)
+    //    Files are immutable-cached by the browser after first load.
+    app.use("/_next", proxy);
+
+    console.log(`[cabinet-proxy] /cabinet /login /_next /api/cabinet* → ${mktOrigin} ENABLED`);
   }
 }
 
