@@ -296,6 +296,21 @@ export default function OrderPanel({
     onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
   });
 
+  // Force resend to the SAME masters, ignoring cooldown/limit/status (admin).
+  const forceResendMutation = useMutation({
+    mutationFn: async (oid: number) => {
+      const r = await fetch(`/api/dispatch/${oid}/force-resend`, { method: "POST", credentials: "include" });
+      if (!r.ok) { const text = await r.text(); let msg = "Ошибка"; try { msg = JSON.parse(text).error ?? msg; } catch {} throw new Error(msg); }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Повторная рассылка отправлена", description: data?.message ?? "Уведомления отправлены тем же мастерам" });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dispatch", orderId] });
+    },
+    onError: (e: Error) => toast({ title: "Ошибка", description: e.message, variant: "destructive" }),
+  });
+
   const assignMutation = useMutation({
     mutationFn: async ({ orderId: oid, masterId }: { orderId: number; masterId: number }) => {
       const r = await fetch(`/api/dispatch/${oid}/assign/${masterId}`, { method: "POST", credentials: "include" });
@@ -805,6 +820,19 @@ export default function OrderPanel({
                     })()}
                   </div>
                 )}
+
+                {/* Force resend — same masters, no conditions (admin request) */}
+                <div>
+                  <button
+                    onClick={() => forceResendMutation.mutate(orderId)}
+                    disabled={forceResendMutation.isPending || (dispatchData?.dispatches.length ?? 0) === 0}
+                    title="Повторно отправить уведомление тем же мастерам, игнорируя кулдаун, лимит и статус"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-border rounded-lg text-xs font-medium text-foreground hover:bg-slate-100 transition-colors disabled:opacity-50"
+                  >
+                    {forceResendMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                    Разослать повторно тем же (без условий)
+                  </button>
+                </div>
 
                 {respondents.length > 0 && (
                   <div className="space-y-2">

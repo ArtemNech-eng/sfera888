@@ -6,7 +6,7 @@ import { requireRole } from "../middlewares/requireAuth.js";
 import { sendPushToMaster } from "../lib/push.js";
 import { getOverdueMasterIds, getMasterEligibility } from "../lib/orderEligibility.js";
 import { deductServiceFee } from "../lib/accountBalance.js";
-import { performBroadcast, performResend } from "../lib/broadcastOrder.js";
+import { performBroadcast, performResend, performForceResend } from "../lib/broadcastOrder.js";
 import { sendMaxMessage, sendOnboardingMemo } from "../maxBot.js";
 
 const router = Router();
@@ -327,6 +327,25 @@ router.post("/:orderId/resend", ops, async (req, res) => {
   });
 
   res.json({ ok: true, message: "Повторная рассылка запущена" });
+});
+
+// ─── POST /api/dispatch/:orderId/force-resend ──────────────────────────────────
+// Unconditional resend to the SAME masters (admin action): ignores cooldown,
+// resend limit, order status and specialty filters. See performForceResend.
+router.post("/:orderId/force-resend", ops, async (req, res) => {
+  const orderId = parseInt(String(req.params.orderId));
+  if (isNaN(orderId)) return res.status(400).json({ ok: false, error: "Invalid order id" });
+  const userId = (req as any).user?.id ?? null;
+  try {
+    const result = await performForceResend(orderId, userId);
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error ?? "Повторная рассылка не удалась" });
+    }
+    return res.json({ ok: true, sent: result.sent, message: `Повторно отправлено ${result.sent} мастерам` });
+  } catch (err: any) {
+    console.error("[force-resend] error for order", orderId, err);
+    return res.status(500).json({ ok: false, error: err.message ?? "Внутренняя ошибка при повторной рассылке" });
+  }
 });
 
 // ─── POST /api/dispatch/:orderId/add-master/:masterId — add a single master to dispatch ──

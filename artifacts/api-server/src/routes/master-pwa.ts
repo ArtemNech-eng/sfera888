@@ -682,7 +682,7 @@ router.get("/orders/available", requireMasterPwa, async (req, res) => {
 
   const dispatchByOrder = new Map(dispatches.map(d => [d.orderId, d]));
 
-  res.json(orders.map(o => ({
+  const result = orders.map(o => ({
     id: o.id,
     leadId: o.leadId ?? null,
     city: o.city,
@@ -692,7 +692,18 @@ router.get("/orders/available", requireMasterPwa, async (req, res) => {
     scheduledAt: o.scheduledAt ?? null,
     comment: o.comment ?? null,
     dispatchedAt: dispatchByOrder.get(o.id)?.createdAt ?? null,
-  })));
+  }));
+
+  // Newest dispatched orders first, so a freshly broadcast order appears at the
+  // top of the master's feed (fall back to order id for a stable tiebreak).
+  result.sort((a, b) => {
+    const ta = a.dispatchedAt ? new Date(a.dispatchedAt).getTime() : 0;
+    const tb = b.dispatchedAt ? new Date(b.dispatchedAt).getTime() : 0;
+    if (tb !== ta) return tb - ta;
+    return b.id - a.id;
+  });
+
+  res.json(result);
 });
 
 router.get("/orders/my", requireMasterPwa, async (req, res) => {

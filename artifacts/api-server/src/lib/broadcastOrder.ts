@@ -377,3 +377,72 @@ export async function performResend(
 
   return { ok: true, sent: eligible.length };
 }
+
+// ─── Force resend to the SAME masters, unconditionally (admin action) ───────────
+// Unlike performResend, this ignores cooldown, resend limit, order status and
+// specialty filters. It simply re-notifies every master who already received
+// this order (any dispatch status). Requested by admin for manual re-pings.
+export async function performForceResend(
+  orderId: number,
+  createdByUserId?: number | null,
+): Promise<ResendResult> {
+  const startedAt = Date.now();
+  console.log(`[force-resend] order=${orderId} started`);
+
+  const orderRows = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  const order = orderRows[0];
+  if (!order) {
+    console.error(`[force-resend] order=${orderId} not found`);
+    return { ok: false, sent: 0, error: "Order not found" };
+  }
+
+  // Every master who already received this order, regardless of dispatch status.
+  const dispatches = await db.select().from(orderDispatchesTable)
+    .where(eq(orderDispatchesTable.orderId, orderId));
+  const uniqueMasterIds = [...new Set(dispatches.map(d => d.masterId))];
+
+  if (uniqueMasterIds.length === 0) {
+    return { ok: false, sent: 0, error: "Заказ ещё не рассылался ни одному мастеру" };
+  }
+
+  const masters = await db.select().from(mastersTable)
+    .where(inArray(mastersTable.id, uniqueMasterIds));
+
+  if (masters.length === 0) {
+    return { ok: false, sent: 0, error: "Мастера-получатели не найдены" };
+  }
+
+  const date = formatDate(order.scheduledAt);
+  const maxMsg = `📋 Заявка #${orderId} ещё актуальна\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
+
+  await batchAsync(masters, 10, async (master) => {
+    await Promise.all([
+      master.pwaLogin
+        ? sendPushToMaster(master.id, {
+            type: "new_order",
+            title: "Новый заказ",
+            body: `${order.city}${order.district ? ", " + order.district : ""} · ${order.serviceType} · ${order.area} м²`,
+            orderId,
+          }).catch(() => {})
+        : Promise.resolve(),
+      master.maxChatId
+        ? sendMaxMessage(master.maxChatId, maxMsg).catch(() => {})
+        : Promise.resolve(),
+    ]);
+  });
+
+  // Audit only — force mode intentionally does NOT touch cooldown/limit counters,
+  // so it never blocks (or is blocked by) the regular resend flow.
+  await db.insert(dispatchResendLogsTable).values({
+    orderId,
+    resendNumber: (order.dispatchResendCount ?? 0) + 1,
+    scope: "all",
+    recipientCount: masters.length,
+    createdBy: createdByUserId ?? null,
+  });
+
+  const duration = Date.now() - startedAt;
+  console.log(`[force-resend] order=${orderId} finished sent=${masters.length} duration=${duration}ms`);
+
+  return { ok: true, sent: masters.length };
+}
