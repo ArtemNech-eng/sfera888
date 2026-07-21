@@ -699,10 +699,9 @@ router.get("/orders/available", requireMasterPwa, async (req, res) => {
   }));
 
   // Newest dispatched orders first, so a freshly broadcast order appears at the
-  // top of the master's feed. Orders the master hasn't answered yet rank above
-  // ones they've already responded to (those stay visible with a marker).
+  // top of the master's feed. Orders keep their position regardless of whether
+  // the master has already responded (fall back to order id for a stable tiebreak).
   result.sort((a, b) => {
-    if (a.responded !== b.responded) return a.responded ? 1 : -1;
     const ta = a.dispatchedAt ? new Date(a.dispatchedAt).getTime() : 0;
     const tb = b.dispatchedAt ? new Date(b.dispatchedAt).getTime() : 0;
     if (tb !== ta) return tb - ta;
