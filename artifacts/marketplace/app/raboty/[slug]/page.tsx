@@ -28,6 +28,7 @@ import { CaseAIDesigns } from "../../../components/raboty/CaseAIDesigns";
 import { CaseLeadBlock } from "../../../components/raboty/CaseLeadBlock";
 import { StickyMobileCTA } from "../../../components/raboty/StickyMobileCTA";
 import { CaseCard } from "../../../components/CaseCard";
+import { CaseOwnerBar } from "../../../components/owner/CaseOwnerBar";
 
 /**
  * `/raboty/[slug]` — object-first case page (plan §22 redesign).
@@ -138,7 +139,14 @@ export default async function RabotyCasePage(
     fetchServices().catch(() => []),
   ]);
   const objectCase = await fetchObjectCase(slug).catch(() => null);
-  if (objectCase) return <ObjectCaseView data={objectCase} />;
+  if (objectCase)
+    return (
+      <>
+        {/* real-price 5.4: Owner_Mode bar for the object owner (matched by slug membership). */}
+        <CaseOwnerBar slug={slug} />
+        <ObjectCaseView data={objectCase} />
+      </>
+    );
   if (!data) notFound();
 
   const { portfolio, master, similar, masterStats, isSavedByCurrentUser } = data;
@@ -221,6 +229,8 @@ export default async function RabotyCasePage(
 
   return (
     <>
+      {/* real-price 5.4: Owner_Mode bar for legacy portfolio cases (matched by owner master id). */}
+      <CaseOwnerBar slug={slug} ownerMasterId={master.id} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: toJsonLdScript(breadcrumbsLd) }}

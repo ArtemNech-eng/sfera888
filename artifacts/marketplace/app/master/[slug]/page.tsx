@@ -5,6 +5,7 @@ import { fetchCities, fetchMaster, fetchMasters, fetchServices } from "../../../
 import { publicUrl } from "../../../lib/env";
 import { LeadForm } from "../../../components/LeadForm";
 import { MasterCard } from "../../../components/MasterCard";
+import { MasterOwnerBar } from "../../../components/owner/MasterOwnerBar";
 import {
   breadcrumbJsonLd,
   masterProfileJsonLd,
@@ -230,6 +231,8 @@ export default async function MasterPage(
 
   return (
     <>
+      {/* real-price 5.4: inline Owner_Mode controls when the owning master views their own profile. */}
+      <MasterOwnerBar ownerMasterId={master.id} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: toJsonLdScript(breadcrumbsLd) }}

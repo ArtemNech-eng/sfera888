@@ -44,7 +44,8 @@
 - [x] 5.2 Авто-публикация проекта при завершении, если контент богат + `publish_consent`. (Req 6.2, 6.3)
 - [x] 5.3 Кейс-страница на базе `/raboty/{slug}`: значок «Подтверждено», смета по этапам,
       блок «Реальная цена» (сумма vs медиана), мастер (с согласия), CTA «Хочу такой же». (Req 6.1, 6.4) — по прототипу страницы.
-- [ ] 5.4 Owner_Mode inline-контролы на `/master/{slug}` и `/raboty/{slug}`. (Req 10.2)
+- [x] 5.4 Owner_Mode inline-контролы на `/master/{slug}` и `/raboty/{slug}`. (Req 10.2)
+      _Клиентская детекция владельца: профиль/легаси-кейс — по id (`/api/cabinet/auth/me`), объектная кейс-страница — по membership slug (`/api/cabinet/objects`, без раскрытия masterId). Плавающий `OwnerBar` с deep-link в редактор. Чистая логика + 6 юнит-тестов в `lib/ownerMode.ts`._
 - [x] 5.5 Единая Zen-шапка для залогиненного мастера + аватар-меню + «＋ Создать объект». (Req 10.1)
       _Клиентская детекция сессии в `components/Header.tsx` через `GET /api/cabinet/auth/me` (без `cookies()` в root layout → SSG/ISR сохранены). Чистая логика + 5 юнит-тестов в `lib/headerSession.ts` / `headerSession.test.ts`._
 - [x] 5.6 (доп.) Хаб «Мои Объекты» `/cabinet/objects` — список черновиков/опубликованных.
