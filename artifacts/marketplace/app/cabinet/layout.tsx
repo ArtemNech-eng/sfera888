@@ -39,11 +39,11 @@ export const dynamic = "force-dynamic";
 
 export default async function CabinetLayout({ children }: { children: React.ReactNode }) {
   const master = await getCurrentMaster();
+  const headersList = await headers();
+  const pathname = headersList.get("x-pathname") ?? "/cabinet";
 
   if (!master) {
     // Forward original path so the user lands back where they came from.
-    const headersList = await headers();
-    const pathname = headersList.get("x-pathname") ?? "/cabinet";
     const next = encodeURIComponent(pathname);
     redirect(`/login?next=${next}`);
   }
@@ -54,13 +54,13 @@ export default async function CabinetLayout({ children }: { children: React.Reac
 
   // Redirect masters who haven't signed the contract yet.
   // Allow access to /cabinet/pending-contract itself so they can complete signing.
-  if (!master.contractSignedAt) {
-    const headersList = await headers();
-    const pathname = headersList.get("x-pathname") ?? "";
-    if (!pathname.startsWith("/cabinet/pending-contract")) {
-      redirect("/cabinet/pending-contract");
-    }
+  if (!master.contractSignedAt && !pathname.startsWith("/cabinet/pending-contract")) {
+    redirect("/cabinet/pending-contract");
   }
+
+  // Chat is a full-bleed page (no max-width/padding card) so it feels like a
+  // dedicated messenger screen rather than a panel embedded inside the cabinet.
+  const isChat = pathname.startsWith("/cabinet/chat");
 
   return (
     <div className="cabinet-shell flex min-h-dvh flex-col bg-[var(--color-background,#f8fafc)]">
@@ -74,10 +74,12 @@ export default async function CabinetLayout({ children }: { children: React.Reac
           </div>
         </aside>
 
-        <main className="flex-1 pb-24 lg:pb-8">
-          <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
-            {children}
-          </div>
+        <main className={isChat ? "min-w-0 flex-1" : "flex-1 pb-24 lg:pb-8"}>
+          {isChat ? (
+            children
+          ) : (
+            <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">{children}</div>
+          )}
         </main>
       </div>
 

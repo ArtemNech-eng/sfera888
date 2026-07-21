@@ -127,7 +127,7 @@ export function ChatView() {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div
-      className="flex flex-col overflow-hidden rounded-2xl shadow-lg"
+      className="flex flex-col overflow-hidden"
       style={{
         height: "calc(100dvh - var(--cabinet-chrome, 112px))",
         minHeight: 400,
