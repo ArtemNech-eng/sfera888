@@ -164,7 +164,7 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         orderId: transactionsTable.orderId,
         commission: transactionsTable.commission,
         paymentStatus: transactionsTable.paymentStatus,
-        createdAt: transactionsTable.createdAt,
+        paidAt: transactionsTable.paidAt,
       }).from(transactionsTable),
       fetchAvitoBalance().catch(() => 0),
     ]);
@@ -253,12 +253,12 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         }
       }
     }
-    // Paid commission earned within the period (by transaction date).
+    // Paid commission actually collected within the period (by payment date).
     let commissionPeriod = 0, commissionPrevPeriod = 0;
     for (const t of txRows) {
-      if (t.paymentStatus !== "paid" || !t.createdAt) continue;
-      if (t.createdAt >= periodStart) commissionPeriod += Number(t.commission);
-      else if (t.createdAt >= prevStart) commissionPrevPeriod += Number(t.commission);
+      if (t.paymentStatus !== "paid" || !t.paidAt) continue;
+      if (t.paidAt >= periodStart) commissionPeriod += Number(t.commission);
+      else if (t.paidAt >= prevStart) commissionPrevPeriod += Number(t.commission);
     }
     const avgCheckPeriod = completedPeriod > 0 ? Math.round(revenuePeriod / completedPeriod) : 0;
     const summary = {
@@ -525,8 +525,8 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       if (idx >= 0 && idx < TREND_DAYS) leadsTrend[idx]++;
     }
     for (const t of txRows) {
-      if (t.paymentStatus !== "paid" || !t.createdAt || t.createdAt < trendStart) continue;
-      const idx = Math.floor((t.createdAt.getTime() - trendStart.getTime()) / 86400000);
+      if (t.paymentStatus !== "paid" || !t.paidAt || t.paidAt < trendStart) continue;
+      const idx = Math.floor((t.paidAt.getTime() - trendStart.getTime()) / 86400000);
       if (idx >= 0 && idx < TREND_DAYS) commissionTrend[idx] += Number(t.commission);
     }
 
