@@ -6,6 +6,8 @@ import { getCurrentMaster } from "@/lib/cabinetAuth";
 import { CabinetNav } from "./_components/CabinetNav";
 import { CabinetTopbar } from "./_components/CabinetTopbar";
 import { SuspendedScreen } from "./_components/SuspendedScreen";
+import { CabinetSwInit } from "./_components/CabinetSwInit";
+import { CabinetInstallBanner } from "./_components/CabinetInstallBanner";
 
 /**
  * Auth-guarded layout for `/cabinet/*`. Resolves the master from the
@@ -88,6 +90,12 @@ export default async function CabinetLayout({ children }: { children: React.Reac
           at the layout level so individual pages just import `toast` from
           `sonner` and call it. */}
       <Toaster position="top-center" richColors closeButton />
+
+      {/* PWA: register service worker silently on first load */}
+      <CabinetSwInit />
+
+      {/* PWA: install banner — Android native prompt or iOS manual guide */}
+      <CabinetInstallBanner />
     </div>
   );
 }
