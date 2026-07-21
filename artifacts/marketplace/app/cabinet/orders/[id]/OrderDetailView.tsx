@@ -149,12 +149,23 @@ export function OrderDetailView({ id }: Props) {
   }
 
   const handleRespond = async () => {
-    await withBusy(
-      () => cabinetOrders.respond(item!.id, respondNote.trim() || undefined),
-      "Отклик отправлен",
-    );
-    setRespondNote("");
-    setRespondOpen(false);
+    if (!item) return;
+    setBusy(true);
+    try {
+      await cabinetOrders.respond(item.id, respondNote.trim() || undefined);
+      toast.success("Отклик отправлен — ждите, оператор передаст заказ");
+      setRespondNote("");
+      setRespondOpen(false);
+      // Once the dispatch is marked "responded" the order leaves the
+      // "available" feed, so refreshing this detail page would render a
+      // misleading "order not found" screen. Return to the list instead.
+      router.push("/cabinet/orders");
+    } catch (err) {
+      const msg = err instanceof CabinetApiError ? err.message : err instanceof Error ? err.message : "Ошибка";
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleReject = async () => {
