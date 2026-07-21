@@ -2,16 +2,16 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // Marketplace is mounted as its own service. The default port (3000) and
-  // origin are configured by the deploy environment, not at build time.
+  // When the cabinet is served through a reverse proxy on sfera-master.ru,
+  // JS/CSS assets must load directly from chestnye-mastera.ru (assetPrefix)
+  // so the browser never asks sfera-master.ru for /_next/static/* files.
+  // For direct access (chestnye-mastera.ru) this resolves to the same origin
+  // — no functional change, just makes asset URLs absolute.
+  // Set ASSET_PREFIX=https://chestnye-mastera.ru on the Railway marketplace service.
+  assetPrefix: process.env.ASSET_PREFIX ?? "",
   experimental: {
-    // Server actions are off — we use a tiny route handler instead.
     serverActions: { bodySizeLimit: "256kb" },
   },
-  // AI_Design_Flagship lives at a single canonical address: `/dizajn`.
-  // The historical entry points `/ai-design` and `/hochu-takzhe` (and their
-  // wrapper pages / components) have been removed entirely — there is one and
-  // only one AI-design URL, so no redirects are configured.
 };
 
 export default nextConfig;

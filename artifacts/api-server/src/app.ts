@@ -10,6 +10,7 @@ import partnerPwaRouter from "./routes/partner-pwa.js";
 import crmPartnersRouter from "./routes/crm-partners.js";
 import masterPwaRouter from "./routes/master-pwa.js";
 import { mapMasterPwaPathToCabinet } from "./lib/cabinetRedirect.js";
+import { createCabinetProxy } from "./lib/cabinetProxy.js";
 import dizajnShowcaseRouter from "./routes/admin/dizajnShowcase.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -1056,6 +1057,29 @@ app.post("/api/manager-webhook", express.json(), async (req, res) => {
   }
 });
 
+// ── Cabinet reverse proxy (Вариант B) ────────────────────────────────────────
+// Когда CABINET_PROXY=1, кабинет мастера отдаётся через этот сервер (sfera-master.ru)
+// без редиректа — мастерское PWA продолжает работать без переустановки.
+// assetPrefix в marketplace Next.js обеспечивает, что JS/CSS грузятся напрямую
+// с chestnye-mastera.ru, через прокси идут только HTML-страницы + RSC-пейлоады.
+{
+  const cabinetProxyEnabled = /^(1|true|yes|on)$/i.test(process.env.CABINET_PROXY ?? "");
+  if (cabinetProxyEnabled) {
+    const mktOrigin = (
+      process.env.MARKETPLACE_PUBLIC_URL ??
+      process.env.MARKETPLACE_URL ??
+      "https://chestnye-mastera.ru"
+    ).replace(/\/+$/, "");
+    const proxy = createCabinetProxy(mktOrigin);
+    // API routes BEFORE the generic /api router so they don't collide
+    app.use("/api/cabinet-extra", proxy);
+    app.use("/api/cabinet", proxy);
+    // Cabinet HTML pages + RSC navigation
+    app.use("/cabinet", proxy);
+    console.log(`[cabinet-proxy] /cabinet/* + /api/cabinet/* → ${mktOrigin} ENABLED`);
+  }
+}
+
 app.use("/api", router);
 app.use("/api/partner", partnerPwaRouter);
 app.use("/api/crm", crmPartnersRouter);
@@ -1098,27 +1122,32 @@ if (fs.existsSync(crmDistPath)) {
 }
 
 if (fs.existsSync(pwaDistPath)) {
-  // Дорожка M — слияние кабинетов (вариант A, opt-in). Когда включён флаг
-  // UNIFY_CABINET_REDIRECT, старый master-PWA перенаправляется в единый Zen-
-  // кабинет marketplace, а push-диплинки (/master-pwa/orders → /cabinet/orders)
-  // продолжают открывать нужный экран. По умолчанию ВЫКЛ — тогда SPA отдаётся
-  // как раньше (нулевой риск на деплое). Флаг включают на Railway после проверки
-  // паритета кабинета; масштерам потребуется один вход на домене marketplace.
+  // Дорожка M — слияние кабинетов.
+  // Вариант A (UNIFY_CABINET_REDIRECT): редирект на внешний домен marketplace.
+  // Вариант B (CABINET_PROXY): кабинет уже проксируется на /cabinet/* выше,
+  //   поэтому редиректим master-pwa → /cabinet/* (тот же домен, без смены PWA).
   const unifyCabinet = /^(1|true|yes|on)$/i.test(process.env.UNIFY_CABINET_REDIRECT ?? "");
-  if (unifyCabinet) {
-    const marketplaceBase = (
-      process.env.MARKETPLACE_PUBLIC_URL ||
-      process.env.MARKETPLACE_URL ||
-      process.env.MARKETPLACE_ORIGIN ||
-      "https://chestnye-mastera.ru"
-    ).replace(/\/+$/, "");
+  const cabinetProxy = /^(1|true|yes|on)$/i.test(process.env.CABINET_PROXY ?? "");
+  if (unifyCabinet || cabinetProxy) {
+    const marketplaceBase = cabinetProxy
+      ? "" // same domain — redirect to /cabinet/* locally
+      : (
+          process.env.MARKETPLACE_PUBLIC_URL ||
+          process.env.MARKETPLACE_URL ||
+          process.env.MARKETPLACE_ORIGIN ||
+          "https://chestnye-mastera.ru"
+        ).replace(/\/+$/, "");
     app.use("/master-pwa", (req, res) => {
       const target = marketplaceBase + mapMasterPwaPathToCabinet(req.path);
       const qIdx = req.originalUrl.indexOf("?");
       const qs = qIdx >= 0 ? req.originalUrl.slice(qIdx) : "";
       res.redirect(302, target + qs);
     });
-    console.log("[unify-cabinet] master-pwa → unified cabinet redirect ENABLED");
+    console.log(
+      cabinetProxy
+        ? "[cabinet-proxy] master-pwa → /cabinet/* (same-domain proxy) ENABLED"
+        : "[unify-cabinet] master-pwa → unified cabinet redirect ENABLED",
+    );
   } else {
     app.use("/master-pwa", express.static(pwaDistPath, { setHeaders: spaStaticHeaders }));
     app.use("/master-pwa", (req, res) => {
