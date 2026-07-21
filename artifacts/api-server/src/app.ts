@@ -1137,25 +1137,37 @@ if (fs.existsSync(pwaDistPath)) {
   const cabinetProxy = /^(1|true|yes|on)$/i.test(process.env.CABINET_PROXY ?? "");
   if (unifyCabinet || cabinetProxy) {
     const marketplaceBase = cabinetProxy
-      ? "" // same domain — redirect to /cabinet/* locally
+      ? ""
       : (
           process.env.MARKETPLACE_PUBLIC_URL ||
           process.env.MARKETPLACE_URL ||
           process.env.MARKETPLACE_ORIGIN ||
           "https://chestnye-mastera.ru"
         ).replace(/\/+$/, "");
+
+    // Static assets of master-pwa must be served first (hashed filenames, *.js/*.css).
+    // The redirect middleware below then handles HTML routes, skipping /login.
+    app.use("/master-pwa", express.static(pwaDistPath, { setHeaders: spaStaticHeaders }));
+
     app.use("/master-pwa", (req, res, next) => {
-      // Keep the native login/register pages — master should log in through
-      // the familiar master-pwa interface, not the marketplace one.
-      // After login the session is valid for the cabinet proxy too.
+      // /login stays on the old SPA — master logs in here, session is set on
+      // sfera-master.ru, then /cabinet opens authenticated through the proxy.
       if (req.path === "/login" || req.path.startsWith("/login?")) {
-        return next(); // fall through to static-file serving below
+        return next(); // → SPA index.html below
       }
       const target = marketplaceBase + mapMasterPwaPathToCabinet(req.path);
       const qIdx = req.originalUrl.indexOf("?");
       const qs = qIdx >= 0 ? req.originalUrl.slice(qIdx) : "";
       res.redirect(302, target + qs);
     });
+
+    // Serve SPA index.html for /login and any other non-asset fallthrough.
+    app.use("/master-pwa", (req, res) => {
+      if (req.path.includes(".")) return res.status(404).send("Not found");
+      spaIndexHeaders(res);
+      res.sendFile(path.join(pwaDistPath, "index.html"));
+    });
+
     console.log(
       cabinetProxy
         ? "[cabinet-proxy] master-pwa → /cabinet/* (same-domain proxy) ENABLED"
