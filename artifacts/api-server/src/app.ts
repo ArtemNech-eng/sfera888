@@ -9,6 +9,7 @@ import router from "./routes/index.js";
 import partnerPwaRouter from "./routes/partner-pwa.js";
 import crmPartnersRouter from "./routes/crm-partners.js";
 import masterPwaRouter from "./routes/master-pwa.js";
+import { mapMasterPwaPathToCabinet } from "./lib/cabinetRedirect.js";
 import dizajnShowcaseRouter from "./routes/admin/dizajnShowcase.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -1097,14 +1098,37 @@ if (fs.existsSync(crmDistPath)) {
 }
 
 if (fs.existsSync(pwaDistPath)) {
-  app.use("/master-pwa", express.static(pwaDistPath, { setHeaders: spaStaticHeaders }));
-  app.use("/master-pwa", (req, res) => {
-    if (req.path.includes(".")) {
-      return res.status(404).send("Not found");
-    }
-    spaIndexHeaders(res);
-    res.sendFile(path.join(pwaDistPath, "index.html"));
-  });
+  // Дорожка M — слияние кабинетов (вариант A, opt-in). Когда включён флаг
+  // UNIFY_CABINET_REDIRECT, старый master-PWA перенаправляется в единый Zen-
+  // кабинет marketplace, а push-диплинки (/master-pwa/orders → /cabinet/orders)
+  // продолжают открывать нужный экран. По умолчанию ВЫКЛ — тогда SPA отдаётся
+  // как раньше (нулевой риск на деплое). Флаг включают на Railway после проверки
+  // паритета кабинета; масштерам потребуется один вход на домене marketplace.
+  const unifyCabinet = /^(1|true|yes|on)$/i.test(process.env.UNIFY_CABINET_REDIRECT ?? "");
+  if (unifyCabinet) {
+    const marketplaceBase = (
+      process.env.MARKETPLACE_PUBLIC_URL ||
+      process.env.MARKETPLACE_URL ||
+      process.env.MARKETPLACE_ORIGIN ||
+      "https://chestnye-mastera.ru"
+    ).replace(/\/+$/, "");
+    app.use("/master-pwa", (req, res) => {
+      const target = marketplaceBase + mapMasterPwaPathToCabinet(req.path);
+      const qIdx = req.originalUrl.indexOf("?");
+      const qs = qIdx >= 0 ? req.originalUrl.slice(qIdx) : "";
+      res.redirect(302, target + qs);
+    });
+    console.log("[unify-cabinet] master-pwa → unified cabinet redirect ENABLED");
+  } else {
+    app.use("/master-pwa", express.static(pwaDistPath, { setHeaders: spaStaticHeaders }));
+    app.use("/master-pwa", (req, res) => {
+      if (req.path.includes(".")) {
+        return res.status(404).send("Not found");
+      }
+      spaIndexHeaders(res);
+      res.sendFile(path.join(pwaDistPath, "index.html"));
+    });
+  }
 }
 
 if (fs.existsSync(partnerPwaDistPath)) {
