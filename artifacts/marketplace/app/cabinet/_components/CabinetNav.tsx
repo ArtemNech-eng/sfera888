@@ -80,6 +80,7 @@ const SIDEBAR_EXTRA: Array<{ href: string; label: string }> = [
   { href: "/cabinet/wallet", label: "Кошелёк" },
   { href: "/cabinet/checkin", label: "Чек-ин" },
   { href: "/cabinet/profile", label: "Настройки профиля" },
+  { href: "/cabinet/work-rules", label: "Правила работы" },
 ];
 
 interface Props {
