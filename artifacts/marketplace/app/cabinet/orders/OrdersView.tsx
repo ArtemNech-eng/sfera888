@@ -190,7 +190,7 @@ function OrderCard({ order, variant }: { order: OrderListItem; variant: Tab }) {
             ) : null}
           </div>
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)]">
-            {variant === "available" ? "Принять" : "Открыть"}
+            {variant === "available" ? "Откликнуться" : "Открыть"}
             <ArrowIcon />
           </span>
         </div>

@@ -148,9 +148,6 @@ export function OrderDetailView({ id }: Props) {
     }
   }
 
-  const handleAccept = () =>
-    withBusy(() => cabinetOrders.accept(item!.id), "Заявка принята");
-
   const handleRespond = async () => {
     await withBusy(
       () => cabinetOrders.respond(item!.id, respondNote.trim() || undefined),
@@ -361,7 +358,6 @@ export function OrderDetailView({ id }: Props) {
       {source === "available" ? (
         <AvailableActions
           busy={busy}
-          onAccept={handleAccept}
           respondOpen={respondOpen}
           respondNote={respondNote}
           setRespondNote={setRespondNote}
@@ -491,7 +487,6 @@ function MetaGrid({ item }: { item: OrderListItem }) {
 
 function AvailableActions(props: {
   busy: boolean;
-  onAccept: () => void;
   respondOpen: boolean;
   respondNote: string;
   setRespondNote: (v: string) => void;
@@ -508,18 +503,18 @@ function AvailableActions(props: {
       <div>
         <h2 className="text-base font-bold text-[var(--color-text)]">Действия</h2>
         <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-          Принять — заявка перейдёт в раздел «В работе» сразу. Откликнуться — даём знать клиенту, окончательное решение позже.
+          Откликнитесь на заявку — это бесплатно. Оператор свяжется и передаст заказ. Можно добавить заметку для клиента.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={props.onAccept}
+          onClick={props.onRespond}
           disabled={props.busy}
           className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-cta)] px-5 py-2.5 text-sm font-semibold text-[var(--color-on-cta)] shadow-sm transition hover:bg-[var(--color-primary-strong)] disabled:opacity-60"
         >
           <CheckIcon />
-          Принять заявку
+          Откликнуться
         </button>
         <button
           type="button"
