@@ -1147,7 +1147,12 @@ if (fs.existsSync(pwaDistPath)) {
 
     // Static assets of master-pwa must be served first (hashed filenames, *.js/*.css).
     // The redirect middleware below then handles HTML routes, skipping /login.
-    app.use("/master-pwa", express.static(pwaDistPath, { setHeaders: spaStaticHeaders }));
+    // index:false is CRITICAL — otherwise express.static serves index.html for the
+    // directory request `GET /master-pwa/` (the PWA start_url) and the redirect
+    // middleware never runs, so an already-logged-in master lands on the OLD SPA
+    // cabinet instead of being redirected to /cabinet. Real files (.js/.css/sw.js/
+    // manifest) are still served regardless of this flag.
+    app.use("/master-pwa", express.static(pwaDistPath, { index: false, setHeaders: spaStaticHeaders }));
 
     app.use("/master-pwa", (req, res, next) => {
       // /login stays on the old SPA — master logs in here, session is set on
