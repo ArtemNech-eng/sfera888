@@ -825,3 +825,55 @@ export const cabinetPush = {
   unsubscribe: (endpoint: string) =>
     req<{ ok: true }>("DELETE", "/push/unsubscribe", { endpoint }),
 };
+
+// ── Contract signing ─────────────────────────────────────────────────────────
+
+export interface ContractSignInput {
+  passport: File;
+  passportReg: File;
+  fullName: string;
+  passportNumber: string;
+  passportDate: string;
+  passportIssuer: string;
+  address: string;
+}
+
+export interface ContractSignResponse {
+  ok: true;
+  contractSignedAt: string;
+}
+
+/**
+ * Signs the master contract.
+ *
+ * Routes via cabinet-extra proxy → api-server `POST /api/contract/sign`
+ * (not under /master-pwa, hence cabinet-extra instead of cabinet).
+ */
+export const cabinetContract = {
+  sign: async (input: ContractSignInput): Promise<ContractSignResponse> => {
+    const fd = new FormData();
+    fd.append("passport", input.passport);
+    fd.append("passportReg", input.passportReg);
+    fd.append("fullName", input.fullName);
+    fd.append("passportNumber", input.passportNumber);
+    fd.append("passportDate", input.passportDate);
+    fd.append("passportIssuer", input.passportIssuer);
+    fd.append("address", input.address);
+
+    const res = await fetch(`${EXTRA_BASE}/contract/sign`, {
+      method: "POST",
+      credentials: "same-origin",
+      body: fd,
+    });
+
+    const json = await res.json().catch(() => ({ error: res.statusText }));
+    if (!res.ok) {
+      const message = (json as { message?: string; error?: string; note?: string }).message
+        ?? (json as { note?: string }).note
+        ?? (json as { error?: string }).error
+        ?? "Ошибка подписания";
+      throw new CabinetApiError(message, res.status, json);
+    }
+    return json as ContractSignResponse;
+  },
+};

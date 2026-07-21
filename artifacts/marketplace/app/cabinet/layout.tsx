@@ -50,6 +50,16 @@ export default async function CabinetLayout({ children }: { children: React.Reac
     return <SuspendedScreen alias={master.alias} />;
   }
 
+  // Redirect masters who haven't signed the contract yet.
+  // Allow access to /cabinet/pending-contract itself so they can complete signing.
+  if (!master.contractSignedAt) {
+    const headersList = await headers();
+    const pathname = headersList.get("x-pathname") ?? "";
+    if (!pathname.startsWith("/cabinet/pending-contract")) {
+      redirect("/cabinet/pending-contract");
+    }
+  }
+
   return (
     <div className="cabinet-shell flex min-h-dvh flex-col bg-[var(--color-background,#f8fafc)]">
       <CabinetTopbar master={master} />
