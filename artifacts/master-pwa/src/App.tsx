@@ -90,10 +90,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!master && location !== "/login") {
     return <Redirect to="/login" />;
   }
-  // Logged in + on login page → redirect home
+  // Logged in + on login page → redirect to new unified cabinet (hard nav so
+  // the api-server proxy intercepts it and serves chestnye-mastera.ru/cabinet).
   if (master && location === "/login") {
     if (master.status === "suspended") return <SuspendedScreen />;
-    return <Redirect to="/" />;
+    window.location.replace("/cabinet");
+    return null;
   }
   // Suspended master → show blocked screen regardless of route
   if (master && master.status === "suspended") {
