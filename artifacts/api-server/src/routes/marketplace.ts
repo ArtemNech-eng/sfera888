@@ -42,6 +42,12 @@ import { computeEstimate, isCalcCategory } from "../lib/calculatorEngine.js";
 import { getCachedMarketStats, setCachedMarketStats, type MarketStatsResponse } from "../lib/marketStatsCache.js";
 import { matchWorkType, derivePricePoint, verdictForPrice, type WorkTypeLite } from "../lib/realPrice.js";
 import { buildPriceIndex } from "../lib/priceIndex.js";
+import multer from "multer";
+import {
+  parseEstimateFile,
+  EstimateParserDisabledError,
+  ACCEPTED_ESTIMATE_MIME,
+} from "../lib/estimateParser.js";
 
 declare const console: { error: (...args: unknown[]) => void };
 
@@ -1903,6 +1909,38 @@ router.post("/real-price/check", async (req, res) => {
   } catch (e) {
     console.error("[marketplace/real-price/check]", e instanceof Error ? e.message : e);
     res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ─── POST /real-price/parse-estimate — LLM-разбор фото/PDF сметы (Req 7.4) ────
+// multipart field `file` (image/* | application/pdf, ≤12MB). Возвращает
+// { items:[{description,unit,quantity,price}] } для предзаполнения проверятора.
+// Фича изолирована: без ключа OpenAI → 503, существующий флоу не затрагивается.
+const estimateUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024, files: 1 },
+});
+
+router.post("/real-price/parse-estimate", estimateUpload.single("file"), async (req, res) => {
+  const file = (req as unknown as { file?: { buffer: Buffer; mimetype: string } }).file;
+  if (!file) {
+    res.status(400).json({ error: "no_file" });
+    return;
+  }
+  if (!ACCEPTED_ESTIMATE_MIME.has(file.mimetype)) {
+    res.status(415).json({ error: "unsupported_type" });
+    return;
+  }
+  try {
+    const items = await parseEstimateFile({ buffer: file.buffer, mimeType: file.mimetype });
+    res.json({ items });
+  } catch (e) {
+    if (e instanceof EstimateParserDisabledError) {
+      res.status(503).json({ error: "parser_unconfigured" });
+      return;
+    }
+    console.error("[marketplace/real-price/parse-estimate]", e instanceof Error ? e.message : e);
+    res.status(502).json({ error: "parse_failed" });
   }
 });
 

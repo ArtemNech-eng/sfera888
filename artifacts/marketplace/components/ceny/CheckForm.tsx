@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 
 /**
  * Проверятор смет (spec: .kiro/specs/real-price, Req 7). Клиент вводит позиции
@@ -64,6 +64,11 @@ export function CheckForm({ cities, shared }: { cities: CityOpt[]; shared?: Shar
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Загрузка фото/PDF сметы → авто-заполнение позиций (Req 7.4).
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   // Конверсия в лид (Req 7.3).
   const [leadName, setLeadName] = useState("");
   const [leadPhone, setLeadPhone] = useState("");
@@ -79,6 +84,44 @@ export function CheckForm({ cities, shared }: { cities: CityOpt[]; shared?: Shar
   }
   function removeRow(i: number) {
     setRows((rs) => (rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs));
+  }
+
+  /** Загрузка фото/PDF сметы → LLM-разбор → предзаполнение строк (Req 7.4). */
+  async function onFile(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!f) return;
+    setParsing(true);
+    setParseError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const res = await fetch("/api/real-price/parse-estimate", { method: "POST", body: fd });
+      const data = await res.json().catch(() => null);
+      if (res.status === 503) {
+        setParseError("Распознавание временно недоступно — введите позиции вручную.");
+      } else if (res.status === 413) {
+        setParseError("Файл слишком большой (до 12 МБ).");
+      } else if (!res.ok || !data?.ok || !Array.isArray(data.items) || data.items.length === 0) {
+        setParseError("Не удалось распознать смету. Введите позиции вручную.");
+      } else {
+        const parsed: Row[] = (data.items as Array<{ description?: unknown; unit?: unknown; quantity?: unknown; price?: unknown }>)
+          .slice(0, 40)
+          .map((it) => ({
+            description: typeof it.description === "string" ? it.description.slice(0, 200) : "",
+            quantity: it.quantity != null ? String(it.quantity) : "",
+            unit: typeof it.unit === "string" && it.unit ? it.unit : "",
+            price: it.price != null ? String(it.price) : "",
+          }))
+          .filter((r) => r.description.trim().length > 0);
+        setRows(parsed.length > 0 ? parsed : [{ ...EMPTY }]);
+        setResult(null);
+      }
+    } catch {
+      setParseError("Сеть недоступна. Попробуйте позже.");
+    } finally {
+      setParsing(false);
+    }
   }
 
   async function submit() {
@@ -248,6 +291,31 @@ export function CheckForm({ cities, shared }: { cities: CityOpt[]; shared?: Shar
             ))}
           </select>
         </div>
+
+        {/* Загрузка фото/PDF сметы — авто-распознавание позиций (Req 7.4) */}
+        <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            style={{ display: "none" }}
+            onChange={onFile}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={parsing}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--z-accent-soft)", color: "var(--z-accent)", border: 0, borderRadius: 999, padding: "10px 16px", fontWeight: 700, fontSize: 14, cursor: parsing ? "default" : "pointer", opacity: parsing ? 0.7 : 1 }}
+          >
+            {parsing ? "Распознаю смету…" : "📷 Загрузить фото или PDF сметы"}
+          </button>
+          <span style={{ fontSize: 12.5, color: "var(--z-faint)" }}>
+            распознаем позиции автоматически — потом можно поправить
+          </span>
+        </div>
+        {parseError ? (
+          <div className="zen-alert zen-alert--err" style={{ marginTop: 10 }}>{parseError}</div>
+        ) : null}
 
         {/* Форма позиций */}
         <div style={{ marginTop: 16, background: "var(--z-surface)", border: "1px solid var(--z-line)", borderRadius: "var(--z-radius)", boxShadow: "var(--z-shadow)", overflow: "hidden" }}>
