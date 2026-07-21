@@ -1077,11 +1077,13 @@ app.post("/api/manager-webhook", express.json(), async (req, res) => {
     // 2. Cabinet HTML + RSC client-side navigation
     app.use("/cabinet", proxy);
 
-    // 3. Next.js static assets (JS/CSS bundles) — immutable-cached after first load
-    app.use("/_next", proxy);
+    // 3. Login page — the new cabinet's own (marketplace) login screen.
+    //    Unauthenticated cabinet requests redirect here; the form posts to
+    //    /api/cabinet/auth/login (also proxied) and sets connect.sid on this domain.
+    app.use("/login", proxy);
 
-    // NOTE: /login is NOT proxied — master uses /master-pwa/login (familiar page).
-    // The proxy rewrites marketplace /login redirects → /master-pwa/login.
+    // 4. Next.js static assets (JS/CSS bundles) — immutable-cached after first load
+    app.use("/_next", proxy);
 
     console.log(`[cabinet-proxy] /cabinet /login /_next /api/cabinet* → ${mktOrigin} ENABLED`);
   }
@@ -1154,23 +1156,17 @@ if (fs.existsSync(pwaDistPath)) {
     // manifest) are still served regardless of this flag.
     app.use("/master-pwa", express.static(pwaDistPath, { index: false, setHeaders: spaStaticHeaders }));
 
-    app.use("/master-pwa", (req, res, next) => {
-      // /login stays on the old SPA — master logs in here, session is set on
-      // sfera-master.ru, then /cabinet opens authenticated through the proxy.
-      if (req.path === "/login" || req.path.startsWith("/login?")) {
-        return next(); // → SPA index.html below
-      }
+    // Every master-pwa HTML route now redirects into the new cabinet:
+    //   /master-pwa/login → /login   (the new cabinet's own login screen)
+    //   /master-pwa/*     → /cabinet/*
+    // Static assets (JS/CSS/sw.js/manifest) are still served by express.static
+    // above; index:false lets the directory request fall through to here.
+    // The old SPA HTML is intentionally no longer reachable.
+    app.use("/master-pwa", (req, res) => {
       const target = marketplaceBase + mapMasterPwaPathToCabinet(req.path);
       const qIdx = req.originalUrl.indexOf("?");
       const qs = qIdx >= 0 ? req.originalUrl.slice(qIdx) : "";
       res.redirect(302, target + qs);
-    });
-
-    // Serve SPA index.html for /login and any other non-asset fallthrough.
-    app.use("/master-pwa", (req, res) => {
-      if (req.path.includes(".")) return res.status(404).send("Not found");
-      spaIndexHeaders(res);
-      res.sendFile(path.join(pwaDistPath, "index.html"));
     });
 
     console.log(
