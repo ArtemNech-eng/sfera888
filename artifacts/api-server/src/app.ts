@@ -1077,12 +1077,11 @@ app.post("/api/manager-webhook", express.json(), async (req, res) => {
     // 2. Cabinet HTML + RSC client-side navigation
     app.use("/cabinet", proxy);
 
-    // 3. Login page — marketplace redirects here when session is missing
-    app.use("/login", proxy);
-
-    // 4. Next.js static assets — JS/CSS bundles (no assetPrefix needed)
-    //    Files are immutable-cached by the browser after first load.
+    // 3. Next.js static assets (JS/CSS bundles) — immutable-cached after first load
     app.use("/_next", proxy);
+
+    // NOTE: /login is NOT proxied — master uses /master-pwa/login (familiar page).
+    // The proxy rewrites marketplace /login redirects → /master-pwa/login.
 
     console.log(`[cabinet-proxy] /cabinet /login /_next /api/cabinet* → ${mktOrigin} ENABLED`);
   }
@@ -1145,7 +1144,13 @@ if (fs.existsSync(pwaDistPath)) {
           process.env.MARKETPLACE_ORIGIN ||
           "https://chestnye-mastera.ru"
         ).replace(/\/+$/, "");
-    app.use("/master-pwa", (req, res) => {
+    app.use("/master-pwa", (req, res, next) => {
+      // Keep the native login/register pages — master should log in through
+      // the familiar master-pwa interface, not the marketplace one.
+      // After login the session is valid for the cabinet proxy too.
+      if (req.path === "/login" || req.path.startsWith("/login?")) {
+        return next(); // fall through to static-file serving below
+      }
       const target = marketplaceBase + mapMasterPwaPathToCabinet(req.path);
       const qIdx = req.originalUrl.indexOf("?");
       const qs = qIdx >= 0 ? req.originalUrl.slice(qIdx) : "";

@@ -56,6 +56,20 @@ export function createCabinetProxy(marketplaceOrigin: string) {
     const proxyReq = mod.request(
       { hostname: target.hostname, port, path: upstreamPath, method: req.method, headers: fwd },
       (proxyRes) => {
+        // Rewrite /login redirects → /master-pwa/login.
+        // When the master is not authenticated, marketplace redirects to /login.
+        // We intercept and send them to the familiar master-pwa login page instead.
+        // After they log in there, the session is set on sfera-master.ru and
+        // subsequent cabinet requests are authenticated.
+        const location = proxyRes.headers["location"];
+        if (typeof location === "string" && /^\/login(\?|$)/.test(location)) {
+          const rewritten = location.replace(/^\/login/, "/master-pwa/login");
+          res.redirect(302, rewritten);
+          // Consume upstream response body to free the socket.
+          proxyRes.resume();
+          return;
+        }
+
         // Pass response status + headers
         res.status(proxyRes.statusCode ?? 200);
         for (const [k, v] of Object.entries(proxyRes.headers)) {
