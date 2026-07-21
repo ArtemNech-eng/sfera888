@@ -63,18 +63,28 @@ export default async function CabinetLayout({ children }: { children: React.Reac
   const isChat = pathname.startsWith("/cabinet/chat");
 
   return (
-    <div className="cabinet-shell flex min-h-dvh flex-col bg-[var(--color-background,#f8fafc)]">
+    <div
+      className={`cabinet-shell flex flex-col bg-[var(--color-background,#f8fafc)] ${
+        isChat ? "h-dvh overflow-hidden" : "min-h-dvh"
+      }`}
+    >
       <CabinetTopbar master={master} />
 
       {/* Body: sidebar on lg+, content fills */}
-      <div className="flex flex-1 flex-col lg:flex-row">
+      <div className={`flex flex-1 flex-col lg:flex-row ${isChat ? "min-h-0" : ""}`}>
         <aside className="hidden lg:block lg:w-60 lg:flex-shrink-0 lg:border-r lg:border-[var(--color-border)] lg:bg-white">
           <div className="sticky top-14 p-4">
             <CabinetNav variant="sidebar" />
           </div>
         </aside>
 
-        <main className={isChat ? "min-w-0 flex-1" : "flex-1 pb-24 lg:pb-8"}>
+        <main
+          className={
+            isChat
+              ? "flex min-w-0 flex-1 min-h-0 pb-16 lg:pb-0"
+              : "flex-1 pb-24 lg:pb-8"
+          }
+        >
           {isChat ? (
             children
           ) : (

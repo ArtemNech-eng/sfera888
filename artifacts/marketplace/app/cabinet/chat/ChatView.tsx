@@ -126,13 +126,7 @@ export function ChatView() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div
-      className="flex flex-col overflow-hidden"
-      style={{
-        height: "calc(100dvh - var(--cabinet-chrome, 112px))",
-        minHeight: 400,
-      }}
-    >
+    <div className="flex h-full flex-col overflow-hidden">
       {/* ── Header ── */}
       <header className="relative flex flex-shrink-0 items-center gap-3 overflow-hidden px-4 py-3"
         style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)" }}>
@@ -156,7 +150,7 @@ export function ChatView() {
       {/* ── Messages ── */}
       <div
         ref={listRef}
-        className="relative flex-1 overflow-y-auto px-3 py-4 sm:px-4"
+        className="relative min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4"
         style={{ background: "linear-gradient(180deg, #f0f4ff 0%, #f5f5f7 100%)" }}
       >
         {/* Subtle dot pattern */}
