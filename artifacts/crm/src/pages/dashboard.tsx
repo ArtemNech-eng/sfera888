@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw, AlertTriangle } from "lucide-react";
+import { RefreshCw, AlertTriangle, Download } from "lucide-react";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/hooks/use-auth";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
@@ -75,6 +75,50 @@ function DashboardPage() {
     return `${Math.floor(secondsAgo / 60)}м назад`;
   };
 
+  // Client-side CSV export of the current dashboard snapshot (selected period).
+  // ';' delimiter + UTF-8 BOM so Russian text opens cleanly in Excel.
+  const handleExport = useCallback(() => {
+    if (!data) return;
+    const s = data.summary ?? {};
+    const esc = (v: unknown) => {
+      const str = String(v ?? "");
+      return /[";\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const rows: (string | number)[][] = [];
+    rows.push(["Дашборд — экспорт", `период: ${period}`]);
+    rows.push([]);
+    rows.push(["Показатель", "Значение"]);
+    rows.push(["Заявки за период", s.leads_period ?? 0]);
+    rows.push(["Конверсия заявок, %", s.lead_conversion_rate_period ?? 0]);
+    rows.push(["Новых мастеров", s.masters_new_period ?? 0]);
+    rows.push(["Всего мастеров", s.masters_total ?? 0]);
+    rows.push(["Заказов в ожидании", s.orders_pending ?? 0]);
+    rows.push(["Комиссия за период, ₽", s.commission_period ?? 0]);
+    rows.push(["Выручка мастеров, ₽", s.revenue_period ?? 0]);
+    rows.push(["Средний чек, ₽", s.avg_check_period ?? 0]);
+    rows.push(["Завершено заказов", s.completed_period ?? 0]);
+    rows.push([]);
+    rows.push(["Источник лида", "Заявок", "В работу", "Конверсия, %"]);
+    for (const src of (data.leadSources ?? [])) rows.push([src.channel, src.count, src.sent_to_work, src.conversion]);
+    rows.push([]);
+    rows.push(["Город", "Заявки", "Мастеров активно", "Конверсия, %", "Комиссия, ₽"]);
+    for (const c of (data.cities ?? [])) rows.push([c.city, c.leads, c.masters_active, c.conversion, c.revenue]);
+    rows.push([]);
+    rows.push(["Топ мастер", "Город", "Завершено", "Конверсия, %", "Рейтинг", "Комиссия, ₽"]);
+    for (const m of (data.topMasters ?? [])) rows.push([m.name, m.city, m.orders_completed, m.conversion, m.rating, m.revenue_brought]);
+
+    const csv = "\uFEFF" + rows.map(r => r.map(esc).join(";")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dashboard-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [data, period]);
+
   const summary = data?.summary;
   const leadFunnel = data?.leadFunnel;
   const leadSources = data?.leadSources ?? [];
@@ -142,12 +186,22 @@ function DashboardPage() {
             >
               <RefreshCw size={16} color="#6B7280" />
             </button>
+
+            <button
+              onClick={handleExport}
+              disabled={!data}
+              className="h-9 px-3 flex items-center gap-1.5 bg-[#F3F4F6] rounded-lg hover:bg-[#E5E7EB] transition-colors text-[13px] font-medium text-[#374151] disabled:opacity-50"
+              title="Экспорт в CSV"
+            >
+              <Download size={15} color="#6B7280" />
+              <span className="hidden sm:inline">Экспорт</span>
+            </button>
           </div>
         </div>
 
         {/* KPI CARDS */}
         <div className="mb-6">
-          <KPICards data={summary} isLoading={isLoading} period={period} />
+          <KPICards data={summary} isLoading={isLoading} period={period} trends={data?.trends} />
         </div>
 
         {/* STUCK ORDERS — 5 categories of issues that need operator attention */}

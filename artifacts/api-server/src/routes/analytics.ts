@@ -164,6 +164,7 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         orderId: transactionsTable.orderId,
         commission: transactionsTable.commission,
         paymentStatus: transactionsTable.paymentStatus,
+        createdAt: transactionsTable.createdAt,
       }).from(transactionsTable),
       fetchAvitoBalance().catch(() => 0),
     ]);
@@ -176,18 +177,13 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         paidCommissionByOrder.set(t.orderId, (paidCommissionByOrder.get(t.orderId) ?? 0) + Number(t.commission));
       }
     }
-    // ordersByCity / completedOrdersByCity / leadsByCity (used in cities block)
-    const completedOrdersByCity = new Map<string, typeof orders>();
+    // ordersByCity / leadsByCity (used in cities block)
     const ordersByCity = new Map<string, typeof orders>();
     for (const o of orders) {
       const cityKey = o.city ?? "";
       if (!cityKey) continue;
       const a = ordersByCity.get(cityKey);
       if (a) a.push(o); else ordersByCity.set(cityKey, [o]);
-      if (o.status === "completed") {
-        const c = completedOrdersByCity.get(cityKey);
-        if (c) c.push(o); else completedOrdersByCity.set(cityKey, [o]);
-      }
     }
     const leadsByCity = new Map<string, number>();
     for (const l of leads) {
@@ -208,18 +204,6 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     for (const o of orders) {
       if (o.masterId && (o.status === "master_assigned" || o.status === "in_progress")) {
         busyMasterIds.add(o.masterId);
-      }
-    }
-    // ordersByMasterId / completedByMasterId (for top masters)
-    const ordersByMasterId = new Map<number, typeof orders>();
-    const completedByMasterId = new Map<number, typeof orders>();
-    for (const o of orders) {
-      if (!o.masterId) continue;
-      const a = ordersByMasterId.get(o.masterId);
-      if (a) a.push(o); else ordersByMasterId.set(o.masterId, [o]);
-      if (o.status === "completed") {
-        const c = completedByMasterId.get(o.masterId);
-        if (c) c.push(o); else completedByMasterId.set(o.masterId, [o]);
       }
     }
 
@@ -255,11 +239,28 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       else if (m.createdAt >= prevStart) newMastersPrevPeriod++;
     }
     let ordersPending = 0;
+    let completedPeriod = 0, completedPrevPeriod = 0, revenuePeriod = 0;
     for (const o of orders) {
       if (o.status === "waiting_master" || o.status === "master_assigned" || o.status === "in_progress") {
         ordersPending++;
       }
+      if (o.status === "completed") {
+        if (o.updatedAt >= periodStart) {
+          completedPeriod++;
+          revenuePeriod += o.orderAmount ? Number(o.orderAmount) : 0;
+        } else if (o.updatedAt >= prevStart) {
+          completedPrevPeriod++;
+        }
+      }
     }
+    // Paid commission earned within the period (by transaction date).
+    let commissionPeriod = 0, commissionPrevPeriod = 0;
+    for (const t of txRows) {
+      if (t.paymentStatus !== "paid" || !t.createdAt) continue;
+      if (t.createdAt >= periodStart) commissionPeriod += Number(t.commission);
+      else if (t.createdAt >= prevStart) commissionPrevPeriod += Number(t.commission);
+    }
+    const avgCheckPeriod = completedPeriod > 0 ? Math.round(revenuePeriod / completedPeriod) : 0;
     const summary = {
       period,
       leads_today: leadsToday,
@@ -279,22 +280,31 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       masters_new_today_prev: newMastersYesterday,
       orders_pending: ordersPending,
       avito_balance: avitoBalance,
+      // Money KPIs for the selected period.
+      commission_period: Math.round(commissionPeriod),
+      commission_period_prev: Math.round(commissionPrevPeriod),
+      revenue_period: Math.round(revenuePeriod),
+      completed_period: completedPeriod,
+      completed_period_prev: completedPrevPeriod,
+      avg_check_period: avgCheckPeriod,
     };
 
-    // ── Lead funnel ─────────────────────────────────────────────────────────
-    let processingLeads = 0, sentToWorkLeads = 0, rejectedLeads = 0;
+    // ── Lead funnel (selected period) ────────────────────────────────────────
+    let processingLeads = 0, sentToWorkLeads = 0, rejectedLeads = 0, funnelTotal = 0;
     for (const l of leads) {
+      if (l.createdAt < periodStart) continue;
+      funnelTotal++;
       if (l.status === "new" || l.status === "processing") processingLeads++;
       else if (l.status === "sent_to_work") sentToWorkLeads++;
       else if (l.status === "non_target" || l.status === "client_refusal") rejectedLeads++;
     }
     const leadFunnel = {
-      total: leads.length,
+      total: funnelTotal,
       processing: processingLeads,
       sent_to_work: sentToWorkLeads,
       rejected: rejectedLeads,
-      conversion_rate: leads.length > 0
-        ? Math.round((sentToWorkLeads / leads.length) * 1000) / 10
+      conversion_rate: funnelTotal > 0
+        ? Math.round((sentToWorkLeads / funnelTotal) * 1000) / 10
         : 0,
     };
 
@@ -305,6 +315,7 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     };
     const sourceCounts = new Map<string, { count: number; sentToWork: number }>();
     for (const l of leads) {
+      if (l.createdAt < periodStart) continue;
       const key = l.source ?? "other";
       const stats = sourceCounts.get(key) ?? { count: 0, sentToWork: 0 };
       stats.count++;
@@ -391,15 +402,22 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     feedEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     const liveFeed = feedEvents.slice(0, 20);
 
-    // ── Cities — uses pre-built indexes, O(cities) ─────────────────────────
+    // ── Cities (selected period for leads/revenue; masters = live snapshot) ──
+    const leadsByCityPeriod = new Map<string, number>();
+    for (const l of leads) {
+      if (l.createdAt < periodStart || !l.city) continue;
+      leadsByCityPeriod.set(l.city, (leadsByCityPeriod.get(l.city) ?? 0) + 1);
+    }
+    const completedByCityPeriod = new Map<string, number>();
+    const revenueByCityPeriod = new Map<string, number>();
+    for (const o of orders) {
+      if (o.status !== "completed" || o.updatedAt < periodStart || !o.city) continue;
+      completedByCityPeriod.set(o.city, (completedByCityPeriod.get(o.city) ?? 0) + 1);
+      revenueByCityPeriod.set(o.city, (revenueByCityPeriod.get(o.city) ?? 0) + (paidCommissionByOrder.get(o.id) ?? 0));
+    }
     const allCities = new Set<string>([...ordersByCity.keys(), ...leadsByCity.keys()]);
     const cities = [...allCities]
       .map(city => {
-        const cityCompletedOrders = completedOrdersByCity.get(city) ?? [];
-        let cityRevenue = 0;
-        for (const o of cityCompletedOrders) {
-          cityRevenue += paidCommissionByOrder.get(o.id) ?? 0;
-        }
         const cityMasters = mastersByCity.get(city) ?? [];
         const cityMastersTotal = cityMasters.length;
         const cityMastersActive = cityMasters.filter(m => m.status === "active").length;
@@ -411,14 +429,16 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         const ratio = freeMasters > 0
           ? Math.round((waitingOrders / freeMasters) * 100) / 100
           : (waitingOrders > 0 ? 99 : 0);
-        const cityLeadsCount = leadsByCity.get(city) ?? 0;
+        const cityLeadsCount = leadsByCityPeriod.get(city) ?? 0;
+        const cityCompletedCount = completedByCityPeriod.get(city) ?? 0;
+        const cityRevenue = revenueByCityPeriod.get(city) ?? 0;
         return {
           city,
           leads: cityLeadsCount,
           masters_total: cityMastersTotal,
           masters_active: cityMastersActive,
           conversion: cityLeadsCount > 0
-            ? Math.round((cityCompletedOrders.length / cityLeadsCount) * 1000) / 10
+            ? Math.round((cityCompletedCount / cityLeadsCount) * 1000) / 10
             : 0,
           revenue: Math.round(cityRevenue),
           free_masters: freeMasters,
@@ -430,23 +450,33 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       .sort((a, b) => b.revenue - a.revenue || b.leads - a.leads)
       .slice(0, 8);
 
-    // ── Top Masters ─────────────────────────────────────────────────────────
+    // ── Top Masters (selected period) ────────────────────────────────────────
+    const completedByMasterPeriod = new Map<number, number>();
+    const revenueByMasterPeriod = new Map<number, number>();
+    const totalByMasterPeriod = new Map<number, number>();
+    for (const o of orders) {
+      if (!o.masterId) continue;
+      if (o.createdAt >= periodStart) {
+        totalByMasterPeriod.set(o.masterId, (totalByMasterPeriod.get(o.masterId) ?? 0) + 1);
+      }
+      if (o.status === "completed" && o.updatedAt >= periodStart) {
+        completedByMasterPeriod.set(o.masterId, (completedByMasterPeriod.get(o.masterId) ?? 0) + 1);
+        revenueByMasterPeriod.set(o.masterId, (revenueByMasterPeriod.get(o.masterId) ?? 0) + (paidCommissionByOrder.get(o.id) ?? 0));
+      }
+    }
     const topMasters = masters
       .filter(m => m.status === "active")
       .map(m => {
-        const mCompleted = completedByMasterId.get(m.id) ?? [];
-        const mTotal = ordersByMasterId.get(m.id) ?? [];
-        let revenue = 0;
-        for (const o of mCompleted) {
-          revenue += paidCommissionByOrder.get(o.id) ?? 0;
-        }
+        const mCompleted = completedByMasterPeriod.get(m.id) ?? 0;
+        const mTotal = totalByMasterPeriod.get(m.id) ?? 0;
+        const revenue = revenueByMasterPeriod.get(m.id) ?? 0;
         return {
           id: m.id,
           name: m.alias,
           city: m.city,
-          orders_completed: mCompleted.length,
-          conversion: mTotal.length > 0
-            ? Math.round((mCompleted.length / mTotal.length) * 1000) / 10
+          orders_completed: mCompleted,
+          conversion: mTotal > 0
+            ? Math.round((mCompleted / mTotal) * 1000) / 10
             : 0,
           rating: Number(m.rating),
           revenue_brought: Math.round(revenue),
@@ -484,6 +514,22 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         };
       });
 
+    // ── Trend sparklines: last 14 days, daily buckets ───────────────────────
+    const TREND_DAYS = 14;
+    const trendStart = new Date(todayStart.getTime() - (TREND_DAYS - 1) * 86400000);
+    const leadsTrend = new Array(TREND_DAYS).fill(0);
+    const commissionTrend = new Array(TREND_DAYS).fill(0);
+    for (const l of leads) {
+      if (l.createdAt < trendStart) continue;
+      const idx = Math.floor((l.createdAt.getTime() - trendStart.getTime()) / 86400000);
+      if (idx >= 0 && idx < TREND_DAYS) leadsTrend[idx]++;
+    }
+    for (const t of txRows) {
+      if (t.paymentStatus !== "paid" || !t.createdAt || t.createdAt < trendStart) continue;
+      const idx = Math.floor((t.createdAt.getTime() - trendStart.getTime()) / 86400000);
+      if (idx >= 0 && idx < TREND_DAYS) commissionTrend[idx] += Number(t.commission);
+    }
+
     res.json({
       summary,
       leadFunnel,
@@ -492,6 +538,7 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       cities,
       topMasters,
       recentOrders,
+      trends: { leads: leadsTrend, commission: commissionTrend },
     });
   } catch (e: any) {
     console.error("[dashboard-v2] error:", e);
