@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  deriveHeaderSession,
+  headerAvatarInitial,
+  MASTER_MENU_ITEMS,
+  CREATE_OBJECT_HREF,
+  type HeaderSession,
+  type HeaderMaster,
+} from "../lib/headerSession";
 
 interface NavItem {
   href: string;
@@ -16,15 +24,22 @@ interface CityOption {
 }
 
 /**
- * Portal-grade public header (plan §21.9).
+ * Portal-grade public header (plan §21.9) + единый Zen-мир (real-price §5.5).
  *
- * Dense single-band layout with the green-tile wordmark on the left, primary
- * nav text links in the middle, city picker + login CTA on the right.
- * Sticky band, hairline border that appears on scroll. Mobile drawer
- * exposes the same options stacked.
+ * Dense single-band layout with the wordmark on the left, primary nav text
+ * links in the middle, city picker + auth cluster on the right. Sticky band,
+ * hairline border that appears on scroll. Mobile drawer exposes the same
+ * options stacked.
+ *
+ * Auth cluster (real-price Req 10.1): the header detects the logged-in master
+ * on the CLIENT via `GET /api/cabinet/auth/me` (see `lib/headerSession.ts` for
+ * why this must not happen in the root layout — it would force the whole site
+ * dynamic and break SSG/ISR for the SEO pages). Anonymous visitors keep the
+ * plain «Войти» CTA; a logged-in master gets «＋ Создать объект» + avatar-menu
+ * so they stay in one Zen product instead of teleporting to a separate app.
  *
  * The city picker is a placeholder until the city-detection backend ships
- * (plan §11.10.3). For now it links to /mastera as a sane catch-all.
+ * (plan §11.10.3). For now it links to /soobshchestvo as a sane catch-all.
  */
 const NAV: NavItem[] = [
   { href: "/raboty", label: "Идеи" },
@@ -38,11 +53,54 @@ const NAV: NavItem[] = [
 
 const EXTERNAL_FOR_MASTERS = "https://sfera-master.ru/masteram";
 
+/**
+ * Client hook: resolve the current master (if any) after hydration.
+ *
+ * Returns `null` while the request is in flight so callers can render the
+ * anonymous CTA optimistically (the common case) and swap in owner controls
+ * once resolved. `reset()` flips to anonymous locally after logout without a
+ * full reload.
+ */
+function useHeaderSession(): { session: HeaderSession | null; reset: () => void } {
+  const [session, setSession] = useState<HeaderSession | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/cabinet/auth/me", {
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          setSession({ status: "anonymous" });
+          return;
+        }
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        setSession(deriveHeaderSession(data));
+      } catch {
+        if (!cancelled) setSession({ status: "anonymous" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const reset = useCallback(() => setSession({ status: "anonymous" }), []);
+  return { session, reset };
+}
+
 export function Header({ cities = [] }: { cities?: CityOption[] }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [cityMenuOpen, setCityMenuOpen] = useState(false);
   const pathname = usePathname() ?? "/";
+  const { session, reset } = useHeaderSession();
+  const master = session?.status === "master" ? session.master : null;
 
   // Hairline appears once the user starts scrolling so the hero stays clean.
   useEffect(() => {
@@ -162,20 +220,35 @@ export function Header({ cities = [] }: { cities?: CityOption[] }) {
             </Link>
           )}
 
-          <a
-            href={EXTERNAL_FOR_MASTERS}
-            className="hidden text-sm font-medium text-[var(--color-muted)] transition hover:text-[var(--color-text)] lg:inline"
-            rel="noopener noreferrer"
-          >
-            Для мастеров
-          </a>
+          {master ? (
+            <>
+              <Link
+                href={CREATE_OBJECT_HREF}
+                className="hidden h-10 items-center gap-1.5 rounded-md bg-[var(--color-cta)] px-4 text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] sm:inline-flex"
+              >
+                <span aria-hidden className="text-base leading-none">＋</span>
+                Создать объект
+              </Link>
+              <AvatarMenu master={master} onLoggedOut={reset} />
+            </>
+          ) : (
+            <>
+              <a
+                href={EXTERNAL_FOR_MASTERS}
+                className="hidden text-sm font-medium text-[var(--color-muted)] transition hover:text-[var(--color-text)] lg:inline"
+                rel="noopener noreferrer"
+              >
+                Для мастеров
+              </a>
 
-          <Link
-            href="/login"
-            className="hidden h-10 items-center rounded-md bg-[var(--color-cta)] px-4 text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] sm:inline-flex"
-          >
-            Войти
-          </Link>
+              <Link
+                href="/login"
+                className="hidden h-10 items-center rounded-md bg-[var(--color-cta)] px-4 text-sm font-semibold text-[var(--color-on-cta)] transition hover:bg-[var(--color-cta-hover)] sm:inline-flex"
+              >
+                Войти
+              </Link>
+            </>
+          )}
 
           <button
             type="button"
@@ -228,28 +301,185 @@ export function Header({ cities = [] }: { cities?: CityOption[] }) {
                   </li>
                 );
               })}
-              <li>
-                <a
-                  href={EXTERNAL_FOR_MASTERS}
-                  className="block py-4 text-base text-[var(--color-muted)]"
-                  rel="noopener noreferrer"
-                >
-                  Для мастеров
-                </a>
-              </li>
-              <li>
-                <Link
-                  href="/login"
-                  className="my-3 inline-flex w-full items-center justify-center rounded-md bg-[var(--color-cta)] px-4 py-3 text-base font-semibold text-[var(--color-on-cta)]"
-                >
-                  Войти в кабинет
-                </Link>
-              </li>
+
+              {master ? (
+                <>
+                  <li className="py-3">
+                    <div className="flex items-center gap-3 pb-3">
+                      <AvatarChip master={master} />
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-semibold text-[var(--color-text)]">
+                          {master.alias}
+                        </p>
+                        {master.contact ? (
+                          <p className="truncate text-sm text-[var(--color-muted)]">{master.contact}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <Link
+                      href={CREATE_OBJECT_HREF}
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-cta)] px-4 py-3 text-base font-semibold text-[var(--color-on-cta)]"
+                    >
+                      <span aria-hidden className="text-lg leading-none">＋</span>
+                      Создать объект
+                    </Link>
+                  </li>
+                  {MASTER_MENU_ITEMS.map((item) => (
+                    <li key={item.href}>
+                      <Link href={item.href} className="block py-4 text-base text-[var(--color-text)]">
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                  <li>
+                    <LogoutButton
+                      onLoggedOut={reset}
+                      className="block w-full py-4 text-left text-base text-red-700"
+                    />
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    <a
+                      href={EXTERNAL_FOR_MASTERS}
+                      className="block py-4 text-base text-[var(--color-muted)]"
+                      rel="noopener noreferrer"
+                    >
+                      Для мастеров
+                    </a>
+                  </li>
+                  <li>
+                    <Link
+                      href="/login"
+                      className="my-3 inline-flex w-full items-center justify-center rounded-md bg-[var(--color-cta)] px-4 py-3 text-base font-semibold text-[var(--color-on-cta)]"
+                    >
+                      Войти в кабинет
+                    </Link>
+                  </li>
+                </>
+              )}
             </ul>
           </nav>
         </div>
       ) : null}
     </header>
+  );
+}
+
+/** Round avatar chip: custom image when present, else the alias initial. */
+function AvatarChip({ master }: { master: HeaderMaster }) {
+  if (master.avatarUrl) {
+    // eslint-disable-next-line @next/next/no-img-element -- external avatar, no optimization needed in header chip
+    return (
+      <img
+        src={master.avatarUrl}
+        alt=""
+        className="h-8 w-8 flex-shrink-0 rounded-full object-cover"
+      />
+    );
+  }
+  return (
+    <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-white">
+      {headerAvatarInitial(master.alias)}
+    </span>
+  );
+}
+
+/**
+ * Desktop avatar dropdown for a logged-in master. Mirrors the cabinet topbar
+ * pattern (same Zen affordances) but lives on the public site.
+ */
+function AvatarMenu({ master, onLoggedOut }: { master: HeaderMaster; onLoggedOut: () => void }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative hidden sm:block">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label="Меню мастера"
+        className="flex h-10 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 pr-3 text-sm font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)]"
+      >
+        <AvatarChip master={master} />
+        <span className="max-w-[110px] truncate">{master.alias}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-12 z-50 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-cozy-md"
+          onMouseLeave={() => setOpen(false)}
+        >
+          {master.contact ? (
+            <div className="truncate px-3 py-2 text-xs text-[var(--color-muted)]">{master.contact}</div>
+          ) : null}
+          <div className="my-1 h-px bg-[var(--color-border)]" />
+          {MASTER_MENU_ITEMS.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block rounded-lg px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-cream-deep)]"
+            >
+              {item.label}
+            </Link>
+          ))}
+          <div className="my-1 h-px bg-[var(--color-border)]" />
+          <LogoutButton
+            onLoggedOut={() => {
+              setOpen(false);
+              onLoggedOut();
+            }}
+            className="block w-full rounded-lg px-3 py-2 text-left text-sm text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Logout action shared by the desktop menu and mobile drawer. Posts to the
+ * cabinet proxy (`/api/cabinet/auth/logout` → master-pwa), flips the local
+ * session to anonymous, and refreshes so any server-rendered content re-reads
+ * the cleared cookie. Mirrors `CabinetTopbar` but keeps the user on the site.
+ */
+function LogoutButton({
+  onLoggedOut,
+  className,
+}: {
+  onLoggedOut: () => void;
+  className?: string;
+}) {
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await fetch("/api/cabinet/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    } catch {
+      // Ignore — worst case the cabinet auth-guard redirects to /login later.
+    }
+    onLoggedOut();
+    router.refresh();
+  }
+
+  return (
+    <button type="button" role="menuitem" onClick={handleLogout} disabled={loggingOut} className={className}>
+      {loggingOut ? "Выход…" : "Выйти из аккаунта"}
+    </button>
   );
 }
 
