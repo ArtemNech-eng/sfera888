@@ -12,7 +12,7 @@ interface Props {
  * in Week 2 of the Cabinet Migration. Communicates the migration state to
  * pilot masters who may land here before the full port is done.
  */
-export function PlaceholderPage({ title, subtitle, ctaHref = "https://sfera-master.ru/master-pwa/", ctaLabel = "Открыть старое приложение" }: Props) {
+export function PlaceholderPage({ title, subtitle, ctaHref = "/cabinet", ctaLabel = "Вернуться в кабинет" }: Props) {
   return (
     <div className="space-y-4">
       <header>
@@ -28,8 +28,7 @@ export function PlaceholderPage({ title, subtitle, ctaHref = "https://sfera-mast
           <div className="space-y-2">
             <h2 className="text-base font-medium text-[var(--color-text)]">Раздел переезжает в новый кабинет</h2>
             <p className="text-sm text-[var(--color-muted)]">
-              Мы переносим кабинет мастера на этот сайт. Содержимое раздела появится здесь в ближайшие дни.
-              Пока что используйте старое приложение для работы с заказами и балансом.
+              Этот раздел ещё в разработке. Содержимое появится здесь в ближайшее время.
             </p>
             <Link
               href={ctaHref}

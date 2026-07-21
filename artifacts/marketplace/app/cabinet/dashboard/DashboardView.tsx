@@ -105,7 +105,7 @@ export function DashboardView() {
           label="Доступные заказы"
           value={data.availableOrders.length}
           tone="primary"
-          href={data.availableOrders.length > 0 ? "https://sfera-master.ru/master-pwa/" : undefined}
+          href={data.availableOrders.length > 0 ? "/cabinet/orders" : undefined}
           icon={<ZapIcon />}
         />
         <StatTile
@@ -179,8 +179,8 @@ export function DashboardView() {
         }
         items={data.availableOrders.slice(0, 3)}
         renderItem={(o) => <AvailableOrderCard key={o.id} order={o} />}
-        moreHref={data.availableOrders.length > 3 ? "https://sfera-master.ru/master-pwa/" : undefined}
-        moreLabel="Все заявки в старом приложении"
+        moreHref={data.availableOrders.length > 3 ? "/cabinet/orders" : undefined}
+        moreLabel="Все заявки"
       />
 
       {/* Pending orders */}
@@ -367,13 +367,12 @@ function AvailableOrderCard({
           )}
           {order.dispatchedAt ? <span>· {timeAgo(order.dispatchedAt)}</span> : null}
         </div>
-        <a
-          href="https://sfera-master.ru/master-pwa/"
-          rel="noopener noreferrer"
+        <Link
+          href={`/cabinet/orders/${order.id}`}
           className="text-xs font-semibold text-[var(--color-primary)] hover:underline"
         >
           {variant === "pending" ? "Открыть отклик →" : "Откликнуться →"}
-        </a>
+        </Link>
       </div>
     </li>
   );
@@ -584,13 +583,12 @@ function FomoBanner({ block }: { block: { type: string | null; reason: string | 
       <div className="min-w-0 flex-1">
         <p className="text-sm font-bold text-amber-900">{title}</p>
         {block.reason ? <p className="mt-1 text-xs text-amber-800">{block.reason}</p> : null}
-        <a
-          href="https://sfera-master.ru/master-pwa/"
-          rel="noopener noreferrer"
+        <Link
+          href="/cabinet/orders"
           className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-900 hover:underline"
         >
-          Открыть в старом приложении →
-        </a>
+          Открыть заказы →
+        </Link>
       </div>
     </div>
   );

@@ -179,20 +179,17 @@ export function ProfileView() {
       {/* Max bot integration */}
       <MaxBotCard maxChatId={data.maxChatId} maxBotLink={data.maxBotLink} />
 
-      {/* Read-only notice */}
+      {/* Edit profile link */}
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-5 text-sm text-[var(--color-muted)]">
-        <p className="font-semibold text-[var(--color-text)]">Полное редактирование — в старом приложении</p>
+        <p className="font-semibold text-[var(--color-text)]">Редактирование профиля</p>
         <p className="mt-1">
-          В новом кабинете пока работает просмотр и баланс. Чтобы поменять имя, добавить услугу или
-          изменить рабочие часы — откройте старое приложение мастера. Полный редактор переедет в
-          ближайших обновлениях.
+          Измените имя, услуги, рабочие часы, фильтры заказов и публичный профиль.
         </p>
         <a
-          href="https://sfera-master.ru/master-pwa/"
-          rel="noopener noreferrer"
+          href="/cabinet/profile/edit"
           className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-primary)] hover:underline"
         >
-          Открыть в старом приложении →
+          Редактировать профиль →
         </a>
       </div>
     </div>
@@ -218,8 +215,7 @@ function PublicProfileCard({ data }: { data: ProfileData }) {
               Это бесплатные клиенты, которые сами вас найдут.
             </p>
             <a
-              href="https://sfera-master.ru/master-pwa/"
-              rel="noopener noreferrer"
+              href="/cabinet/profile/edit"
               className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-amber-900 hover:underline"
             >
               Опубликовать профиль →
