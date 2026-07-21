@@ -313,6 +313,11 @@ export function OrderDetailView({ id }: Props) {
         </section>
       ) : null}
 
+      {/* Client contact — only for active orders */}
+      {source === "active" && (item.clientName || item.clientPhone) ? (
+        <ClientCard name={item.clientName ?? null} phone={item.clientPhone ?? null} />
+      ) : null}
+
       {/* Photos */}
       {item.photos && item.photos.length > 0 ? (
         <section>
@@ -604,29 +609,50 @@ function ActiveActions(props: {
       <div>
         <h2 className="text-base font-bold text-[var(--color-text)]">Статус работы</h2>
         <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-          Обновляйте статус по ходу — клиент видит его в реальном времени.
+          Обновляйте по ходу — клиент видит ваш статус в реальном времени.
         </p>
       </div>
-      <div className="flex flex-wrap gap-2">
-        {WORK_STATUS_OPTIONS.map((opt) => {
-          const active = currentStatus === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => props.onStatus(opt.value)}
-              disabled={props.busy || active}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                active
-                  ? "bg-[var(--color-cta)] text-[var(--color-on-cta)] shadow-sm"
-                  : "border border-[var(--color-border)] bg-white text-[var(--color-text)] hover:border-[var(--color-primary)]"
-              } disabled:opacity-${active ? "100" : "60"}`}
-            >
-              <span aria-hidden>{opt.emoji}</span>
-              {opt.label}
-            </button>
-          );
-        })}
+
+      {/* Progressive stepper */}
+      <div className="relative">
+        {/* connector line */}
+        <div className="absolute left-[15px] top-5 h-[calc(100%-28px)] w-0.5 bg-[var(--color-border)]" aria-hidden />
+        <div className="space-y-2">
+          {WORK_STATUS_OPTIONS.map((opt, i) => {
+            const currentIdx = WORK_STATUS_OPTIONS.findIndex(o => o.value === currentStatus);
+            const isDone = currentIdx > i;
+            const isActive = currentStatus === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => props.onStatus(opt.value)}
+                disabled={props.busy || isActive}
+                className={`relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
+                  isActive
+                    ? "bg-[var(--color-cta)] text-[var(--color-on-cta)] shadow-sm"
+                    : isDone
+                    ? "text-[var(--color-muted)]"
+                    : "border border-[var(--color-border)] bg-white text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]/30"
+                } disabled:cursor-default`}
+              >
+                <span className={`relative z-10 flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full text-xs ${
+                  isActive ? "bg-white text-[var(--color-primary)] font-bold"
+                  : isDone ? "bg-[var(--color-border)] text-[var(--color-muted)]"
+                  : "bg-[var(--color-background)] text-[var(--color-muted)]"
+                }`}>
+                  {isDone ? "✓" : opt.emoji}
+                </span>
+                <span>{opt.label}</span>
+                {isActive && (
+                  <span className="ml-auto rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                    Текущий
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="my-2 border-t border-[var(--color-border)]" />
@@ -732,6 +758,47 @@ function ActiveActions(props: {
           </button>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function ClientCard({ name, phone }: { name: string | null; phone: string | null }) {
+  return (
+    <section className="rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+        Контакт клиента
+      </h2>
+      <div className="mt-3 flex items-center gap-4">
+        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-lg font-bold text-[var(--color-primary)]">
+          {name ? name.trim()[0]?.toUpperCase() : "К"}
+        </div>
+        <div className="min-w-0 flex-1">
+          {name && (
+            <p className="text-sm font-bold text-[var(--color-text)]">{name}</p>
+          )}
+          {phone && (
+            <a
+              href={`tel:${phone}`}
+              className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-primary)] hover:underline"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.27 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.18 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16z"/>
+              </svg>
+              {phone}
+            </a>
+          )}
+        </div>
+        {phone && (
+          <a
+            href={`tel:${phone}`}
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm transition hover:bg-emerald-600"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.27 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.18 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16z"/>
+            </svg>
+          </a>
+        )}
+      </div>
     </section>
   );
 }
