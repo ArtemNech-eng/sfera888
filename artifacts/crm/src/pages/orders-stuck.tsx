@@ -123,11 +123,11 @@ function OrdersStuckContent() {
     [items]
   );
 
-  const filtered = items.filter(i => {
+  const filtered = useMemo(() => items.filter(i => {
     if (filterMaster && i.masterAlias !== filterMaster) return false;
     if (filterCity && i.city !== filterCity) return false;
     return true;
-  });
+  }), [items, filterMaster, filterCity]);
 
   // Open master drawer (mirrors checkins.tsx logic)
   async function openMasterCard(id: number) {
@@ -358,17 +358,25 @@ function OrdersStuckContent() {
                       {item.serviceType}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className="text-sm font-semibold text-gray-800">{item.daysStuck} дн.</span>
+                      <span className={`text-sm font-semibold ${
+                        item.daysStuck >= 14 ? "text-red-600" : item.daysStuck >= 7 ? "text-orange-600" : "text-gray-800"
+                      }`}>{item.daysStuck} дн.</span>
                     </td>
-                    <td className="px-4 py-2.5 text-[11px] text-gray-500 hidden lg:table-cell max-w-[200px]">
-                      {item.category === "needs_call_report" && item.callReportedAt && (
-                        <span className="text-emerald-600">✓ Отчёт {formatDateTime(item.callReportedAt)}</span>
+                    <td className="px-4 py-2.5 text-[11px] text-gray-500 hidden lg:table-cell max-w-[220px]">
+                      {item.category === "needs_call_report" && (
+                        <span>Ожидает отчёта о созвоне</span>
                       )}
-                      {item.category === "needs_amount_confirmation" && item.proposedAmount && (
-                        <span>Мастер: <b>{item.proposedAmount.toLocaleString("ru-RU")} ₽</b></span>
+                      {item.category === "needs_result" && (
+                        <span>{item.proposedAmount ? "Сумма есть, нет фото" : "Нет фото и суммы"}</span>
                       )}
-                      {item.category === "needs_commission_payment" && item.netPayable && (
+                      {item.category === "needs_amount_confirmation" && (
+                        <span>Мастер: <b>{item.proposedAmount ? item.proposedAmount.toLocaleString("ru-RU") : "—"} ₽</b> · подтвердите</span>
+                      )}
+                      {item.category === "needs_commission_payment" && item.netPayable != null && (
                         <span>К оплате: <b className="text-red-600">{item.netPayable.toLocaleString("ru-RU")} ₽</b></span>
+                      )}
+                      {item.category === "zombie" && (
+                        <span>Нет активности {item.daysStuck} дн.</span>
                       )}
                       {item.scheduledAt && (
                         <span className="block">Замер {formatDateTime(item.scheduledAt)}</span>

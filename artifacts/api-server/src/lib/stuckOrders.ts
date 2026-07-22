@@ -206,7 +206,17 @@ function toStuckItem(
   const master = order.masterId ? masterMap.get(order.masterId) ?? null : null;
   const lead = order.leadId ? leadMap.get(order.leadId) ?? null : null;
   const assignedAt = order.assignedAt ?? order.createdAt;
-  const daysStuck = Math.floor((ctx.now.getTime() - assignedAt.getTime()) / 86_400_000);
+  // "Stuck for N days" is measured from the event that made it stuck, per category:
+  //   • amount confirmation → since the order was completed/submitted (updatedAt);
+  //   • commission payment  → since the commission transaction was created;
+  //   • everything else     → since assignment.
+  let refDate: Date = assignedAt;
+  if (category === "needs_amount_confirmation") {
+    refDate = order.updatedAt ?? assignedAt;
+  } else if (category === "needs_commission_payment" && tx) {
+    refDate = tx.createdAt;
+  }
+  const daysStuck = Math.max(0, Math.floor((ctx.now.getTime() - refDate.getTime()) / 86_400_000));
 
   return {
     id: order.id,
