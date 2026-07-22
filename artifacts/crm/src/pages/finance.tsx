@@ -67,12 +67,6 @@ interface Estimate {
   status: "paid" | "pending" | "unpaid"; orderStatus: string | null; hoursAgo: number;
 }
 
-interface FinanceSummary {
-  totalIncome: number; totalDebt: number; avgCommission: number;
-  paidCount: number; pendingCount: number; overdueCount: number; totalCount: number;
-  pendingAmount: number; overdueAmount: number;
-}
-
 interface EstimateStats {
   total: number; paidCount: number; pendingCount: number; unpaidCount: number;
   paidSum: number; pendingSum: number; avgCheck: number; avgHours: number; conversionRate: number;
@@ -260,12 +254,6 @@ export default function Finance() {
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
-  const { data: summary, refetch: refetchSummary } = useQuery<FinanceSummary>({
-    queryKey: [`/api/finance/summary`],
-    queryFn: () => fetch(`/api/finance/summary`, { credentials: "include" }).then(r => r.json()),
-    staleTime: 30_000,
-  });
-
   const { data: transactions, isLoading: txLoading, refetch: refetchTx } = useQuery<Transaction[]>({
     queryKey: [`/api/finance/transactions`],
     queryFn: () => fetch(`/api/finance/transactions`, { credentials: "include" }).then(r => r.json()),
@@ -375,7 +363,9 @@ export default function Finance() {
   [txList]);
 
   const filtered = useMemo(() => {
-    let list = [...txList];
+    // Финансовый список — только реальные комиссии. Нулевые плейсхолдеры (заказ
+    // принят, но не завершён — комиссия ещё 0) не относятся к сбору денег.
+    let list = txList.filter(t => t.commission > 0);
     if (statusFilter !== "all") list = list.filter(t => t.paymentStatus === statusFilter);
     if (cityFilter)  list = list.filter(t => t.city === cityFilter);
     if (search.trim()) {
@@ -389,7 +379,9 @@ export default function Finance() {
     const { from, to } = getPeriodRange(txPeriod, txFrom, txTo);
     if (from !== undefined || to !== undefined) {
       list = list.filter(t => {
-        const ms = new Date(t.createdAt).getTime();
+        // Закрытые относим к периоду по дате оплаты, открытые — по дате создания.
+        const refDate = t.paymentStatus === "paid" && t.paidAt ? t.paidAt : t.createdAt;
+        const ms = new Date(refDate).getTime();
         if (from !== undefined && ms < from) return false;
         if (to   !== undefined && ms > to)   return false;
         return true;
@@ -483,7 +475,6 @@ export default function Finance() {
       if (!r.ok) throw new Error();
       toast.success(`Комиссия по заказу #${tx.orderId} отмечена оплаченной`);
       queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/finance/summary`] });
       queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при обновлении транзакции"); }
     finally { setPayLoading(null); setConfirmPay(null); }
@@ -508,7 +499,6 @@ export default function Finance() {
         toast.success(`Принято ${formatCurrency(amt)}. Остаток: ${formatCurrency(data.remaining)}`);
       }
       queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/finance/summary`] });
       queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
       setPartialPayTx(null); setPartialAmount(""); setPartialNote("");
     } catch (e: any) { toast.error(e?.message ?? "Ошибка при проведении платежа"); }
@@ -600,7 +590,6 @@ export default function Finance() {
       if (!r.ok) throw new Error();
       toast.success(`Все транзакции мастера ${m.alias} отмечены оплаченными`);
       queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/finance/summary`] });
       queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при оплате"); }
     finally { setMasterActionLoading(null); setConfirmPayAll(null); }
@@ -620,7 +609,6 @@ export default function Finance() {
       queryClient.invalidateQueries({ queryKey: [`/api/finance/estimates/stats`] });
       // Refresh transactions and master-stats — a new transaction was just created server-side
       queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/finance/summary`] });
       queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при подтверждении сметы"); }
     finally { setEstConfirmLoading(null); setConfirmEst(null); }
@@ -726,7 +714,7 @@ export default function Finance() {
               <h1 className="text-3xl font-display font-bold text-foreground">Финансы</h1>
               <p className="text-muted-foreground mt-1">Управление комиссиями и выплатами</p>
             </div>
-            <button onClick={() => { refetchTx(); refetchSummary(); }}
+            <button onClick={() => { refetchTx(); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border/60 text-sm text-muted-foreground hover:text-foreground bg-background transition-colors">
               <RefreshCw className="w-4 h-4" /> Обновить
             </button>

@@ -735,9 +735,13 @@ router.get("/master-stats", opsAndAdmin, async (req, res) => {
   const fromDate = from ? new Date(from as string) : null;
   const toDate   = to   ? new Date(to   as string) : null;
 
+  // Attribute each transaction to the period by its effective date: payment date
+  // for closed transactions, creation date for still-open ones. Keeps "доход за
+  // период" aligned with money actually received in that period.
+  const effDate = sql`(CASE WHEN t.payment_status = 'paid' AND t.paid_at IS NOT NULL THEN t.paid_at ELSE t.created_at END)`;
   let whereClause = sql`1=1`;
-  if (fromDate) whereClause = sql`${whereClause} AND t.created_at >= ${fromDate.toISOString()}`;
-  if (toDate)   whereClause = sql`${whereClause} AND t.created_at <= ${toDate.toISOString()}`;
+  if (fromDate) whereClause = sql`${whereClause} AND ${effDate} >= ${fromDate.toISOString()}`;
+  if (toDate)   whereClause = sql`${whereClause} AND ${effDate} <= ${toDate.toISOString()}`;
 
   const rows = await db.execute(sql`
     SELECT t.id, t.master_id, t.commission, t.order_amount, t.prepayment_deducted,
