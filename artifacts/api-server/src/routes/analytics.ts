@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, leadsTable, ordersTable, mastersTable, transactionsTable, transactionPaymentsTable, orderMastersTable, receiptsTable, avitoSettingsTable } from "@workspace/db";
+import { db, leadsTable, ordersTable, mastersTable, transactionsTable, transactionPaymentsTable, receiptsTable, avitoSettingsTable } from "@workspace/db";
 import { requirePermission } from "../middlewares/requireAuth.js";
 import { isNull, isNotNull, inArray, eq, sql } from "drizzle-orm";
 
@@ -314,27 +314,33 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       avg_check_period: avgCheckPeriod,
     };
 
-    // ── Business funnel (activity within the selected period) ────────────────
-    // Заявок (поступило) → Взято мастерами (принято в периоде) → Оплачено
-    // (комиссия закрыта в периоде) + средняя комиссия. Считается по датам событий
-    // за период — согласованно с денежными KPI и разделом «Финансы» (по дате оплаты).
-    const takenOrderMasterRows = await db.select({
-      orderId: orderMastersTable.orderId,
-      createdAt: orderMastersTable.createdAt,
-    }).from(orderMastersTable);
-    const takenOrderIds = new Set<number>();
-    for (const om of takenOrderMasterRows) {
-      if (om.createdAt >= periodStart) takenOrderIds.add(om.orderId);
-    }
-    let funnelPaid = 0, funnelPaidCommission = 0;
+    // ── Business funnel (selected-period lead cohort) ────────────────────────
+    // Из заявок, поступивших в периоде: сколько взято мастером и сколько оплачено.
+    // Когорта → стадии убывают (заявки ≥ взято ≥ оплачено). «Взято» определяем по
+    // наличию мастера у заказа (masterId либо рабочий статус), т.к. надёжной даты
+    // принятия в системе нет (назначение бывает и оператором, и самим мастером).
+    const leadIdsInPeriod = new Set<number>();
+    for (const l of leads) if (l.createdAt >= periodStart) leadIdsInPeriod.add(l.id);
+    const paidOrderIds = new Set<number>();
+    const paidCommissionByOrderId = new Map<number, number>();
     for (const t of txRows) {
-      if (t.paymentStatus === "paid" && t.paidAt && t.paidAt >= periodStart) {
-        funnelPaid++;
-        funnelPaidCommission += Number(t.commission);
+      if (t.paymentStatus === "paid") {
+        paidOrderIds.add(t.orderId);
+        const prev = paidCommissionByOrderId.get(t.orderId) ?? 0;
+        if (Number(t.commission) > prev) paidCommissionByOrderId.set(t.orderId, Number(t.commission));
       }
     }
-    const funnelLeads = leadsPeriod;
-    const funnelTaken = takenOrderIds.size;
+    const TAKEN_STATUSES = new Set(["master_assigned", "in_progress", "completed"]);
+    const funnelLeads = leadIdsInPeriod.size;
+    let funnelTaken = 0, funnelPaid = 0, funnelPaidCommission = 0;
+    for (const o of orders) {
+      if (!o.leadId || !leadIdsInPeriod.has(o.leadId)) continue;
+      if (o.masterId != null || TAKEN_STATUSES.has(o.status)) funnelTaken++;
+      if (paidOrderIds.has(o.id)) {
+        funnelPaid++;
+        funnelPaidCommission += paidCommissionByOrderId.get(o.id) ?? 0;
+      }
+    }
     const leadFunnel = {
       total: funnelLeads,
       taken: funnelTaken,
