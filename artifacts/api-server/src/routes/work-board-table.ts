@@ -419,6 +419,7 @@ async function buildTableData(params: QueryParams): Promise<{
   // Build table rows
   const rows: TableRow[] = [];
   let activeCount = 0;
+  let closedCount = 0;
   let sumInWork = 0;
   let sumPaid = 0;
   let expectedCommission = 0;
@@ -628,6 +629,8 @@ async function buildTableData(params: QueryParams): Promise<{
         sumPaid += prepayment > 0 ? prepayment : total;
         expectedCommission += commTotal;
       }
+    } else {
+      closedCount++;
     }
 
     const row: TableRow = {
@@ -704,9 +707,10 @@ async function buildTableData(params: QueryParams): Promise<{
     }
   });
 
-  // Calculate funnel metrics
-  const totalAttempts = activeCount + (rows.filter(r => r.columnKey === "closed_24h").length);
-  const conversionPct = totalAttempts > 0 ? Math.round((rows.filter(r => r.columnKey === "closed_24h").length / totalAttempts) * 100) : 0;
+  // Calculate funnel metrics — доходимость = закрытые / (активные + закрытые),
+  // по всем заказам (не по текущей папке), чтобы не скакать при переключении вкладок.
+  const totalAttempts = activeCount + closedCount;
+  const conversionPct = totalAttempts > 0 ? Math.round((closedCount / totalAttempts) * 100) : 0;
 
   // Paginate after in-memory filtering (ensures total and pagination are accurate)
   const filteredTotal = rows.length;
