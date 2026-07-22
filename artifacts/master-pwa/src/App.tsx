@@ -86,23 +86,24 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Not logged in → go to login
-  if (!master && location !== "/login") {
-    return <Redirect to="/login" />;
-  }
-  // Logged in + on login page → redirect to new unified cabinet (hard nav so
-  // the api-server proxy intercepts it and serves chestnye-mastera.ru/cabinet).
-  if (master && location === "/login") {
-    if (master.status === "suspended") return <SuspendedScreen />;
-    window.location.replace("/cabinet");
-    return null;
-  }
-  // Suspended master → show blocked screen regardless of route
-  if (master && master.status === "suspended") {
-    return <SuspendedScreen />;
+  // Not logged in → show login page
+  if (!master) {
+    if (location !== "/login") return <Redirect to="/login" />;
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  // Suspended master
+  if (master.status === "suspended") return <SuspendedScreen />;
+
+  // Logged in → always go to new cabinet (hard nav, no client-side routing).
+  // This makes master-pwa purely a login screen — all actual work happens
+  // in the proxied chestnye-mastera.ru/cabinet (served via sfera-master.ru/cabinet).
+  window.location.replace("/cabinet");
+  return (
+    <div className="flex items-center justify-center min-h-dvh">
+      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 }
 
 function AppRoutes() {
