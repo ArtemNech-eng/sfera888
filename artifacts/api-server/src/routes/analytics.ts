@@ -129,7 +129,7 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
     }
 
     // ── Load only the columns we actually use, in parallel ─────────────────
-    const [leads, orders, masters, txRows, avitoBalance] = await Promise.all([
+    const [leads, orders, masters, txRows, txPayments, avitoBalance] = await Promise.all([
       db.select({
         id: leadsTable.id,
         clientName: leadsTable.clientName,
@@ -161,11 +161,17 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         createdAt: mastersTable.createdAt,
       }).from(mastersTable).where(isNull(mastersTable.deletedAt)),
       db.select({
+        id: transactionsTable.id,
         orderId: transactionsTable.orderId,
         commission: transactionsTable.commission,
         paymentStatus: transactionsTable.paymentStatus,
         paidAt: transactionsTable.paidAt,
       }).from(transactionsTable),
+      db.select({
+        transactionId: transactionPaymentsTable.transactionId,
+        amount: transactionPaymentsTable.amount,
+        paidAt: transactionPaymentsTable.paidAt,
+      }).from(transactionPaymentsTable),
       fetchAvitoBalance().catch(() => 0),
     ]);
 
@@ -253,12 +259,22 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         }
       }
     }
-    // Paid commission actually collected within the period (by payment date).
+    // Commission collected within the period:
+    //  • full commission of transactions whose payment fully closed in the period
+    //    (paymentStatus="paid"), however it was paid — cash / partials / prepayment;
+    //  • plus partial payments made in the period on transactions NOT yet closed.
+    const paidTxIds = new Set<number>();
+    for (const t of txRows) if (t.paymentStatus === "paid") paidTxIds.add(t.id);
     let commissionPeriod = 0, commissionPrevPeriod = 0;
     for (const t of txRows) {
       if (t.paymentStatus !== "paid" || !t.paidAt) continue;
       if (t.paidAt >= periodStart) commissionPeriod += Number(t.commission);
       else if (t.paidAt >= prevStart) commissionPrevPeriod += Number(t.commission);
+    }
+    for (const p of txPayments) {
+      if (paidTxIds.has(p.transactionId) || !p.paidAt) continue; // closed tx already counted in full
+      if (p.paidAt >= periodStart) commissionPeriod += Number(p.amount);
+      else if (p.paidAt >= prevStart) commissionPrevPeriod += Number(p.amount);
     }
     const avgCheckPeriod = completedPeriod > 0 ? Math.round(revenuePeriod / completedPeriod) : 0;
     const summary = {
@@ -528,6 +544,11 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       if (t.paymentStatus !== "paid" || !t.paidAt || t.paidAt < trendStart) continue;
       const idx = Math.floor((t.paidAt.getTime() - trendStart.getTime()) / 86400000);
       if (idx >= 0 && idx < TREND_DAYS) commissionTrend[idx] += Number(t.commission);
+    }
+    for (const p of txPayments) {
+      if (paidTxIds.has(p.transactionId) || !p.paidAt || p.paidAt < trendStart) continue;
+      const idx = Math.floor((p.paidAt.getTime() - trendStart.getTime()) / 86400000);
+      if (idx >= 0 && idx < TREND_DAYS) commissionTrend[idx] += Number(p.amount);
     }
 
     res.json({
