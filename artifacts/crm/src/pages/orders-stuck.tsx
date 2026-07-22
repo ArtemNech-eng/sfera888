@@ -57,22 +57,6 @@ const TABS: Array<{ key: StuckCategory; label: string; icon: typeof PhoneCall; c
   { key: "zombie",                     label: "Зомби (14+ дн.)",      icon: Skull,        color: "#4B5563" },
 ];
 
-// ─── URL helpers ──────────────────────────────────────────────────────────────
-
-function useQueryParam(name: string): [string | null, (v: string | null) => void] {
-  const [, setLocation] = useLocation();
-  const params = new URLSearchParams(window.location.search);
-  const value = params.get(name);
-  const setter = (v: string | null) => {
-    const next = new URLSearchParams(window.location.search);
-    if (v == null) next.delete(name);
-    else next.set(name, v);
-    const qs = next.toString();
-    setLocation(`/orders/stuck${qs ? `?${qs}` : ""}`);
-  };
-  return [value, setter];
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OrdersStuckPage() {
@@ -88,16 +72,29 @@ export default function OrdersStuckPage() {
 function OrdersStuckContent() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [categoryParam, setCategoryParam] = useQueryParam("category");
-  const activeCategory: StuckCategory = (
-    TABS.find(t => t.key === categoryParam)?.key ?? "needs_call_report"
-  );
+  // Active category is React state (not derived from the URL query): wouter does
+  // not re-render on query-only changes, so relying on window.location.search made
+  // the tabs "stick". We seed from the URL once, then keep the URL in sync for
+  // shareable links via history.replaceState (which does not drive rendering).
+  const [activeCategory, setActiveCategory] = useState<StuckCategory>(() => {
+    const c = new URLSearchParams(window.location.search).get("category");
+    return TABS.find(t => t.key === c)?.key ?? "needs_call_report";
+  });
 
   const [filterMaster, setFilterMaster] = useState<string>("");
   const [filterCity, setFilterCity] = useState<string>("");
   const [drawerMaster, setDrawerMaster] = useState<DrawerMaster | null>(null);
   const [loadingMasterId, setLoadingMasterId] = useState<number | null>(null);
   const [voronkaColumns, setVoronkaColumns] = useState<DrawerColumn[]>([]);
+
+  const selectCategory = (key: StuckCategory) => {
+    setActiveCategory(key);
+    setFilterMaster("");
+    setFilterCity("");
+    const next = new URLSearchParams(window.location.search);
+    next.set("category", key);
+    window.history.replaceState(null, "", `/orders/stuck?${next.toString()}`);
+  };
 
   const { data, isLoading, refetch, isFetching } = useQuery<StuckResponse>({
     queryKey: ["/api/orders/stuck"],
@@ -245,11 +242,7 @@ function OrdersStuckContent() {
           return (
             <button
               key={tab.key}
-              onClick={() => {
-                setCategoryParam(tab.key);
-                setFilterMaster("");
-                setFilterCity("");
-              }}
+              onClick={() => selectCategory(tab.key)}
               className={`flex items-center gap-2 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
                 active
                   ? "border-current"
