@@ -164,7 +164,9 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         id: transactionsTable.id,
         orderId: transactionsTable.orderId,
         commission: transactionsTable.commission,
+        prepaymentDeducted: transactionsTable.prepaymentDeducted,
         paymentStatus: transactionsTable.paymentStatus,
+        createdAt: transactionsTable.createdAt,
         paidAt: transactionsTable.paidAt,
       }).from(transactionsTable),
       db.select({
@@ -259,20 +261,27 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
         }
       }
     }
-    // Commission collected within the period:
-    //  • full commission of transactions whose payment fully closed in the period
-    //    (paymentStatus="paid"), however it was paid — cash / partials / prepayment;
-    //  • plus partial payments made in the period on transactions NOT yet closed.
+    // Commission received within the period — mirrors Finance "totalIncome":
+    //  • paid transactions → full commission (attributed by payment date);
+    //  • not-yet-paid transactions → booking/prepayment (бронь, attributed by
+    //    order/tx creation) + manual partial payments (attributed by their date).
     const paidTxIds = new Set<number>();
     for (const t of txRows) if (t.paymentStatus === "paid") paidTxIds.add(t.id);
     let commissionPeriod = 0, commissionPrevPeriod = 0;
     for (const t of txRows) {
-      if (t.paymentStatus !== "paid" || !t.paidAt) continue;
-      if (t.paidAt >= periodStart) commissionPeriod += Number(t.commission);
-      else if (t.paidAt >= prevStart) commissionPrevPeriod += Number(t.commission);
+      if (t.paymentStatus === "paid") {
+        if (t.paidAt && t.paidAt >= periodStart) commissionPeriod += Number(t.commission);
+        else if (t.paidAt && t.paidAt >= prevStart) commissionPrevPeriod += Number(t.commission);
+      } else {
+        const prepay = Number(t.prepaymentDeducted ?? 0);
+        if (prepay > 0) {
+          if (t.createdAt >= periodStart) commissionPeriod += prepay;
+          else if (t.createdAt >= prevStart) commissionPrevPeriod += prepay;
+        }
+      }
     }
     for (const p of txPayments) {
-      if (paidTxIds.has(p.transactionId) || !p.paidAt) continue; // closed tx already counted in full
+      if (paidTxIds.has(p.transactionId) || !p.paidAt) continue; // partials on closed tx already in full commission
       if (p.paidAt >= periodStart) commissionPeriod += Number(p.amount);
       else if (p.paidAt >= prevStart) commissionPrevPeriod += Number(p.amount);
     }
@@ -541,9 +550,18 @@ router.get("/dashboard-v2", adminOnly, async (req, res) => {
       if (idx >= 0 && idx < TREND_DAYS) leadsTrend[idx]++;
     }
     for (const t of txRows) {
-      if (t.paymentStatus !== "paid" || !t.paidAt || t.paidAt < trendStart) continue;
-      const idx = Math.floor((t.paidAt.getTime() - trendStart.getTime()) / 86400000);
-      if (idx >= 0 && idx < TREND_DAYS) commissionTrend[idx] += Number(t.commission);
+      if (t.paymentStatus === "paid") {
+        if (t.paidAt && t.paidAt >= trendStart) {
+          const idx = Math.floor((t.paidAt.getTime() - trendStart.getTime()) / 86400000);
+          if (idx >= 0 && idx < TREND_DAYS) commissionTrend[idx] += Number(t.commission);
+        }
+      } else {
+        const prepay = Number(t.prepaymentDeducted ?? 0);
+        if (prepay > 0 && t.createdAt >= trendStart) {
+          const idx = Math.floor((t.createdAt.getTime() - trendStart.getTime()) / 86400000);
+          if (idx >= 0 && idx < TREND_DAYS) commissionTrend[idx] += prepay;
+        }
+      }
     }
     for (const p of txPayments) {
       if (paidTxIds.has(p.transactionId) || !p.paidAt || p.paidAt < trendStart) continue;
