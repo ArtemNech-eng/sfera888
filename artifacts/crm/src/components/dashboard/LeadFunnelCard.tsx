@@ -68,8 +68,8 @@ export function LeadFunnelCard({ data, isLoading, period = "month" }: Props) {
 
       <div className="flex-1 flex flex-col justify-center gap-3">
         {stages.map((stage, i) => {
-          // Ширина относительно общего числа заявок — воронка сужается.
-          const widthPct = Math.max((stage.value / total) * 100, stage.value > 0 ? 6 : 2);
+          // Ширина относительно общего числа заявок (не более 100%).
+          const widthPct = Math.min(100, Math.max((stage.value / total) * 100, stage.value > 0 ? 6 : 2));
           return (
             <div key={i}>
               <div className="flex items-center justify-between mb-1">
