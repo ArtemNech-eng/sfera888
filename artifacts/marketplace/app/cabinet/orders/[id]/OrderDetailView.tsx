@@ -283,7 +283,7 @@ export function OrderDetailView({ id }: Props) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
-              Заказ №{item.id}
+              Заказ №{item.leadId ?? item.id}
             </p>
             <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl">
               {item.serviceType}

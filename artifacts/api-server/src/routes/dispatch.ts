@@ -87,7 +87,7 @@ function buildOrderCard(order: any, orderId: number): string {
   }
 
   return (
-    `📋 <b>Новая заявка #${orderId}</b>\n` +
+    `📋 <b>Новая заявка #${order.leadId ?? orderId}</b>\n` +
     servicesBlock +
     `📍 Адрес: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
     `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
@@ -273,7 +273,7 @@ router.post("/test-order", ops, async (req, res) => {
       : "не указана";
     sendMaxMessage(
       master.maxChatId,
-      `📋 Тестовая заявка #${order.id}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${tDate}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
+      `📋 Тестовая заявка #${order.leadId ?? order.id}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${tDate}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`
     ).catch(() => {});
   }
 
@@ -456,7 +456,7 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
       await tx.insert(masterMessagesTable).values({
         masterId: master.id,
         telegramChatId: `pwa_${master.id}`,
-        text: `✅ Назначен на заявку #${orderId}`,
+        text: `✅ Назначен на заявку #${order.leadId ?? orderId}`,
         fromMaster: false,
         senderName: "system",
         isRead: false,
@@ -468,7 +468,7 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
 
   // Notify assigned master with full info including phone
   const assignedMsg =
-    `✅ <b>Заявка #${orderId} назначена вам!</b>\n\n` +
+    `✅ <b>Заявка #${order.leadId ?? orderId} назначена вам!</b>\n\n` +
     `🔧 Услуга: <b>${order.serviceType}</b>\n` +
     `📍 Адрес: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
     `📐 Объём: <b>${order.area} м²</b>\n` +
@@ -512,7 +512,7 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
       const reason = await buildRejectionReason(rm, responseNote);
 
       const rejMsg =
-        `📋 Заявка #${orderId} — ${order.serviceType} · ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
+        `📋 Заявка #${order.leadId ?? orderId} — ${order.serviceType} · ${order.city}${order.district ? ", " + order.district : ""}\n\n` +
         `К сожалению, эту заявку назначили другому мастеру.\n\n` +
         reason;
 
@@ -530,7 +530,7 @@ router.post("/:orderId/assign/:masterId", ops, async (req, res) => {
       }
 
       // CRM chat log (visible to operators)
-      const logText = `⛔ Не назначен на заявку #${orderId}. ${reason.replace(/<[^>]+>/g, "").slice(0, 200)}`;
+      const logText = `⛔ Не назначен на заявку #${order.leadId ?? orderId}. ${reason.replace(/<[^>]+>/g, "").slice(0, 200)}`;
       await db.insert(masterMessagesTable).values({
         masterId: rm.id,
         telegramChatId: `pwa_${rm.id}`,

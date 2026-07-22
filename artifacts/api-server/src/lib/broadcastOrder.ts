@@ -34,7 +34,7 @@ export function buildOrderCard(order: any, orderId: number): string {
   }
 
   return (
-    `📋 <b>Новая заявка #${orderId}</b>\n` +
+    `📋 <b>Новая заявка #${order.leadId ?? orderId}</b>\n` +
     servicesBlock +
     `📍 Адрес: <b>${order.city}${order.district ? ", " + order.district : ""}</b>\n` +
     `📅 Дата: <b>${formatDate(order.scheduledAt)}</b>` +
@@ -240,7 +240,7 @@ export async function performBroadcast(
 
   // ── PARALLEL PUSH / MAX (batched, 10 at a time) ──
   const date = formatDate(order.scheduledAt);
-  const maxMsg = `📋 Новая заявка #${orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
+  const maxMsg = `📋 Новая заявка #${order.leadId ?? orderId}\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
 
   await batchAsync(finalEligible, 10, async (master) => {
     await Promise.all([
@@ -336,7 +336,7 @@ export async function performResend(
 
   // Send reminder pushes / Max messages
   const date = formatDate(order.scheduledAt);
-  const maxMsg = `🔔 Напоминание: заявка #${orderId} ждёт вашего отклика\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
+  const maxMsg = `🔔 Напоминание: заявка #${order.leadId ?? orderId} ждёт вашего отклика\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
 
   await batchAsync(eligible, 10, async (master) => {
     await Promise.all([
@@ -413,7 +413,7 @@ export async function performForceResend(
   }
 
   const date = formatDate(order.scheduledAt);
-  const maxMsg = `📋 Заявка #${orderId} ещё актуальна\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
+  const maxMsg = `📋 Заявка #${order.leadId ?? orderId} ещё актуальна\n\n🔧 ${order.serviceType}\n📍 ${order.city}${order.district ? ", " + order.district : ""}\n📐 ${order.area} м²\n📅 ${date}${order.comment ? "\n💬 " + order.comment : ""}\n\n👉 Откликнитесь в приложении:\nhttps://sfera-master.ru/master-pwa/orders`;
 
   await batchAsync(masters, 10, async (master) => {
     await Promise.all([

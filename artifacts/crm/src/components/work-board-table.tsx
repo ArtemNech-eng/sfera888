@@ -363,7 +363,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
         ),
         cell: ({ row }) => (
           <Button variant="link" className="font-mono font-bold p-0 h-auto" onClick={() => onOpenOrder(row.original.orderId)}>
-            #{row.original.orderId}
+            #{row.original.leadId ?? row.original.orderId}
           </Button>
         ),
         size: 80,
@@ -510,7 +510,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                   if (input === null) return;
                   const amount = parseFloat(input.replace(/[^0-9.]/g, ""));
                   if (!amount || amount <= 0 || amount > row.original.commissionLeft + 0.01) { alert("Некорректная сумма"); return; }
-                  if (confirm(`Принять оплату ${fmtMoney(amount)} по заказу #${row.original.orderId}?`)) {
+                  if (confirm(`Принять оплату ${fmtMoney(amount)} по заказу #${row.original.leadId ?? row.original.orderId}?`)) {
                     partialPayment.mutate({ orderId: row.original.orderId, amount });
                   }
                 }}>
@@ -643,7 +643,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
           <div key={row.id} className="bg-card border border-border rounded-xl p-4 space-y-3">
             <div className="flex items-start justify-between">
               <Button variant="link" className="p-0 font-bold h-auto" onClick={() => onOpenOrder(row.orderId)}>
-                #{row.orderId}
+                #{row.leadId ?? row.orderId}
               </Button>
               <StatusBadge columnKey={row.columnKey} />
             </div>
@@ -697,7 +697,7 @@ export function WorkBoardTable({ onOpenOrder }: { onOpenOrder: (orderId: number)
                     if (input === null) return;
                     const amount = parseFloat(input.replace(/[^0-9.]/g, ""));
                     if (!amount || amount <= 0 || amount > row.commissionLeft + 0.01) { alert("Некорректная сумма"); return; }
-                    if (confirm(`Принять оплату ${fmtMoney(amount)} по заказу #${row.orderId}?`)) {
+                    if (confirm(`Принять оплату ${fmtMoney(amount)} по заказу #${row.leadId ?? row.orderId}?`)) {
                       partialPayment.mutate({ orderId: row.orderId, amount });
                     }
                   }}>

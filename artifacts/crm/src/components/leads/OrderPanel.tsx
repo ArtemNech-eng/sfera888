@@ -89,6 +89,7 @@ function fmtMoney(n: number) { return n.toLocaleString("ru-RU") + " ₽"; }
 
 interface Order {
   id: number;
+  leadId?: number | null;
   status: string;
   city: string;
   district: string | null;
@@ -511,7 +512,7 @@ export default function OrderPanel({
         <div className="px-6 py-4 border-b border-border/50 flex items-start justify-between flex-shrink-0">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-display font-bold text-foreground">Заказ #{orderId}</h2>
+              <h2 className="text-lg font-display font-bold text-foreground">Заказ #{openOrder.leadId ?? orderId}</h2>
               <StatusBadge status={openOrder.status} type="order" />
               {(openOrder as any).paymentState && (
                 <PaymentStateBadge state={(openOrder as any).paymentState as PaymentState} size="sm" />
@@ -691,7 +692,7 @@ export default function OrderPanel({
               {showPartialPayment && (
                 <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-3 space-y-2.5">
                   <p className="text-xs font-semibold text-emerald-800">Частичная оплата комиссии</p>
-                  <p className="text-xs text-emerald-600">Сумма, которую мастер внёс в счёт оплаты комиссии по заказу #{orderId}</p>
+                  <p className="text-xs text-emerald-600">Сумма, которую мастер внёс в счёт оплаты комиссии по заказу #{openOrder.leadId ?? orderId}</p>
                   <div className="flex gap-2">
                     <input type="number" placeholder="Сумма ₽" value={partialAmount} onChange={e => setPartialAmount(e.target.value)} className="flex-1 border border-emerald-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400" autoFocus />
                   </div>

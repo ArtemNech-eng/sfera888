@@ -148,7 +148,7 @@ function OrderCard({ order, variant }: { order: OrderListItem; variant: Tab }) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-bold text-[var(--color-text)] sm:text-base">
               {order.serviceType}{" "}
-              <span className="font-normal text-[var(--color-muted)]">№{order.id}</span>
+              <span className="font-normal text-[var(--color-muted)]">№{order.leadId ?? order.id}</span>
             </p>
             <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-[var(--color-muted)]">
               <span>{order.city}</span>
