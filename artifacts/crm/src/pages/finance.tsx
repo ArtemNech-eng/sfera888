@@ -399,21 +399,26 @@ export default function Finance() {
   }, [txList, statusFilter, cityFilter, search, orderSearch, txPeriod, txFrom, txTo]);
 
   const txSummary = useMemo(() => {
-    // earned = закрытые комиссии (реально заработанное)
-    const earned = filtered
-      .filter(t => t.paymentStatus === "paid")
-      .reduce((s, t) => s + t.commission, 0);
+    // Полученные деньги: закрытые → полная комиссия; открытые → бронь/предоплата
+    // + уже внесённые частичные платежи (как в разделе «Мастера» и на дашборде).
+    const earned = filtered.reduce((s, t) =>
+      s + (t.paymentStatus === "paid"
+            ? t.commission
+            : (t.prepaymentDeducted ?? 0) + (t.totalPartialPaid ?? 0)), 0);
     // remainingDebt = сколько мастера ещё должны доплатить (netPayable уже учитывает частичные платежи)
     const remainingDebt = filtered
       .filter(t => t.paymentStatus !== "paid")
       .reduce((s, t) => s + t.netPayable, 0);
+    // Средняя комиссия — только по реальным комиссиям (исключаем нулевые плейсхолдеры
+    // транзакций, созданных при принятии заказа, но ещё без суммы).
+    const withCommission = filtered.filter(t => t.commission > 0);
     return {
       earned,
       remainingDebt,
-      income: earned, // реально заработанное (только закрытые)
+      income: earned, // полученные деньги
       pending: filtered.filter(t => t.paymentStatus === "pending").reduce((s, t) => s + t.netPayable, 0),
       overdue: filtered.filter(t => t.paymentStatus === "overdue").reduce((s, t) => s + t.netPayable, 0),
-      avg:     filtered.length ? filtered.reduce((s, t) => s + t.commission, 0) / filtered.length : 0,
+      avg:     withCommission.length ? withCommission.reduce((s, t) => s + t.commission, 0) / withCommission.length : 0,
       paidCount:    filtered.filter(t => t.paymentStatus === "paid").length,
       pendingCount: filtered.filter(t => t.paymentStatus === "pending").length,
       overdueCount: filtered.filter(t => t.paymentStatus === "overdue").length,
@@ -751,9 +756,9 @@ export default function Finance() {
               {/* 5 summary cards */}
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-4 text-white shadow-lg shadow-emerald-500/20 col-span-2 lg:col-span-1">
-                  <p className="text-emerald-50 text-xs font-medium mb-1">💰 Заработано</p>
+                  <p className="text-emerald-50 text-xs font-medium mb-1">💰 Получено</p>
                   <p className="text-2xl font-bold">{formatCurrency(txSummary.earned)}</p>
-                  <p className="text-emerald-100 text-[11px] mt-0.5">{txSummary.paidCount} закрытых комиссий</p>
+                  <p className="text-emerald-100 text-[11px] mt-0.5">{txSummary.paidCount} закрытых · с учётом брони и частичных</p>
                   {txSummary.remainingDebt > 0 && (
                     <div className="mt-2 pt-2 border-t border-emerald-400/40">
                       <p className="text-emerald-100 text-xs font-medium">+ {formatCurrency(txSummary.remainingDebt)} в остатке</p>

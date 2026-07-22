@@ -597,10 +597,17 @@ router.get("/summary", opsAndAdmin, async (req, res) => {
   const netPayable = (t: typeof transactions[0]) =>
     Math.max(0, Number(t.commission) - Number(t.prepaymentDeducted ?? 0) - (summaryPartialsMap.get(t.id) ?? 0));
 
-  const totalIncome  = paid.reduce((s, t) => s + Number(t.commission), 0);
+  // Income received = paid → full commission; pending/overdue → prepayment (бронь)
+  // + partial payments already received. Mirrors /master-stats totalIncome.
+  const totalIncome  = paid.reduce((s, t) => s + Number(t.commission), 0)
+    + [...pending, ...overdue].reduce(
+        (s, t) => s + Number(t.prepaymentDeducted ?? 0) + (summaryPartialsMap.get(t.id) ?? 0), 0);
   const totalDebt    = [...pending, ...overdue].reduce((s, t) => s + netPayable(t), 0);
-  const avgCommission = transactions.length > 0
-    ? transactions.reduce((s, t) => s + Number(t.commission), 0) / transactions.length
+  // Average over real (non-placeholder) commissions — exclude the commission=0 rows
+  // created when an order is accepted but not yet completed.
+  const withCommission = transactions.filter(t => Number(t.commission) > 0);
+  const avgCommission = withCommission.length > 0
+    ? withCommission.reduce((s, t) => s + Number(t.commission), 0) / withCommission.length
     : 0;
 
   res.json({
@@ -628,7 +635,7 @@ async function checkOverdueTransactionsWithNotifications(daysThreshold = 3): Pro
   const now    = new Date();
 
   const rows = await db.execute(sql`
-    SELECT t.id, t.master_id, t.order_id, t.commission, t.created_at,
+    SELECT t.id, t.master_id, t.order_id, t.commission, t.prepayment_deducted, t.created_at,
            m.max_chat_id, m.alias
     FROM transactions t
     LEFT JOIN masters m ON m.id = t.master_id
@@ -637,7 +644,22 @@ async function checkOverdueTransactionsWithNotifications(daysThreshold = 3): Pro
       AND CAST(t.commission AS NUMERIC) > 0
   `);
 
-  const toMark = rows.rows as any[];
+  const candidates = rows.rows as any[];
+  if (candidates.length === 0) return 0;
+
+  // Subtract prepayment (бронь) and manual partial payments — only flag as overdue
+  // transactions that still have an actual remaining balance.
+  const candidateIds = candidates.map((t) => t.id);
+  const overduePartials = await db.select().from(transactionPaymentsTable)
+    .where(inArray(transactionPaymentsTable.transactionId, candidateIds));
+  const paidByTx = new Map<number, number>();
+  for (const p of overduePartials) {
+    paidByTx.set(p.transactionId, (paidByTx.get(p.transactionId) ?? 0) + Number(p.amount));
+  }
+  const remainingOf = (t: any) =>
+    Number(t.commission) - Number(t.prepayment_deducted ?? 0) - (paidByTx.get(t.id) ?? 0);
+
+  const toMark = candidates.filter((t) => remainingOf(t) > 0);
   if (toMark.length === 0) return 0;
 
   for (const t of toMark) {
@@ -648,11 +670,11 @@ async function checkOverdueTransactionsWithNotifications(daysThreshold = 3): Pro
     // Max notification to master
     if (t.max_chat_id) {
       const daysOver = Math.floor((now.getTime() - new Date(t.created_at).getTime()) / 86400_000) - daysThreshold;
-      const commission = Number(t.commission);
+      const remaining = remainingOf(t);
       await sendMaxMessage(t.max_chat_id,
         `⚠️ Комиссия по заказу #${t.order_id} просрочена.\n\n` +
         `Срок прошёл: ${daysOver > 0 ? daysOver + " дн. назад" : "сегодня"}\n` +
-        `Сумма: ${commission.toLocaleString("ru-RU")} ₽\n\n` +
+        `Остаток к оплате: ${remaining.toLocaleString("ru-RU")} ₽\n\n` +
         `Оплатите на реквизиты в приложении → раздел Оплата.`
       ).catch(console.error);
     }
