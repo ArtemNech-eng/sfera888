@@ -304,6 +304,7 @@ router.get("/stats/payment-state", allOrderRoles, async (req, res) => {
         const ageHours = Math.floor((now - new Date(ref).getTime()) / 3_600_000);
         return {
           id: o.id,
+          leadId: o.leadId,
           city: o.city,
           serviceType: o.serviceType,
           ageHours,

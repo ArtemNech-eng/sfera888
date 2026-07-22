@@ -44,6 +44,7 @@ interface PendingDispatch {
 
 interface OrderRow {
   id: number;
+  leadId?: number | null;
   serviceType: string;
   city: string;
   status: string;
@@ -98,7 +99,7 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
   // Показываем только когда engine включён — иначе старые "Без сметы" каналы
   // продолжают работать и баннер был бы дублирующим сигналом.
   const { flags } = useFeatureFlags();
-  const { data: noAmountStats } = useQuery<{ count: number; items: { id: number; city: string; serviceType: string; ageHours: number }[] }>({
+  const { data: noAmountStats } = useQuery<{ count: number; items: { id: number; leadId?: number | null; city: string; serviceType: string; ageHours: number }[] }>({
     queryKey: ["/api/orders/stats/payment-state", "no_amount", 48],
     queryFn: async () => {
       const r = await fetch("/api/orders/stats/payment-state?state=no_amount&staleHours=48", { credentials: "include" });
@@ -221,7 +222,7 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
                   onClick={() => onOpenOrder(order.id)}
                   className="font-medium text-foreground hover:underline"
                 >
-                  #{order.id}
+                  #{order.leadId ?? order.id}
                 </button>
                 <span className="ml-2 text-foreground">{order.serviceType}</span>
                 <span className="ml-2 text-xs text-muted-foreground">· {order.city}</span>
@@ -248,7 +249,7 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
                 )}
                 <button
                   onClick={() => {
-                    if (confirm(`Вернуть #${order.id} мастеру? Запрос на отмену будет снят, заказ снова в работе.`)) {
+                    if (confirm(`Вернуть #${order.leadId ?? order.id} мастеру? Запрос на отмену будет снят, заказ снова в работе.`)) {
                       revertCancellationMutation.mutate(order.id);
                     }
                   }}
@@ -260,7 +261,7 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
                 </button>
                 <button
                   onClick={() => {
-                    if (confirm(`Назначить другого мастера на #${order.id}? Текущий мастер будет откреплён.`)) {
+                    if (confirm(`Назначить другого мастера на #${order.leadId ?? order.id}? Текущий мастер будет откреплён.`)) {
                       rejectCancellationMutation.mutate(order.id);
                     }
                   }}
@@ -271,7 +272,7 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
                 </button>
                 <button
                   onClick={() => {
-                    if (confirm(`Отменить #${order.id}?`)) {
+                    if (confirm(`Отменить #${order.leadId ?? order.id}?`)) {
                       approveCancellationMutation.mutate(order.id);
                     }
                   }}
@@ -325,7 +326,7 @@ export default function OrdersBanners({ onOpenOrder }: Props) {
                   onClick={() => onOpenOrder(item.id)}
                   className="font-medium text-foreground hover:underline"
                 >
-                  #{item.id}
+                  #{item.leadId ?? item.id}
                 </button>
                 <span className="ml-2 text-foreground">{item.serviceType}</span>
                 <span className="ml-2 text-xs text-muted-foreground">· {item.city}</span>

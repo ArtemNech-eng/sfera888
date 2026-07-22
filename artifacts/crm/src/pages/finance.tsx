@@ -473,7 +473,7 @@ export default function Finance() {
         body: JSON.stringify({ paymentStatus: "paid" }),
       });
       if (!r.ok) throw new Error();
-      toast.success(`Комиссия по заказу #${tx.orderId} отмечена оплаченной`);
+      toast.success(`Комиссия по заказу #${tx.leadId ?? tx.orderId} отмечена оплаченной`);
       queryClient.invalidateQueries({ queryKey: [`/api/finance/transactions`] });
       queryClient.invalidateQueries({ queryKey: [`/api/finance/master-stats`] });
     } catch { toast.error("Ошибка при обновлении транзакции"); }
@@ -494,7 +494,7 @@ export default function Finance() {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Ошибка");
       if (data.fullyPaid) {
-        toast.success(`Комиссия по заказу #${partialPayTx.orderId} полностью погашена!`);
+        toast.success(`Комиссия по заказу #${partialPayTx.leadId ?? partialPayTx.orderId} полностью погашена!`);
       } else {
         toast.success(`Принято ${formatCurrency(amt)}. Остаток: ${formatCurrency(data.remaining)}`);
       }
@@ -554,7 +554,7 @@ export default function Finance() {
       `💰 Напоминание о комиссии\n\n` +
       `${tx.masterAlias ?? "Мастер"}, объекты закрываются поэтапно — это нормально и удобно для всех.\n\n` +
       `Схема простая: закрыли этап → получили оплату от клиента → перевели нашу комиссию. Так и деньги быстрее приходят, и долг не копится.\n\n` +
-      `По заказу #${tx.orderId ?? "—"} (${tx.serviceType ?? "заказ"}) ожидается комиссия:\n` +
+      `По заказу #${tx.leadId ?? tx.orderId ?? "—"} (${tx.serviceType ?? "заказ"}) ожидается комиссия:\n` +
       `Сумма: ${Number(tx.commission).toLocaleString("ru-RU")} ₽\n` +
       `Срок: ${dueDateStr}\n\n` +
       `Переведите на реквизиты в приложении → раздел **Оплата**.`
@@ -566,7 +566,7 @@ export default function Finance() {
       t => t.masterId === m.masterId && (t.paymentStatus === "pending" || t.paymentStatus === "overdue")
     );
     const lines = unpaid.length > 0
-      ? unpaid.map(t => `Заказ #${t.orderId}: ${Number(t.commission).toLocaleString("ru-RU")} ₽`).join("\n")
+      ? unpaid.map(t => `Заказ #${t.leadId ?? t.orderId}: ${Number(t.commission).toLocaleString("ru-RU")} ₽`).join("\n")
       : `[${(m.pendingCount + m.overdueCount)} заказов]`;
     const total = unpaid.length > 0
       ? unpaid.reduce((s, t) => s + Number(t.commission), 0)
@@ -858,7 +858,7 @@ export default function Finance() {
                           <tr className={`transition-colors ${rowBg}`}>
                             <td className="px-2 py-2 text-xs text-muted-foreground whitespace-nowrap">{formatDate(tx.createdAt)}</td>
                             <td className="px-2 py-2">
-                              <span className="font-medium text-foreground text-xs">#{tx.orderId ?? "—"}</span>
+                              <span className="font-medium text-foreground text-xs">#{tx.leadId ?? tx.orderId ?? "—"}</span>
                               {tx.sourceType === "receipt" && <div className="text-[10px] text-violet-600 mt-0.5">из сметы</div>}
                             </td>
                             <td className="px-2 py-2 text-xs font-medium text-foreground whitespace-nowrap">{tx.masterAlias}</td>

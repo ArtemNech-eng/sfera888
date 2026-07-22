@@ -187,7 +187,7 @@ export default function LeadDetailPanel({
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" /><span className="text-sm font-medium text-emerald-700">Заявка отправлена в работу</span></div>
                 <button onClick={() => { onClose(); onOpenOrder(lead.orderId!); }} className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-900 hover:underline">
-                  Заказ #{lead.orderId} <ExternalLink className="w-3 h-3" />
+                  Заказ #{lead.id} <ExternalLink className="w-3 h-3" />
                 </button>
               </div>
             )}

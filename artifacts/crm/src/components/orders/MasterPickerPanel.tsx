@@ -5,6 +5,7 @@ import { PaymentStateBadge, type PaymentState } from "./PaymentStateBadge";
 
 interface OrderRow {
   orderId: number;
+  leadId?: number | null;
   city?: string;
   serviceType?: string;
   master: string | null;
@@ -107,7 +108,7 @@ export default function MasterPickerPanel({ order, onClose, onAssign, isPending 
                 {order.masterId ? "Сменить мастера" : "Назначить мастера"}
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Заказ #{order.orderId} · {order.serviceType ?? "—"} · {order.city ?? "—"}
+                Заказ #{order.leadId ?? order.orderId} · {order.serviceType ?? "—"} · {order.city ?? "—"}
               </p>
               {order.paymentState && (
                 <div className="mt-1.5">
@@ -210,7 +211,7 @@ export default function MasterPickerPanel({ order, onClose, onAssign, isPending 
                   </div>
                   <button
                     onClick={() => {
-                      if (confirm(`Назначить мастера ${m.alias} на заказ #${order.orderId}?`)) {
+                      if (confirm(`Назначить мастера ${m.alias} на заказ #${order.leadId ?? order.orderId}?`)) {
                         onAssign(m.id);
                       }
                     }}
