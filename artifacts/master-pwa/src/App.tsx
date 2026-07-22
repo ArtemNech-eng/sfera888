@@ -76,7 +76,6 @@ const queryClient = new QueryClient({
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { master, loading } = useAuth();
-  const [location] = useLocation();
 
   if (loading) {
     return (
@@ -88,20 +87,22 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Not logged in → show login page
   if (!master) {
-    if (location !== "/login") return <Redirect to="/login" />;
     return <>{children}</>;
   }
 
   // Suspended master
   if (master.status === "suspended") return <SuspendedScreen />;
 
-  // Logged in → always go to new cabinet (hard nav, no client-side routing).
-  // This makes master-pwa purely a login screen — all actual work happens
-  // in the proxied chestnye-mastera.ru/cabinet (served via sfera-master.ru/cabinet).
-  window.location.replace("/cabinet");
+  // Logged in → redirect to new cabinet on chestnye-mastera.ru.
+  // One-time transition: master logs in there once, then installs new PWA.
+  const target = "https://chestnye-mastera.ru/cabinet";
+  window.location.replace(target);
   return (
     <div className="flex items-center justify-center min-h-dvh">
-      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-muted-foreground">Открываем новый кабинет…</p>
+      </div>
     </div>
   );
 }
