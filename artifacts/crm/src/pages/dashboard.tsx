@@ -211,7 +211,7 @@ function DashboardPage() {
 
         {/* ROW 1: Lead Funnel + Lead Sources */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <LeadFunnelCard data={leadFunnel} isLoading={isLoading} />
+          <LeadFunnelCard data={leadFunnel} isLoading={isLoading} period={period} />
           <LeadSourcesCard data={leadSources} isLoading={isLoading} />
         </div>
 
