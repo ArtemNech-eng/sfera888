@@ -510,6 +510,7 @@ async function runPaymentReminders(runType: "manual" | "auto" = "auto") {
     const commission = isTokenOrder ? 0 : calculateCommission(Number(r.total_amount ?? 0), commissionSettings);
     const entry = {
       orderId: r.order_id,
+      leadId: r.lead_id ?? null,
       masterId: r.master_id,
       masterAlias: r.master_alias ?? "—",
       maxChatId: r.max_chat_id ?? null,
@@ -838,6 +839,7 @@ async function runPriceAnalysis() {
 
 interface OrderWithoutReceipt {
   orderId: number;
+  leadId: number | null;
   masterAlias: string;
   maxChatId: string | null;
   city: string;
@@ -893,6 +895,7 @@ async function runOrdersWithoutReceipts(runType: "manual" | "auto" = "auto"): Pr
     const displayId = r.lead_id ?? r.id;
     const entry: OrderWithoutReceipt = {
       orderId: r.id,
+      leadId: r.lead_id ?? null,
       masterAlias: r.master_alias ?? "—",
       maxChatId: r.max_chat_id ?? null,
       city: r.city ?? "",
@@ -1125,7 +1128,7 @@ router.get("/template-scenarios/broadcast-orders/live", async (_req, res) => {
 
     // All open orders with wave state
     const openRows = await db.execute(sql`
-      SELECT o.id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.created_at,
+      SELECT o.id, o.lead_id, o.city, o.district, o.service_type, o.area, o.scheduled_at, o.created_at,
              w.current_wave, w.wave_1_sent_at, w.wave_2_sent_at,
              w.wave_3_sent_at, w.wave_4_sent_at, w.admin_alerted_at,
              w.wave_1_count, w.wave_2_count, w.wave_3_count, w.wave_4_count,
@@ -1163,6 +1166,7 @@ router.get("/template-scenarios/broadcast-orders/live", async (_req, res) => {
 
       return {
         orderId: r.id,
+        leadId: r.lead_id ?? null,
         city: r.city,
         district: r.district ?? "—",
         serviceType: r.service_type,

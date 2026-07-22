@@ -377,31 +377,31 @@ export default function AiOfficePage() {
   const [messagingOrderId, setMessagingOrderId] = useState<number | null>(null);
 
   // Payment-reminders state
-  interface PaymentEntry { orderId: number; masterAlias: string; maxChatId: string | null; clientName: string; clientPhone: string | null; city: string; district: string; serviceType: string; receiptSentAt: string; hoursWithoutPayment: number; totalAmount: number; commission: number; risk: "super" | "critical" | "warning" }
+  interface PaymentEntry { orderId: number; leadId?: number | null; masterAlias: string; maxChatId: string | null; clientName: string; clientPhone: string | null; city: string; district: string; serviceType: string; receiptSentAt: string; hoursWithoutPayment: number; totalAmount: number; commission: number; risk: "super" | "critical" | "warning" }
   const [paymentResult, setPaymentResult] = useState<{ warning: PaymentEntry[]; critical: PaymentEntry[]; superCritical: PaymentEntry[]; totalAmount: number } | null>(null);
   const [paymentLiveLoading, setPaymentLiveLoading] = useState(false);
   const [paymentActionLoading, setPaymentActionLoading] = useState<Record<number, string>>({});
   const [paymentMsgSent, setPaymentMsgSent] = useState<Set<number>>(new Set());
-  const [paymentConfirm, setPaymentConfirm] = useState<{ orderId: number; type: "return-to-pool" | "cancel"; masterAlias: string } | null>(null);
-  const [paymentCallModal, setPaymentCallModal] = useState<{ orderId: number; clientPhone: string; clientName: string } | null>(null);
+  const [paymentConfirm, setPaymentConfirm] = useState<{ orderId: number; leadId?: number | null; type: "return-to-pool" | "cancel"; masterAlias: string } | null>(null);
+  const [paymentCallModal, setPaymentCallModal] = useState<{ orderId: number; leadId?: number | null; clientPhone: string; clientName: string } | null>(null);
   const [paymentCallComment, setPaymentCallComment] = useState<Record<number, string>>({});
   const [paymentCommentSaved, setPaymentCommentSaved] = useState<Set<number>>(new Set());
   const [paymentSendAllState, setPaymentSendAllState] = useState<"idle" | "confirm" | "loading">("idle");
 
   // Orders-without-receipts state
-  interface NoReceiptEntry { orderId: number; masterAlias: string; maxChatId: string | null; city: string; district: string; serviceType: string; assignedAt: string; hoursWithoutReceipt: number; risk: "critical" | "warning"; masterPhone: string | null }
+  interface NoReceiptEntry { orderId: number; leadId?: number | null; masterAlias: string; maxChatId: string | null; city: string; district: string; serviceType: string; assignedAt: string; hoursWithoutReceipt: number; risk: "critical" | "warning"; masterPhone: string | null }
   const [noReceiptResult, setNoReceiptResult] = useState<{ critical: NoReceiptEntry[]; warning: NoReceiptEntry[] } | null>(null);
   const [noReceiptLiveLoading, setNoReceiptLiveLoading] = useState(false);
   const [noReceiptActionLoading, setNoReceiptActionLoading] = useState<Record<number, string>>({});
-  const [noReceiptConfirm, setNoReceiptConfirm] = useState<{ orderId: number; type: "reassign" | "cancel"; masterAlias: string } | null>(null);
+  const [noReceiptConfirm, setNoReceiptConfirm] = useState<{ orderId: number; leadId?: number | null; type: "reassign" | "cancel"; masterAlias: string } | null>(null);
   const [noReceiptMsgSent, setNoReceiptMsgSent] = useState<Set<number>>(new Set());
-  const [noReceiptCallModal, setNoReceiptCallModal] = useState<{ orderId: number; masterPhone: string; masterAlias: string } | null>(null);
+  const [noReceiptCallModal, setNoReceiptCallModal] = useState<{ orderId: number; leadId?: number | null; masterPhone: string; masterAlias: string } | null>(null);
   const [noReceiptCallComment, setNoReceiptCallComment] = useState<Record<number, string>>({});
   const [noReceiptCommentSaved, setNoReceiptCommentSaved] = useState<Set<number>>(new Set());
   const [noReceiptSendAllState, setNoReceiptSendAllState] = useState<"idle" | "confirm" | "loading">("idle");
 
   // Broadcast-orders live state
-  interface BroadcastOrderEntry { orderId: number; city: string; district: string; serviceType: string; area: string; scheduledAt: string | null; createdAt: string; currentWave: number | null; wave1SentAt: string | null; wave2SentAt: string | null; wave3SentAt: string | null; wave4SentAt: string | null; adminAlerted: boolean; wave1Count: number; wave2Count: number; wave3Count: number; wave4Count: number; totalNotified: number; totalResponded: number; elapsedMin: number; isStuck: boolean }
+  interface BroadcastOrderEntry { orderId: number; leadId?: number | null; city: string; district: string; serviceType: string; area: string; scheduledAt: string | null; createdAt: string; currentWave: number | null; wave1SentAt: string | null; wave2SentAt: string | null; wave3SentAt: string | null; wave4SentAt: string | null; adminAlerted: boolean; wave1Count: number; wave2Count: number; wave3Count: number; wave4Count: number; totalNotified: number; totalResponded: number; elapsedMin: number; isStuck: boolean }
   interface BroadcastLiveData { orders: BroadcastOrderEntry[]; stats: { openCount: number; assignedTodayCount: number; awaitingCount: number; stuckCount: number } }
   const [broadcastLive, setBroadcastLive] = useState<BroadcastLiveData | null>(null);
   const [broadcastLiveLoading, setBroadcastLiveLoading] = useState(false);
@@ -1485,7 +1485,7 @@ export default function AiOfficePage() {
                                             <div className="flex items-start gap-2 flex-wrap">
                                               <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                                  <span className="text-xs font-bold text-foreground">#{o.orderId}</span>
+                                                  <span className="text-xs font-bold text-foreground">#{o.leadId ?? o.orderId}</span>
                                                   <span className={`text-[11px] font-semibold ${wi.color}`}>{wi.label}</span>
                                                   {o.elapsedMin > 0 && (
                                                     <span className="text-[10px] text-muted-foreground">· {elapsedLabel(o.elapsedMin)}</span>
@@ -1646,7 +1646,7 @@ export default function AiOfficePage() {
                                               <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                   <span className={`text-xs font-bold ${isSuper ? "text-red-700 dark:text-red-400" : isCrit ? "text-orange-600 dark:text-orange-400" : "text-yellow-700 dark:text-yellow-400"}`}>
-                                                    {isSuper ? "⚫" : isCrit ? "🔴" : "🟡"} #{entry.orderId}
+                                                    {isSuper ? "⚫" : isCrit ? "🔴" : "🟡"} #{entry.leadId ?? entry.orderId}
                                                   </span>
                                                   <span className="text-xs text-muted-foreground">{entry.serviceType}</span>
                                                   <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 ml-auto flex flex-col items-end leading-tight">
@@ -1680,21 +1680,21 @@ export default function AiOfficePage() {
                                               </button>
                                               {entry.clientPhone ? (
                                                 <button
-                                                  onClick={() => setPaymentCallModal({ orderId: entry.orderId, clientPhone: entry.clientPhone, clientName: entry.clientName })}
+                                                  onClick={() => setPaymentCallModal({ orderId: entry.orderId, leadId: entry.leadId ?? null, clientPhone: entry.clientPhone, clientName: entry.clientName })}
                                                   className="text-[10px] px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 hover:opacity-80 transition-colors font-medium"
                                                 >
                                                   📞 Позвонить клиенту
                                                 </button>
                                               ) : null}
                                               <button
-                                                onClick={() => setPaymentConfirm({ orderId: entry.orderId, type: "return-to-pool", masterAlias: entry.masterAlias })}
+                                                onClick={() => setPaymentConfirm({ orderId: entry.orderId, leadId: entry.leadId ?? null, type: "return-to-pool", masterAlias: entry.masterAlias })}
                                                 disabled={!!paymentActionLoading[entry.orderId]}
                                                 className="text-[10px] px-2 py-1 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
                                               >
                                                 {poolLoading ? "…" : "🔄 Вернуть в пул"}
                                               </button>
                                               <button
-                                                onClick={() => setPaymentConfirm({ orderId: entry.orderId, type: "cancel", masterAlias: entry.masterAlias })}
+                                                onClick={() => setPaymentConfirm({ orderId: entry.orderId, leadId: entry.leadId ?? null, type: "cancel", masterAlias: entry.masterAlias })}
                                                 disabled={!!paymentActionLoading[entry.orderId]}
                                                 className="text-[10px] px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
                                               >
@@ -1809,7 +1809,7 @@ export default function AiOfficePage() {
                                               <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                   <span className={`text-xs font-bold ${isSuper ? "text-red-700 dark:text-red-400" : isCrit ? "text-orange-600 dark:text-orange-400" : "text-yellow-700 dark:text-yellow-400"}`}>
-                                                    {isSuper ? "⚫" : isCrit ? "🔴" : "🟡"} #{entry.orderId}
+                                                    {isSuper ? "⚫" : isCrit ? "🔴" : "🟡"} #{entry.leadId ?? entry.orderId}
                                                   </span>
                                                   <span className="text-xs text-muted-foreground">{entry.serviceType}</span>
                                                 </div>
@@ -1837,21 +1837,21 @@ export default function AiOfficePage() {
                                               </button>
                                               {entry.masterPhone ? (
                                                 <button
-                                                  onClick={() => setNoReceiptCallModal({ orderId: entry.orderId, masterPhone: entry.masterPhone, masterAlias: entry.masterAlias })}
+                                                  onClick={() => setNoReceiptCallModal({ orderId: entry.orderId, leadId: entry.leadId ?? null, masterPhone: entry.masterPhone, masterAlias: entry.masterAlias })}
                                                   className="text-[10px] px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 hover:opacity-80 transition-colors font-medium"
                                                 >
                                                   📞 Позвонить мастеру
                                                 </button>
                                               ) : null}
                                               <button
-                                                onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, type: "reassign", masterAlias: entry.masterAlias })}
+                                                onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, leadId: entry.leadId ?? null, type: "reassign", masterAlias: entry.masterAlias })}
                                                 disabled={!!noReceiptActionLoading[entry.orderId]}
                                                 className="text-[10px] px-2 py-1 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
                                               >
                                                 {reassignLoading ? "…" : "🔄 Переназначить"}
                                               </button>
                                               <button
-                                                onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, type: "cancel", masterAlias: entry.masterAlias })}
+                                                onClick={() => setNoReceiptConfirm({ orderId: entry.orderId, leadId: entry.leadId ?? null, type: "cancel", masterAlias: entry.masterAlias })}
                                                 disabled={!!noReceiptActionLoading[entry.orderId]}
                                                 className="text-[10px] px-2 py-1 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:opacity-80 transition-colors font-medium disabled:opacity-50"
                                               >
@@ -1921,7 +1921,7 @@ export default function AiOfficePage() {
                                           <div className="flex items-start gap-2">
                                             <div className="flex-1 min-w-0">
                                               <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span className="text-xs font-semibold">#{entry.orderId}</span>
+                                                <span className="text-xs font-semibold">#{entry.leadId ?? entry.orderId}</span>
                                                 <span className="text-xs text-muted-foreground">{entry.serviceType}</span>
                                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${entry.status === "master_assigned" ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400" : "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400"}`}>
                                                   {entry.status === "master_assigned" ? "Назначен" : "В работе"}
@@ -2466,7 +2466,7 @@ export default function AiOfficePage() {
                 </div>
                 <div>
                   <p className="font-bold text-sm">{paymentCallModal.clientName}</p>
-                  <p className="text-xs text-muted-foreground">Заказ #{paymentCallModal.orderId}</p>
+                  <p className="text-xs text-muted-foreground">Заказ #{paymentCallModal.leadId ?? paymentCallModal.orderId}</p>
                 </div>
               </div>
               <button onClick={() => setPaymentCallModal(null)} className="text-muted-foreground hover:text-foreground">
@@ -2519,7 +2519,7 @@ export default function AiOfficePage() {
                   </div>
                   <div>
                     <p className="font-bold text-sm">Вернуть заказ в пул?</p>
-                    <p className="text-xs text-muted-foreground">Заказ #{paymentConfirm.orderId}</p>
+                    <p className="text-xs text-muted-foreground">Заказ #{paymentConfirm.leadId ?? paymentConfirm.orderId}</p>
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -2543,7 +2543,7 @@ export default function AiOfficePage() {
                     <span className="text-xl">❌</span>
                   </div>
                   <div>
-                    <p className="font-bold text-sm">Отменить заказ #{paymentConfirm.orderId}?</p>
+                    <p className="font-bold text-sm">Отменить заказ #{paymentConfirm.leadId ?? paymentConfirm.orderId}?</p>
                     <p className="text-xs text-muted-foreground">Это действие нельзя отменить</p>
                   </div>
                 </div>
@@ -2578,7 +2578,7 @@ export default function AiOfficePage() {
                 </div>
                 <div>
                   <p className="font-bold text-sm">{noReceiptCallModal.masterAlias}</p>
-                  <p className="text-xs text-muted-foreground">Заказ #{noReceiptCallModal.orderId}</p>
+                  <p className="text-xs text-muted-foreground">Заказ #{noReceiptCallModal.leadId ?? noReceiptCallModal.orderId}</p>
                 </div>
               </div>
               <button onClick={() => setNoReceiptCallModal(null)} className="text-muted-foreground hover:text-foreground">
@@ -2631,7 +2631,7 @@ export default function AiOfficePage() {
                   </div>
                   <div>
                     <p className="font-bold text-sm">Переназначить заказ?</p>
-                    <p className="text-xs text-muted-foreground">Заказ #{noReceiptConfirm.orderId}</p>
+                    <p className="text-xs text-muted-foreground">Заказ #{noReceiptConfirm.leadId ?? noReceiptConfirm.orderId}</p>
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -2657,7 +2657,7 @@ export default function AiOfficePage() {
                     <span className="text-xl">❌</span>
                   </div>
                   <div>
-                    <p className="font-bold text-sm">Отменить заказ #{noReceiptConfirm.orderId}?</p>
+                    <p className="font-bold text-sm">Отменить заказ #{noReceiptConfirm.leadId ?? noReceiptConfirm.orderId}?</p>
                     <p className="text-xs text-muted-foreground">Это действие нельзя отменить</p>
                   </div>
                 </div>

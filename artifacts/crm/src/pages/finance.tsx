@@ -23,7 +23,7 @@ type Period        = "today" | "week" | "month" | "quarter" | "year" | "all" | "
 type EstimateStatus = "all" | "paid" | "pending" | "unpaid" | "no-receipt" | "cancelled";
 
 interface NoReceiptEntry {
-  orderId: number; masterAlias: string; maxChatId: string | null;
+  orderId: number; leadId?: number | null; masterAlias: string; maxChatId: string | null;
   city: string; district: string; serviceType: string;
   assignedAt: string; hoursWithoutReceipt: number;
   risk: "critical" | "warning"; masterPhone: string | null;
@@ -1224,7 +1224,7 @@ export default function Finance() {
                                 <span className="text-base">{isCritical ? "🔴" : "🟡"}</span>
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-semibold text-sm text-foreground">Заказ #{entry.orderId}</span>
+                                    <span className="font-semibold text-sm text-foreground">Заказ #{entry.leadId ?? entry.orderId}</span>
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isCritical ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
                                       {entry.hoursWithoutReceipt}ч без сметы
                                     </span>
