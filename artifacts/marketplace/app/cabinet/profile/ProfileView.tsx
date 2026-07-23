@@ -179,6 +179,9 @@ export function ProfileView() {
       {/* Max bot integration */}
       <MaxBotCard maxChatId={data.maxChatId} maxBotLink={data.maxBotLink} />
 
+      {/* Documents, contract & knowledge base */}
+      <DocumentsSection data={data} />
+
       {/* Edit profile link */}
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-5 text-sm text-[var(--color-muted)]">
         <p className="font-semibold text-[var(--color-text)]">Редактирование профиля</p>
@@ -338,6 +341,153 @@ function MaxBotCard({ maxChatId, maxBotLink }: { maxChatId: string | null; maxBo
         ) : null}
       </div>
     </section>
+  );
+}
+
+// ── Documents, contract & knowledge base ────────────────────────────────────
+//
+// Ports the bottom half of the master-pwa profile screen: knowledge base
+// ("Правила работы"), the signed contract, the client-facing contract template
+// and a shortcut to the portfolio cases. Keeping these on the profile page
+// mirrors the old cabinet so masters find everything in one place.
+
+function DocumentsSection({ data }: { data: ProfileData }) {
+  // The signed contract is rendered by the api-server at
+  // `GET /api/contract/view/:masterId`. From the marketplace host that route
+  // only exists behind the cabinet-extra proxy — hitting `/api/contract/...`
+  // directly lands on Next.js and shows a blank page. Always go via the proxy.
+  const contractHref = `/api/cabinet-extra/contract/view/${data.id}`;
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-lg font-bold tracking-tight text-[var(--color-text)]">
+        Документы и материалы
+      </h2>
+
+      {/* Knowledge base — work rules */}
+      <RowLink
+        href="/cabinet/work-rules"
+        tone="primary"
+        icon={<BookIcon />}
+        title="Правила работы"
+        subtitle="База знаний: как получать заказы, смета, предоплата, правила на объекте"
+      />
+
+      {/* Signed contract / sign contract */}
+      {data.contractSignedAt ? (
+        <RowExternal
+          href={contractHref}
+          tone="ok"
+          icon={<ShieldIcon />}
+          title="Мой договор"
+          subtitle="Открыть подписанный договор"
+        />
+      ) : (
+        <RowLink
+          href="/cabinet/pending-contract"
+          tone="amber"
+          icon={<SignIcon />}
+          title="Подписать договор"
+          subtitle="Договор ещё не подписан — завершите оформление"
+        />
+      )}
+
+      {/* Client-facing contract template */}
+      <RowExternal
+        href="/contract-template.pdf"
+        tone="indigo"
+        icon={<FileIcon />}
+        title="Договор с заказчиком (шаблон)"
+        subtitle="PDF-шаблон для работы с клиентом"
+      />
+
+      {/* Portfolio cases */}
+      <RowLink
+        href="/cabinet/portfolio"
+        tone="primary"
+        icon={<BriefcaseIcon />}
+        title="Мои работы"
+        subtitle="Кейсы и портфолио на маркетплейсе"
+      />
+    </section>
+  );
+}
+
+type RowTone = "primary" | "ok" | "amber" | "indigo";
+
+const ROW_ICON_TONE: Record<RowTone, string> = {
+  primary: "bg-[var(--color-primary-soft)] text-[var(--color-primary)]",
+  ok: "bg-emerald-50 text-emerald-700",
+  amber: "bg-amber-50 text-amber-700",
+  indigo: "bg-indigo-50 text-indigo-700",
+};
+
+function RowShell({
+  tone,
+  icon,
+  title,
+  subtitle,
+  trailing,
+}: {
+  tone: RowTone;
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  trailing: React.ReactNode;
+}) {
+  return (
+    <span className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-sm transition hover:border-[var(--color-primary)]">
+      <span className={`inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${ROW_ICON_TONE[tone]}`}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-[var(--color-text)]">{title}</span>
+        {subtitle ? (
+          <span className="mt-0.5 block text-xs text-[var(--color-muted)]">{subtitle}</span>
+        ) : null}
+      </span>
+      <span className="flex-shrink-0 text-[var(--color-muted)]">{trailing}</span>
+    </span>
+  );
+}
+
+function RowLink({
+  href,
+  tone,
+  icon,
+  title,
+  subtitle,
+}: {
+  href: string;
+  tone: RowTone;
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <Link href={href} className="block">
+      <RowShell tone={tone} icon={icon} title={title} subtitle={subtitle} trailing={<ArrowRightIcon />} />
+    </Link>
+  );
+}
+
+function RowExternal({
+  href,
+  tone,
+  icon,
+  title,
+  subtitle,
+}: {
+  href: string;
+  tone: RowTone;
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="block">
+      <RowShell tone={tone} icon={icon} title={title} subtitle={subtitle} trailing={<ArrowExternalIcon />} />
+    </a>
   );
 }
 
@@ -517,6 +667,55 @@ function BotIcon() {
       <path d="M12 7v4" />
       <line x1="8" y1="16" x2="8" y2="16" />
       <line x1="16" y1="16" x2="16" y2="16" />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <polyline points="9 12 11 14 15 10" />
+    </svg>
+  );
+}
+
+function SignIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M20 19.5v.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8.5L18 5.5" />
+      <path d="M8 18h1l7-7-1-1-7 7z" />
+      <path d="M14 4l2 2" />
+    </svg>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <polyline points="10 9 9 9 8 9" />
+    </svg>
+  );
+}
+
+function BriefcaseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="2" y="7" width="20" height="14" rx="2" />
+      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
     </svg>
   );
 }

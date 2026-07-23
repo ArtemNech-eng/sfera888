@@ -61,8 +61,8 @@ const ITEMS: Array<{
     ),
   },
   {
-    href: "/cabinet/portfolio",
-    label: "Кейсы и профиль",
+    href: "/cabinet/profile",
+    label: "Профиль",
     short: "Профиль",
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -74,12 +74,12 @@ const ITEMS: Array<{
 ];
 
 const SIDEBAR_EXTRA: Array<{ href: string; label: string }> = [
+  { href: "/cabinet/portfolio", label: "Кейсы и портфолио" },
   { href: "/cabinet/objects", label: "Мои Объекты" },
   { href: "/cabinet/dashboard", label: "Метрики" },
   { href: "/cabinet/analytics", label: "Аналитика" },
   { href: "/cabinet/wallet", label: "Кошелёк" },
   { href: "/cabinet/checkin", label: "Чек-ин" },
-  { href: "/cabinet/profile", label: "Настройки профиля" },
   { href: "/cabinet/work-rules", label: "Правила работы" },
 ];
 
