@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
@@ -52,11 +53,14 @@ export default async function CabinetLayout({ children }: { children: React.Reac
     return <SuspendedScreen alias={master.alias} />;
   }
 
-  // Redirect masters who haven't signed the contract yet.
-  // Allow access to /cabinet/pending-contract itself so they can complete signing.
-  if (!master.contractSignedAt && !pathname.startsWith("/cabinet/pending-contract")) {
-    redirect("/cabinet/pending-contract");
-  }
+  // Masters without a signed contract are NOT blocked from the cabinet. They can
+  // browse the orders board and respond to leads exactly like the old master-pwa
+  // cabinet allowed — the server tags such responses "Без договора" for the
+  // operator (see api-server `POST /orders/:id/respond`) rather than rejecting
+  // them. We only surface a non-blocking nudge banner (below) that links to the
+  // signing wizard, so signing stays discoverable without gating lead responses.
+  const needsContract =
+    !master.contractSignedAt && !pathname.startsWith("/cabinet/pending-contract");
 
   // Chat is a full-bleed page (no max-width/padding card) so it feels like a
   // dedicated messenger screen rather than a panel embedded inside the cabinet.
@@ -69,6 +73,25 @@ export default async function CabinetLayout({ children }: { children: React.Reac
       }`}
     >
       <CabinetTopbar master={master} />
+
+      {/* Non-blocking contract nudge for masters who haven't signed yet.
+          Lets them keep working (respond to leads) while keeping the signing
+          wizard one tap away. */}
+      {needsContract && (
+        <Link
+          href="/cabinet/pending-contract"
+          className="block border-b border-amber-200 bg-amber-50 transition-colors hover:bg-amber-100"
+        >
+          <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-2.5 sm:px-6">
+            <span className="flex-1 text-xs text-amber-900 sm:text-sm">
+              Откликаться на заявки можно уже сейчас. Подпишите договор, чтобы оператор мог назначить вам заказ.
+            </span>
+            <span className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white">
+              Подписать договор
+            </span>
+          </div>
+        </Link>
+      )}
 
       {/* Body: sidebar on lg+, content fills */}
       <div className={`flex flex-1 flex-col lg:flex-row ${isChat ? "min-h-0" : ""}`}>
