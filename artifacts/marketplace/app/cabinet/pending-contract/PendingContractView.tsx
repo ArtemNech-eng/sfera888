@@ -213,7 +213,15 @@ function loadSavedState(): { step: Step; data: PassportData } | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Guard against corrupt / legacy persisted state. An unknown `step` value
+    // matches none of the wizard sections and renders a blank content area
+    // ("empty contract screen"). Fall back to a clean start instead.
+    if (!parsed || typeof parsed !== "object" || !STEPS.includes(parsed.step)) {
+      return null;
+    }
+    return parsed as { step: Step; data: PassportData };
   } catch { return null; }
 }
 
@@ -244,7 +252,10 @@ export function PendingContractView() {
 
   const saved = typeof window !== "undefined" ? loadSavedState() : null;
   const [step, setStepRaw] = useState<Step>(saved?.step ?? "read");
-  const [contractExpanded, setContractExpanded] = useState(false);
+  // Expanded by default so the master immediately sees the full contract text
+  // instead of an easy-to-miss collapsed bar (previously a tap was required and
+  // could leave the reader looking at an empty area).
+  const [contractExpanded, setContractExpanded] = useState(true);
   const [agreed, setAgreed] = useState(false);
   const [passportFile, setPassportFile] = useState<File | null>(null);
   const [passportPreview, setPassportPreview] = useState<string | null>(null);
