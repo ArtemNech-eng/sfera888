@@ -78,10 +78,14 @@ export default function Login() {
               <label className="text-sm font-medium text-foreground ml-1">Логин</label>
               <div className="relative">
                 <User className="absolute left-3.5 top-3 h-5 w-5 text-muted-foreground" />
-                <input 
+                <input
                   type="text"
                   value={login}
                   onChange={e => setLogin(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="username"
+                  spellCheck={false}
                   className="w-full pl-11 pr-4 py-3 rounded-xl bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all text-foreground"
                   placeholder="admin"
                 />
@@ -92,10 +96,12 @@ export default function Login() {
               <label className="text-sm font-medium text-foreground ml-1">Пароль</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3 h-5 w-5 text-muted-foreground" />
-                <input 
+                <input
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
+                  autoCapitalize="none"
+                  autoComplete="current-password"
                   className="w-full pl-11 pr-4 py-3 rounded-xl bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all text-foreground"
                   placeholder="••••••••"
                 />
