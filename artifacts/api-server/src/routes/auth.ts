@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { verifyPassword } from "../lib/auth.js";
 import { createRateLimiter } from "../lib/rateLimit.js";
 
@@ -21,7 +21,13 @@ router.post("/login", loginRateLimit, async (req, res) => {
     return res.status(400).json({ error: "Login and password required" });
   }
 
-  const users = await db.select().from(usersTable).where(eq(usersTable.login, login));
+  // Case-insensitive login lookup. Mobile keyboards auto-capitalize the first
+  // letter (e.g. "admin" → "Admin"), which previously failed the exact match and
+  // only reproduced on phones. The password stays case-sensitive (checked below).
+  const users = await db
+    .select()
+    .from(usersTable)
+    .where(sql`lower(${usersTable.login}) = ${login.toLowerCase()}`);
   const user = users[0];
 
   if (!user) {
