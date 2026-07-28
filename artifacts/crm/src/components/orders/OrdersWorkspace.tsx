@@ -29,7 +29,7 @@ import {
   CalendarDays, ChevronDown, Banknote, CheckCircle2, XCircle, Timer,
   Inbox, RefreshCw, MessageSquare, UserCheck, UserMinus, UserPlus,
   Wallet, MapPin, TrendingUp, Radio, Check, Clock, Pencil,
-  ArrowUpDown,
+  ArrowUpDown, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -43,6 +43,7 @@ import { PaymentStateBadge, type PaymentState } from "./PaymentStateBadge";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type FolderKey =
+  | "all"
   | "waiting_master"
   | "in_progress"
   | "pending_payment"
@@ -109,6 +110,7 @@ interface TableResponse {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const FOLDERS: { id: FolderKey; label: string; icon: React.ComponentType<{ className?: string }>; color: string; activeBg: string }[] = [
+  { id: "all",             label: "Все",             icon: Layers,       color: "text-slate-700",   activeBg: "bg-white" },
   { id: "waiting_master",  label: "Ждут мастера",    icon: Inbox,        color: "text-orange-600",  activeBg: "bg-white" },
   { id: "in_progress",     label: "В работе",        icon: Timer,        color: "text-blue-600",    activeBg: "bg-white" },
   { id: "pending_payment", label: "Ожидание оплаты", icon: Banknote,     color: "text-amber-600",   activeBg: "bg-white" },
@@ -153,7 +155,7 @@ export default function OrdersWorkspace({ onOpenOrder, initialFolder = "waiting_
 
   // Smart default sort when switching folders
   useEffect(() => {
-    if (folder === "completed" || folder === "cancelled") setSortBy("createdAt");
+    if (folder === "completed" || folder === "cancelled" || folder === "all") setSortBy("createdAt");
     else if (sortBy === "createdAt") setSortBy("commissionLeft");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folder]);
