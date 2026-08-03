@@ -291,12 +291,20 @@ export function PendingContractView() {
     if (step !== "done") saveState(step, data);
   }, [data, step]);
 
-  // Poll auth/me every 8 seconds to detect admin activation
+  // Poll auth/me every 8 seconds to detect admin activation *after* signing.
+  //
+  // The redirect below is gated on `contractSignedAt`. A freshly self-registered
+  // master starts with status "active" (the masters-table default) but has NOT
+  // signed a contract yet, so an unconditional `status === "active"` check bounced
+  // them straight off this page within 8s — before they could read and sign it.
+  // Signing flips the status to "pending_contract" (api-server
+  // POST /api/contract/sign); its return to "active" *with* a contract on file is
+  // the real "admin activated me" signal we want to react to.
   useEffect(() => {
     const interval = setInterval(() => {
       cabinetAuth.me().then((me) => {
         const m = me as { status?: string; contractSignedAt?: string | null };
-        if (m.status === "active") {
+        if (m.contractSignedAt && m.status === "active") {
           router.push("/cabinet");
           router.refresh();
         }
