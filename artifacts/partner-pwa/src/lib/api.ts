@@ -14,7 +14,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-// ─── Response mappers ────────────────────────────────────────────────────────
+// ─── Response mappers ────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapPartner(p: any): Partner {
@@ -54,7 +54,7 @@ function mapLead(l: any): Lead {
   };
 }
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
+// ─── Auth ─────────────────────────────────────────────────────────
 
 export const authApi = {
   login: async (phone: string, password: string): Promise<Partner> => {
@@ -86,7 +86,7 @@ export const authApi = {
   },
 };
 
-// ─── Dashboard ───────────────────────────────────────────────────────────────
+// ─── Dashboard ───────────────────────────────────────────────────
 
 export const dashboardApi = {
   get: async (): Promise<DashboardData> => {
@@ -133,7 +133,7 @@ export const dashboardApi = {
   },
 };
 
-// ─── Leads ───────────────────────────────────────────────────────────────────
+// ─── Leads ──────────────────────────────────────────────────────
 
 export const leadsApi = {
   list: async (params?: { status?: string; search?: string; page?: number }): Promise<LeadsResponse> => {
@@ -200,6 +200,10 @@ export const leadsApi = {
       createdAt: d.created_at,
       scheduledAt: null,
       leadChannel: d.lead_channel ?? null,
+      // Те же поля, что мапит mapLead: LeadDetail расширяет Lead, где они
+      // обязательные, а здесь их раньше забыли пробросить.
+      orderAssignedAt: d.order_assigned_at ?? null,
+      bonusAmount: d.bonus_amount ?? null,
       updatedAt: d.updated_at,
       orderStatus: d.order_status ?? null,
       timeline: (d.timeline ?? []).map((t: any) => ({
@@ -212,7 +216,7 @@ export const leadsApi = {
   },
 };
 
-// ─── Billing period current ───────────────────────────────────────────────────
+// ─── Billing period current ───────────────────────────────────────────
 
 export interface CurrentBillingPeriod {
   started: boolean;
@@ -240,7 +244,7 @@ export const billingPeriodApi = {
   },
 };
 
-// ─── Billing ─────────────────────────────────────────────────────────────────
+// ─── Billing ─────────────────────────────────────────────────────
 
 export const billingApi = {
   list: async (): Promise<BillingPeriod[]> => {
@@ -271,7 +275,7 @@ export const billingApi = {
   },
 };
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────
 
 export interface Partner {
   id: number;
