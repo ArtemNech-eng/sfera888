@@ -1,0 +1,79 @@
+# CI для монорепы sfera888.
+#
+# Что проверяем на каждом PR и на push в main:
+#   1. Типы — корневой `pnpm typecheck` (это `tsc --build` для lib/* плюс
+#      typecheck по всем артефактам, у которых скрипт есть).
+#   2. Тесты api-server — `tsx --test ./__tests__/**/*.test.ts`.
+#   3. Сборку — корневой `pnpm build`, тот же набор артефактов, что
+#      собирается на Railway.
+#
+# Сборка вынесена в отдельный job, чтобы падение тяжёлого билда не скрывало
+# результат быстрых проверок типов и тестов (и наоборот).
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Новый пуш в ту же ветку отменяет предыдущий прогон — не жжём минуты.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # puppeteer-core + @sparticuz/chromium-min: браузер в CI не нужен.
+  PUPPETEER_SKIP_DOWNLOAD: "true"
+  # Меньше шума в логах install.
+  CI: "true"
+
+jobs:
+  typecheck-test:
+    name: Типы и тесты
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # Версию pnpm берёт из "packageManager" в package.json (pnpm@10.33.2).
+      - uses: pnpm/action-setup@v4
+
+      # Версию Node берёт из "engines".node (>=22.12.0). setup-node ставится
+      # после pnpm, иначе cache: pnpm не найдёт менеджер.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - name: Установка зависимостей
+        run: pnpm install --frozen-lockfile
+
+      - name: Проверка типов
+        run: pnpm run typecheck
+
+      - name: Тесты api-server
+        run: pnpm --filter @workspace/api-server run test
+
+  build:
+    name: Сборка артефактов
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - name: Установка зависимостей
+        run: pnpm install --frozen-lockfile
+
+      - name: Сборка
+        run: pnpm run build
