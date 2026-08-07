@@ -13,8 +13,14 @@
  *   The wrapper calls fal по тому же паттерну, что и остальные обёртки файла:
  *     1. POST на URL вида `https://fal.run/{model}`, где `{model}` — это
  *        env `FAL_MODEL_DEPTH_CONTROLNET` или дефолт
- *        `fal-ai/flux-control-lora-depth/image-to-image`.
+ *        `fal-ai/flux-control-lora-depth`.
  *     2. Заголовок `Authorization: Key {FAL_API_KEY}`.
+ *
+ *   Дефолт — именно text-to-image вариант, БЕЗ суффикса `/image-to-image`:
+ *   карта глубины уходит в `control_lora_image_url` как структурный сигнал, а
+ *   init-изображение обёртка не подставляет (серая карта глубины в `image_url`
+ *   даёт на выходе серый блокаут — подтверждено живым прогоном). img2img-
+ *   вариант модели подключается точечно через `input.modelId`.
  *
  * We mock `global.fetch` to capture the URL and headers, set env vars, call
  * the wrapper, and assert on the captured request. fetch/env restored after.
@@ -29,7 +35,7 @@ import { falDepthControlNetRepaint } from "../../src/lib/falAi.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL = "fal-ai/flux-control-lora-depth/image-to-image";
+const DEFAULT_MODEL = "fal-ai/flux-control-lora-depth";
 
 const FAKE_FAL_RESPONSE = {
   images: [{ url: "https://fal.example/out.png", width: 1024, height: 768 }],
