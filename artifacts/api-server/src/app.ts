@@ -295,6 +295,9 @@ app.get("/api/system-status", async (_req, res) => {
 // ── Auto-migration: landing_page_views (простой счётчик просмотров лендингов) ─
 // Создаём таблицу сразу при старте сервера (ДО регистрации роутов, которые к ней
 // обращаются — в частности /zayavka/stats). Дедупликация по (landing, день, хэш IP/UA).
+// Важно: node-postgres в режиме prepared statement НЕ поддерживает несколько
+// SQL-команд в одном запросе («cannot insert multiple commands into a prepared
+// statement») — разбиваем миграцию на два отдельных execute.
 db.execute(sql`
   CREATE TABLE IF NOT EXISTS landing_page_views (
     id          BIGSERIAL PRIMARY KEY,
@@ -304,9 +307,12 @@ db.execute(sql`
     viewed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     day         DATE NOT NULL DEFAULT CURRENT_DATE,
     UNIQUE (landing, day, ip_hash, ua_hash)
-  );
-  CREATE INDEX IF NOT EXISTS landing_page_views_day_idx ON landing_page_views(landing, day);
-`).catch((e: Error) => console.error("[migration] landing_page_views:", e.message));
+  )
+`).catch((e: Error) => console.error("[migration] landing_page_views (table):", e.message));
+
+db.execute(sql`
+  CREATE INDEX IF NOT EXISTS landing_page_views_day_idx ON landing_page_views(landing, day)
+`).catch((e: Error) => console.error("[migration] landing_page_views (index):", e.message));
 
 const PgSession = connectPgSimple(session);
 
@@ -1566,6 +1572,7 @@ app.get("/api/throw-error", (_req, _res) => {
 });
 
 // ── Auto-migration: partner_push_subscriptions ────────────────────────────────
+// (разбиваем на два execute — pg не даёт несколько statements в одном prepared query)
 db.execute(sql`
   CREATE TABLE IF NOT EXISTS partner_push_subscriptions (
     id SERIAL PRIMARY KEY,
@@ -1574,9 +1581,12 @@ db.execute(sql`
     p256dh TEXT NOT NULL,
     auth TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
-  );
-  CREATE INDEX IF NOT EXISTS partner_push_partner_idx ON partner_push_subscriptions(partner_id);
-`).catch((e: Error) => console.error("[migration] partner_push_subscriptions:", e.message));
+  )
+`).catch((e: Error) => console.error("[migration] partner_push_subscriptions (table):", e.message));
+
+db.execute(sql`
+  CREATE INDEX IF NOT EXISTS partner_push_partner_idx ON partner_push_subscriptions(partner_id)
+`).catch((e: Error) => console.error("[migration] partner_push_subscriptions (index):", e.message));
 
 // ── Register Max Bot Webhooks on startup ──────────────────────────────────────
 const PROD_HOST = "https://sfera-master.ru";
