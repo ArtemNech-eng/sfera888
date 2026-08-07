@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BadgeCheck,
+  Check,
   CheckCircle2,
   Loader2,
   MapPin,
@@ -32,13 +32,18 @@ function digitsOf(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+function normalizeForSearch(value: string): string {
+  return value.trim().toLowerCase().replace(/ё/g, "е");
+}
+
 export default function App() {
   const [cities, setCities] = useState<string[]>([]);
-  const [citiesLoaded, setCitiesLoaded] = useState(false);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
+  const [cityTouched, setCityTouched] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const [address, setAddress] = useState("");
   const [description, setDescription] = useState("");
   const [area, setArea] = useState("");
@@ -46,6 +51,8 @@ export default function App() {
 
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  const cityInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,12 +63,9 @@ export default function App() {
         const list = Array.isArray(data.cities) ? data.cities : [];
         setCities(list);
         if (list.length === 1) setCity(list[0]);
-        setCitiesLoaded(true);
       })
       .catch(() => {
-        if (cancelled) return;
-        setCities([]);
-        setCitiesLoaded(true);
+        if (!cancelled) setCities([]);
       });
     return () => {
       cancelled = true;
@@ -82,16 +86,42 @@ export default function App() {
     };
   }, []);
 
+  // Город из списка — не косметика: рассылка ищет мастеров по точному
+  // совпадению строки, поэтому «Ставрополь » или «г. Ставрополь» не найдут никого.
+  const cityConfirmed = useMemo(
+    () => cities.some((c) => normalizeForSearch(c) === normalizeForSearch(city)),
+    [cities, city]
+  );
+
+  const citySuggestions = useMemo(() => {
+    if (cities.length === 0) return [];
+    const query = normalizeForSearch(city);
+    if (query === "") return cities.slice(0, 6);
+    if (cityConfirmed) return [];
+    const starts = cities.filter((c) => normalizeForSearch(c).startsWith(query));
+    const contains = cities.filter(
+      (c) => !normalizeForSearch(c).startsWith(query) && normalizeForSearch(c).includes(query)
+    );
+    return [...starts, ...contains].slice(0, 6);
+  }, [cities, city, cityConfirmed]);
+
   const toggleService = (service: string) => {
     setServices((prev) =>
       prev.includes(service) ? prev.filter((s) => s !== service) : [...prev, service]
     );
   };
 
+  const pickCity = (value: string) => {
+    setCity(value);
+    setSuggestOpen(false);
+    setCityTouched(true);
+    cityInputRef.current?.blur();
+  };
+
   const validate = (): string | null => {
     if (name.trim().length < 2) return "Напишите, как к вам обращаться";
     if (digitsOf(phone).length < 10) return "Проверьте номер телефона";
-    if (city.trim().length < 1) return "Выберите город";
+    if (city.trim().length < 1) return "Укажите город";
     if (address.trim().length < 3) return "Укажите адрес объекта";
     if (description.trim().length < 5) return "Коротко опишите, что нужно сделать";
     return null;
@@ -148,26 +178,28 @@ export default function App() {
     "w-full rounded-xl border hairline bg-white px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/12";
   const labelClass = "mb-1.5 block text-[13px] font-semibold text-slate-700";
 
+  const cityLabel = cityConfirmed ? city.trim() : "вашего города";
+
   return (
     <div className="surface-page min-h-screen w-full px-4 py-7 sm:px-6 sm:py-12">
       <div className="mx-auto w-full max-w-[560px]">
         <header className="mb-6 text-center">
-          <span className="chip-glass inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-semibold tracking-wide text-emerald-50">
-            <BadgeCheck className="h-3.5 w-3.5" />
-            Частные мастера вашего города
+          <span className="chip-soft inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-bold tracking-wide text-emerald-700">
+            <MapPin className="h-3.5 w-3.5" />
+            {cityConfirmed ? `Мастера города ${city.trim()}` : "Мастера вашего города"}
           </span>
 
-          <h1 className="mt-4 text-[28px] font-extrabold leading-[1.15] tracking-tight text-white sm:text-[34px]">
-            Ремонтные работы
+          <h1 className="mt-4 text-[28px] font-extrabold leading-[1.15] tracking-tight text-slate-900 sm:text-[34px]">
+            Частные мастера рядом
             <br />
-            <span className="bg-gradient-to-r from-emerald-300 to-teal-200 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">
               недорого и без посредников
             </span>
           </h1>
 
-          <p className="mx-auto mt-3 max-w-[430px] text-[14px] leading-relaxed text-emerald-100/80">
-            Оставьте заявку — и получите предложения по стоимости сразу от нескольких
-            свободных мастеров. Сравните и выберите своего.
+          <p className="mx-auto mt-3 max-w-[440px] text-[14px] leading-relaxed text-slate-600">
+            Оставьте заявку — её увидят свободные мастера {cityLabel}. Несколько человек
+            откликнутся и назовут свою цену — сравните и выберите своего.
           </p>
 
           <div className="mt-5 grid grid-cols-3 gap-2">
@@ -178,10 +210,10 @@ export default function App() {
             ].map(({ icon: Icon, label }) => (
               <div
                 key={label}
-                className="chip-glass flex flex-col items-center gap-1.5 rounded-2xl px-2 py-3 text-center"
+                className="chip-soft flex flex-col items-center gap-1.5 rounded-2xl px-2 py-3 text-center"
               >
-                <Icon className="h-4 w-4 text-emerald-300" />
-                <span className="text-[12px] font-semibold leading-tight text-emerald-50">{label}</span>
+                <Icon className="h-4 w-4 text-emerald-600" />
+                <span className="text-[12px] font-semibold leading-tight text-slate-700">{label}</span>
               </div>
             ))}
           </div>
@@ -233,42 +265,66 @@ export default function App() {
                   />
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className={labelClass} htmlFor="city">
                     Город
                   </label>
-                  {citiesLoaded && cities.length > 0 ? (
-                    <select
-                      id="city"
-                      className={inputClass}
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                    >
-                      <option value="">Выберите город</option>
-                      {cities.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
+                  <div className="relative">
                     <input
                       id="city"
-                      className={inputClass}
+                      ref={cityInputRef}
+                      className={`${inputClass} ${cityConfirmed ? "pr-10" : ""}`}
                       value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="Ваш город"
-                      autoComplete="address-level2"
+                      onChange={(e) => {
+                        setCity(e.target.value);
+                        setSuggestOpen(true);
+                        setCityTouched(true);
+                      }}
+                      onFocus={() => setSuggestOpen(true)}
+                      onBlur={() => window.setTimeout(() => setSuggestOpen(false), 120)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setSuggestOpen(false);
+                        if (e.key === "Enter" && suggestOpen && citySuggestions.length > 0) {
+                          e.preventDefault();
+                          pickCity(citySuggestions[0]);
+                        }
+                      }}
+                      placeholder="Начните вводить город"
+                      autoComplete="off"
                     />
+                    {cityConfirmed && (
+                      <Check className="pointer-events-none absolute right-3.5 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-emerald-600" />
+                    )}
+                  </div>
+
+                  {suggestOpen && citySuggestions.length > 0 && (
+                    <ul className="suggest-panel absolute z-20 mt-1.5 max-h-[232px] w-full overflow-y-auto rounded-xl py-1">
+                      {citySuggestions.map((suggestion) => (
+                        <li key={suggestion}>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => pickCity(suggestion)}
+                            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-[14.5px] text-slate-700 transition hover:bg-emerald-50 hover:text-emerald-800"
+                          >
+                            <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                            {suggestion}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {cityTouched && !cityConfirmed && city.trim() !== "" && cities.length > 0 && (
+                    <p className="mt-1.5 text-[12px] text-amber-600">
+                      Выберите город из подсказок — так заявка точно дойдёт до мастеров.
+                    </p>
                   )}
                 </div>
 
                 <div>
                   <label className={labelClass} htmlFor="address">
-                    <span className="inline-flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-emerald-600" />
-                      Адрес объекта
-                    </span>
+                    Адрес объекта
                   </label>
                   <input
                     id="address"
@@ -363,7 +419,7 @@ export default function App() {
           </section>
         )}
 
-        <footer className="mt-6 text-center text-[12px] text-emerald-100/50">
+        <footer className="mt-6 text-center text-[12px] text-slate-400">
           Работаем с проверенными частными мастерами вашего города
         </footer>
       </div>
