@@ -1,19 +1,17 @@
-import path from "path";
-import { fileURLToPath } from "url";
-import tailwindcss from "@tailwindcss/vite";
-import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
-  base: "/",
-  publicDir: "public",
+  // Страница раздаётся api-server’ом по пути /zayavka на sfera-master.ru.
+  // Без этого base сборка сошлалась бы на /assets/*, а этот путь в корне
+  // домена уже занят статикой master-landing — страница открылась бы пустой.
+  base: "/zayavka/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src"),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   build: {

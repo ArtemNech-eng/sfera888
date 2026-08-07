@@ -35,14 +35,23 @@ export const viewport = {
 };
 
 /**
- * Routes that own their own chrome (cabinet shell, login form). The root
- * layout still wraps them with `<html>`/`<body>` so global CSS, fonts and
- * analytics keep working, but we skip the public Header/Footer to avoid
- * double navigation. Pathname comes from `middleware.ts`, which injects an
- * `x-pathname` header on every request.
+ * Routes that own their own chrome (cabinet shell, login form, the Avito
+ * quick-lead page). The root layout still wraps them with `<html>`/`<body>`
+ * so global CSS, fonts and analytics keep working, but we skip the public
+ * Header/Footer to avoid double navigation. Pathname comes from
+ * `middleware.ts`, which injects an `x-pathname` header on every request.
+ *
+ * `/zayavka` is a paid-traffic landing: every extra nav link is an exit from
+ * the form, so it deliberately renders without the marketplace chrome.
  */
 function isOwnChromeRoute(pathname: string): boolean {
-  return pathname.startsWith("/cabinet") || pathname === "/login" || pathname.startsWith("/login/");
+  return (
+    pathname.startsWith("/cabinet") ||
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname === "/zayavka" ||
+    pathname.startsWith("/zayavka/")
+  );
 }
 
 export function generateMetadata(): Metadata {
