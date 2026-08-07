@@ -191,8 +191,12 @@ const quickLeadSchema = z.object({
   city: z.string().trim().min(1, "Выберите город").max(100),
   address: z.string().trim().min(3, "Укажите адрес объекта").max(300),
   description: z.string().trim().min(5, "Опишите, что нужно сделать").max(2000),
-  area: z.coerce.number().min(0).max(100000).optional(),
-  services: z.array(z.string().trim().min(1).max(100)).max(12).optional(),
+  // Площадь — обязательное поле (клиент присылает число, не ноль)
+  area: z.coerce.number().min(1, "Укажите примерную площадь").max(100000),
+  // Вид работ — обязателен, минимум 1 чип
+  services: z.array(z.string().trim().min(1).max(100)).min(1, "Выберите хотя бы один вид работ").max(12),
+  // Фото объекта — по желанию, до 5 data-URL JPEG (сжимаются на клиенте до ~1024px)
+  photos: z.array(z.string().startsWith("data:image/")).max(5).optional(),
   utm_source: z.string().max(100).optional(),
   utm_medium: z.string().max(100).optional(),
   utm_campaign: z.string().max(100).optional(),
@@ -242,9 +246,27 @@ router.post("/quick-leads", async (req: Request, res: Response) => {
     // Вид работ определяет фильтр специализаций в рассылке. Если клиент ничего
     // не выбрал, ставим общий заголовок и отключаем фильтр — иначе мастера со
     // заполненными специализациями не получили бы заявку вовсе.
+    // (Клиентская валидация теперь не даёт отправить с пустым services, но
+    // оставляем запас на случай старых клиентов/скриптов.)
     const serviceType = selectedServices.length > 0 ? selectedServices.join(", ") : "Ремонтные работы";
     const skipSpecialtyFilter = selectedServices.length === 0;
-    const area = body.area != null && !Number.isNaN(body.area) ? body.area : 0;
+    const area = !Number.isNaN(body.area) && body.area > 0 ? body.area : 0;
+
+    // Фото: сохраняем как JSON-массив data-URL в текстовое поле leads.photos
+    // (оно уже существует в схеме). Ограничиваем суммарный размер, чтобы не
+    // раздувать БД одним лидом.
+    const photos: string[] = [];
+    let photosSize = 0;
+    const MAX_PHOTO_SIZE = 500 * 1024; // ~500 КБ на фото
+    const MAX_TOTAL_PHOTOS_SIZE = 2 * 1024 * 1024; // ~2 МБ суммарно
+    for (const p of body.photos ?? []) {
+      if (photos.length >= 5) break;
+      if (photosSize + p.length > MAX_TOTAL_PHOTOS_SIZE) break;
+      if (p.length > MAX_PHOTO_SIZE) continue;
+      photos.push(p);
+      photosSize += p.length;
+    }
+    const photosJson = photos.length > 0 ? JSON.stringify(photos) : null;
 
     // Повторный клиент — мягкий сигнал для оператора, не блокировка.
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -265,6 +287,7 @@ router.post("/quick-leads", async (req: Request, res: Response) => {
         area: String(area),
         services: selectedServices.length > 0 ? JSON.stringify(selectedServices) : null,
         comment: body.description.trim(),
+        photos: photosJson,
         source: "avito_landing",
         status: "new",
         isPossibleDuplicate: !!duplicate,

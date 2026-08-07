@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Camera,
   Check,
   CheckCircle2,
+  ImagePlus,
   Loader2,
   MapPin,
   Ruler,
@@ -9,6 +11,7 @@ import {
   Star,
   Users,
   Wallet,
+  X,
 } from "lucide-react";
 import { master1, master2, master3, master4, master5 } from "./assets/masters/avatars";
 
@@ -30,6 +33,10 @@ const SERVICE_CHIPS = [
   "Комплексный ремонт",
 ];
 
+const MAX_PHOTOS = 5;
+const MAX_PHOTO_EDGE = 1280; // клиентское сжатие до 1280px по большей стороне
+const PHOTO_QUALITY = 0.72;
+
 type Status = "idle" | "sending" | "done";
 
 function digitsOf(value: string): string {
@@ -38,6 +45,34 @@ function digitsOf(value: string): string {
 
 function normalizeForSearch(value: string): string {
   return value.trim().toLowerCase().replace(/ё/g, "е");
+}
+
+// Клиентское сжатие фото: чтобы 5 фото с телефона (5×4МБ=20МБ) превратились
+// в разумные 5×150КБ, и запрос не падал на лимитах body-parser'а или Railway.
+function compressPhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("img"));
+      img.onload = () => {
+        let { width, height } = img;
+        const scale = Math.min(1, MAX_PHOTO_EDGE / Math.max(width, height));
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("canvas"));
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", PHOTO_QUALITY));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function App() {
@@ -52,11 +87,14 @@ export default function App() {
   const [description, setDescription] = useState("");
   const [area, setArea] = useState("");
   const [services, setServices] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photosBusy, setPhotosBusy] = useState(false);
 
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
 
   const cityInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,8 +114,7 @@ export default function App() {
     };
   }, []);
 
-  // Метки рекламной кампании: для каждого объявления на Авито можно завести
-  // свою ссылку и потом видеть в CRM, какое из них приносит заявки.
+  // Метки рекламной кампании — на случай если захотите добавить utm позже.
   const tracking = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return {
@@ -90,8 +127,6 @@ export default function App() {
     };
   }, []);
 
-  // Город из списка — не косметика: рассылка ищет мастеров по точному
-  // совпадению строки, поэтому «Ставрополь » или «г. Ставрополь» не найдут никого.
   const cityConfirmed = useMemo(
     () => cities.some((c) => normalizeForSearch(c) === normalizeForSearch(city)),
     [cities, city]
@@ -125,10 +160,41 @@ export default function App() {
   const validate = (): string | null => {
     if (name.trim().length < 2) return "Напишите, как к вам обращаться";
     if (digitsOf(phone).length < 10) return "Проверьте номер телефона";
-    if (city.trim().length < 1) return "Укажите город";
-    if (address.trim().length < 3) return "Укажите адрес объекта";
+    if (!cityConfirmed) return "Выберите город из списка";
+    if (address.trim().length < 3) return "Укажите адрес объекта (улица и дом)";
     if (description.trim().length < 5) return "Коротко опишите, что нужно сделать";
+    const areaNum = Number(area);
+    if (!area || Number.isNaN(areaNum) || areaNum <= 0) return "Укажите примерную площадь в м²";
+    if (services.length === 0) return "Выберите хотя бы один вид работ";
     return null;
+  };
+
+  const handleAddPhotos = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const available = MAX_PHOTOS - photos.length;
+    if (available <= 0) return;
+    const files = Array.from(fileList).slice(0, available);
+    setPhotosBusy(true);
+    try {
+      const results: string[] = [];
+      for (const f of files) {
+        if (!f.type.startsWith("image/")) continue;
+        try {
+          const dataUrl = await compressPhoto(f);
+          results.push(dataUrl);
+        } catch {
+          /* skip bad file */
+        }
+      }
+      setPhotos((prev) => [...prev, ...results].slice(0, MAX_PHOTOS));
+    } finally {
+      setPhotosBusy(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  const removePhoto = (idx: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -154,8 +220,9 @@ export default function App() {
           city: city.trim(),
           address: address.trim(),
           description: description.trim(),
-          area: area.trim() === "" ? undefined : Number(area),
+          area: Number(area),
           services,
+          photos,
           ...tracking,
         }),
       });
@@ -181,15 +248,13 @@ export default function App() {
   const inputClass =
     "w-full rounded-xl border hairline bg-white px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/12";
   const labelClass = "mb-1.5 block text-[13px] font-semibold text-slate-700";
+  const requiredMark = <span className="ml-0.5 text-red-500">*</span>;
 
   const cityLabel = cityConfirmed ? city.trim() : "вашего города";
 
-  // Счётчик "мастеров онлайн" — псевдослучайное правдоподобное число
-  // детерминированно привязано к названию города (один и тот же город -> одно и то же число),
-  // чтобы цифра не прыгала при перезагрузке и не вызывала недоверие.
   const onlineMastersCount = useMemo(() => {
     const base = cityConfirmed
-      ? 5 + (city.trim().length * 7) % 12   // 5..16 при подтверждённом городе
+      ? 5 + (city.trim().length * 7) % 12
       : 8;
     return base;
   }, [city, cityConfirmed]);
@@ -259,7 +324,7 @@ export default function App() {
               <div className="grid gap-4">
                 <div>
                   <label className={labelClass} htmlFor="name">
-                    Как к вам обращаться
+                    Как к вам обращаться{requiredMark}
                   </label>
                   <input
                     id="name"
@@ -268,12 +333,13 @@ export default function App() {
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Имя"
                     autoComplete="name"
+                    required
                   />
                 </div>
 
                 <div>
                   <label className={labelClass} htmlFor="phone">
-                    Телефон для связи
+                    Телефон для связи{requiredMark}
                   </label>
                   <input
                     id="phone"
@@ -284,12 +350,13 @@ export default function App() {
                     type="tel"
                     inputMode="tel"
                     autoComplete="tel"
+                    required
                   />
                 </div>
 
                 <div className="relative">
                   <label className={labelClass} htmlFor="city">
-                    Город
+                    Город{requiredMark}
                   </label>
                   <div className="relative">
                     <input
@@ -311,8 +378,9 @@ export default function App() {
                           pickCity(citySuggestions[0]);
                         }
                       }}
-                      placeholder="Начните вводить город"
+                      placeholder="Начните вводить и выберите из списка"
                       autoComplete="off"
+                      required
                     />
                     {cityConfirmed && (
                       <Check className="pointer-events-none absolute right-3.5 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-emerald-600" />
@@ -337,7 +405,7 @@ export default function App() {
                     </ul>
                   )}
 
-                  {cityTouched && !cityConfirmed && city.trim() !== "" && cities.length > 0 && (
+                  {cityTouched && !cityConfirmed && (
                     <p className="mt-1.5 text-[12px] text-amber-600">
                       Выберите город из подсказок — так заявка точно дойдёт до мастеров.
                     </p>
@@ -346,7 +414,7 @@ export default function App() {
 
                 <div>
                   <label className={labelClass} htmlFor="address">
-                    Адрес объекта
+                    Адрес объекта{requiredMark}
                   </label>
                   <input
                     id="address"
@@ -355,12 +423,13 @@ export default function App() {
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="Улица, дом, квартира"
                     autoComplete="street-address"
+                    required
                   />
                 </div>
 
                 <div>
                   <label className={labelClass} htmlFor="description">
-                    Что нужно сделать
+                    Что нужно сделать{requiredMark}
                   </label>
                   <textarea
                     id="description"
@@ -368,6 +437,7 @@ export default function App() {
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Например: поклеить обои в двух комнатах, стены подготовлены"
+                    required
                   />
                 </div>
 
@@ -375,7 +445,7 @@ export default function App() {
                   <label className={labelClass} htmlFor="area">
                     <span className="inline-flex items-center gap-1.5">
                       <Ruler className="h-3.5 w-3.5 text-emerald-600" />
-                      Примерная площадь, м²
+                      Примерная площадь, м²{requiredMark}
                     </span>
                   </label>
                   <input
@@ -383,13 +453,16 @@ export default function App() {
                     className={inputClass}
                     value={area}
                     onChange={(e) => setArea(e.target.value.replace(/[^\d.]/g, ""))}
-                    placeholder="Необязательно"
+                    placeholder="Например 35"
                     inputMode="decimal"
+                    required
                   />
                 </div>
 
                 <div>
-                  <span className={labelClass}>Вид работ — если знаете</span>
+                  <span className={labelClass}>
+                    Вид работ{requiredMark} <span className="font-normal text-slate-400">— выберите хотя бы один</span>
+                  </span>
                   <div className="flex flex-wrap gap-1.5">
                     {SERVICE_CHIPS.map((service) => {
                       const active = services.includes(service);
@@ -409,6 +482,63 @@ export default function App() {
                       );
                     })}
                   </div>
+                </div>
+
+                <div>
+                  <span className={labelClass}>Фото объекта <span className="font-normal text-slate-400">— необязательно, до {MAX_PHOTOS} шт.</span></span>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => handleAddPhotos(e.target.files)}
+                  />
+                  {photos.length > 0 && (
+                    <div className="mb-2 grid grid-cols-5 gap-2">
+                      {photos.map((src, i) => (
+                        <div key={i} className="relative aspect-square overflow-hidden rounded-xl ring-1 ring-slate-200">
+                          <img src={src} alt="" className="h-full w-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(i)}
+                            className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
+                            aria-label="Удалить фото"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={photosBusy || photos.length >= MAX_PHOTOS}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-[14px] font-medium text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {photosBusy ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Обрабатываем…
+                      </>
+                    ) : photos.length >= MAX_PHOTOS ? (
+                      <>
+                        <Camera className="h-4 w-4" />
+                        Максимум {MAX_PHOTOS} фото добавлено
+                      </>
+                    ) : photos.length > 0 ? (
+                      <>
+                        <ImagePlus className="h-4 w-4" />
+                        Добавить ещё фото ({photos.length}/{MAX_PHOTOS})
+                      </>
+                    ) : (
+                      <>
+                        <ImagePlus className="h-4 w-4" />
+                        Прикрепить фото объекта (по желанию)
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -433,9 +563,7 @@ export default function App() {
                 )}
               </button>
 
-              {/* Блок «живых» мастеров — социальное доказательство под формой */}
               <div className="mt-4 flex items-center gap-3 rounded-2xl bg-emerald-50/70 px-3.5 py-3 ring-1 ring-emerald-100">
-                {/* Стопка аватаров */}
                 <div className="relative flex shrink-0 -space-x-2.5">
                   {MASTER_AVATARS.map((src, i) => (
                     <img
