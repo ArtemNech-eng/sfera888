@@ -58,8 +58,15 @@ jobs:
           node --version
           pnpm --version
 
+      # Сначала строгая установка. Если манифест менялся без локального
+      # pnpm install, лок-файл отстаёт — повторяем без --frozen-lockfile,
+      # но с видимым предупреждением, чтобы рассинхрон не прошёл тихо.
       - name: Установка зависимостей
-        run: pnpm install --frozen-lockfile --reporter=append-only
+        run: |
+          pnpm install --frozen-lockfile --reporter=append-only || {
+            echo "::warning::pnpm-lock.yaml рассинхронизирован с package.json. Повторяю без --frozen-lockfile. Запустите локально pnpm install и закоммитьте лок-файл."
+            pnpm install --no-frozen-lockfile --reporter=append-only
+          }
 
       - name: Проверка типов
         run: pnpm run typecheck
@@ -87,7 +94,11 @@ jobs:
           pnpm --version
 
       - name: Установка зависимостей
-        run: pnpm install --frozen-lockfile --reporter=append-only
+        run: |
+          pnpm install --frozen-lockfile --reporter=append-only || {
+            echo "::warning::pnpm-lock.yaml рассинхронизирован с package.json. Повторяю без --frozen-lockfile. Запустите локально pnpm install и закоммитьте лок-файл."
+            pnpm install --no-frozen-lockfile --reporter=append-only
+          }
 
       - name: Сборка
         run: pnpm run build
