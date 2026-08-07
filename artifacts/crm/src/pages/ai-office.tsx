@@ -150,6 +150,7 @@ interface ScenarioLog {
 interface DiagReason { text: string; recommendation: string }
 interface DiagEntry {
   orderId: number;
+  leadId?: number | null;
   masterAlias: string;
   maxChatId: string | null;
   city: string;
