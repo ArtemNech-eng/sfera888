@@ -1,10 +1,5 @@
 packages:
   - artifacts/*
-  # avito-landing собирался как отдельная Vite-страница, но страница заявки
-  # переехала в marketplace (app/zayavka). Пакет больше не используется, а его
-  # зависимости отсутствуют в pnpm-lock.yaml — из-за этого деплой на Railway
-  # падал с ERR_PNPM_OUTDATED_LOCKFILE (там install идёт с --frozen-lockfile).
-  - '!artifacts/avito-landing'
   - lib/*
   - lib/integrations/*
   - scripts

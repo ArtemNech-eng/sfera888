@@ -312,6 +312,43 @@ importers:
         specifier: 'catalog:'
         version: 4.21.0
 
+  artifacts/avito-landing:
+    dependencies:
+      lucide-react:
+        specifier: 'catalog:'
+        version: 0.545.0(react@19.1.0)
+      react:
+        specifier: 'catalog:'
+        version: 19.1.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.1.0(react@19.1.0)
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: 'catalog:'
+        version: 4.2.4(vite@7.3.2(@types/node@25.6.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.0
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-react':
+        specifier: 'catalog:'
+        version: 5.2.0(vite@7.3.2(@types/node@25.6.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
+      tailwindcss:
+        specifier: 'catalog:'
+        version: 4.2.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: 'catalog:'
+        version: 7.3.2(@types/node@25.6.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
+
   artifacts/client:
     devDependencies:
       '@hookform/resolvers':
@@ -1688,6 +1725,9 @@ importers:
       bcryptjs:
         specifier: ^3.0.2
         version: 3.0.3
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.20.0)(pg@8.20.0)
     devDependencies:
       '@types/bcryptjs':
         specifier: ^2.4.6
@@ -4073,10 +4113,6 @@ packages:
 
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
-
-  enhanced-resolve@5.21.0:
-    resolution: {integrity: sha512-otxSQPw4lkOZWkHpB3zaEQs6gWYEsmX4xQF68ElXC/TWvGxGMSGOvoNbaLXm6/cS/fSfHtsEdw90y20PCd+sCA==}
-    engines: {node: '>=10.13.0'}
 
   enhanced-resolve@5.21.6:
     resolution: {integrity: sha512-aNnGCvbJ/RIyWo1IuhNdVjnNF+EjH9wpzpNHt+ci/m9He9LJvUN8wrCcXjp9cWsGNAuvSpVFTx/vraAFQ8qGjQ==}
@@ -6481,7 +6517,7 @@ snapshots:
       esutils: 2.0.3
       fs-extra: 11.3.4
       globby: 16.1.0
-      jiti: 2.6.1
+      jiti: 2.7.0
       remeda: 2.34.0
       typedoc: 0.28.19(typescript@5.9.3)
     transitivePeerDependencies:
@@ -7452,8 +7488,8 @@ snapshots:
   '@tailwindcss/node@4.1.17':
     dependencies:
       '@jridgewell/remapping': 2.3.5
-      enhanced-resolve: 5.21.0
-      jiti: 2.6.1
+      enhanced-resolve: 5.21.6
+      jiti: 2.7.0
       lightningcss: 1.30.2
       magic-string: 0.30.21
       source-map-js: 1.2.1
@@ -7462,8 +7498,8 @@ snapshots:
   '@tailwindcss/node@4.2.4':
     dependencies:
       '@jridgewell/remapping': 2.3.5
-      enhanced-resolve: 5.21.0
-      jiti: 2.6.1
+      enhanced-resolve: 5.21.6
+      jiti: 2.7.0
       lightningcss: 1.32.0
       magic-string: 0.30.21
       source-map-js: 1.2.1
@@ -8371,11 +8407,6 @@ snapshots:
   end-of-stream@1.4.5:
     dependencies:
       once: 1.4.0
-
-  enhanced-resolve@5.21.0:
-    dependencies:
-      graceful-fs: 4.2.11
-      tapable: 2.3.3
 
   enhanced-resolve@5.21.6:
     dependencies:

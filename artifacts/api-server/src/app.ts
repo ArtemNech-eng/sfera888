@@ -1278,6 +1278,44 @@ if (fs.existsSync(partnerLandingDistPath)) {
   });
 }
 
+// ── Serve avito-landing (заявка с Авито) на /zayavka/ ────────────────────────
+// Одноэкранная форма заявки для трафика с Авито. Собирается Vite с base="/zayavka/"
+// в artifacts/avito-landing/dist/public (outDir dist/public, как у CRM / master-pwa).
+// В dev-режиме __dirname указывает на src/, в проде — на dist/ (рядом с миграциями).
+// Пробуем оба варианта, чтобы страница работала и при локальном запуске tsx, и после сборки.
+const avitoLandingDistCandidates = [
+  path.join(__dirname, "../../avito-landing/dist/public"), // prod: api-server/dist -> artifacts/avito-landing/dist/public
+  path.join(__dirname, "../../../artifacts/avito-landing/dist/public"), // dev: src/ -> artifacts/avito-landing/dist/public
+];
+const avitoLandingDistPath = avitoLandingDistCandidates.find((p) => fs.existsSync(p));
+
+if (avitoLandingDistPath) {
+  app.use(
+    "/zayavka",
+    express.static(avitoLandingDistPath, {
+      // Vite выдаёт ассеты с хешами в именах → можно кешировать навсегда.
+      // index.html не должен кешироваться, чтобы пользователи не получали
+      // страницу, ссылающуюся на уже удалённые чанки после деплоя.
+      setHeaders: (res, filePath) => {
+        if (/[\\/]assets[\\/]/.test(filePath)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        }
+      },
+    }),
+  );
+  // SPA fallback: /zayavka/* (без расширения) → index.html (на случай прямого захода
+  // по несуществующему подпути или когда /zayavka открыто без завершающего слэша
+  // и Vite base требует его).
+  app.get(["/zayavka", "/zayavka/"], (_req, res) => {
+    res.sendFile(path.join(avitoLandingDistPath, "index.html"));
+  });
+  console.log(`[avito-landing] serving /zayavka from ${avitoLandingDistPath}`);
+} else {
+  console.warn("[avito-landing] dist not found — /zayavka will 404. Did you run pnpm build?");
+}
+
 // Root: serve the current master-landing (v3) directly at sfera-master.ru/
 // This is the main recruitment landing for masters — new business model
 // (free onboarding, 500₽/lead + 15% commission after completion).

@@ -8,6 +8,14 @@ export default defineConfig({
   // Без этого base сборка сошлалась бы на /assets/*, а этот путь в корне
   // домена уже занят статикой master-landing — страница открылась бы пустой.
   base: "/zayavka/",
+  server: {
+    host: "0.0.0.0",
+    allowedHosts: true,
+  },
+  preview: {
+    host: "0.0.0.0",
+    allowedHosts: true,
+  },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
