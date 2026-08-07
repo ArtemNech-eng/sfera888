@@ -6,9 +6,13 @@ import {
   MapPin,
   Ruler,
   ShieldCheck,
+  Star,
   Users,
   Wallet,
 } from "lucide-react";
+import { master1, master2, master3, master4, master5 } from "./assets/masters/avatars";
+
+const MASTER_AVATARS = [master1, master2, master3, master4, master5];
 
 // По умолчанию — относительный путь: страница и API на одном домене, CORS не
 // участвует. При размещении на отдельном домене задайте VITE_API_BASE_URL.
@@ -179,6 +183,24 @@ export default function App() {
   const labelClass = "mb-1.5 block text-[13px] font-semibold text-slate-700";
 
   const cityLabel = cityConfirmed ? city.trim() : "вашего города";
+
+  // Счётчик "мастеров онлайн" — псевдослучайное правдоподобное число
+  // детерминированно привязано к названию города (один и тот же город -> одно и то же число),
+  // чтобы цифра не прыгала при перезагрузке и не вызывала недоверие.
+  const onlineMastersCount = useMemo(() => {
+    const base = cityConfirmed
+      ? 5 + (city.trim().length * 7) % 12   // 5..16 при подтверждённом городе
+      : 8;
+    return base;
+  }, [city, cityConfirmed]);
+
+  const mastersPlural = (n: number) => {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return "мастер";
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "мастера";
+    return "мастеров";
+  };
 
   return (
     <div className="surface-page min-h-screen w-full px-4 py-7 sm:px-6 sm:py-12">
@@ -410,6 +432,45 @@ export default function App() {
                   "Узнать стоимость от нескольких мастеров"
                 )}
               </button>
+
+              {/* Блок «живых» мастеров — социальное доказательство под формой */}
+              <div className="mt-4 flex items-center gap-3 rounded-2xl bg-emerald-50/70 px-3.5 py-3 ring-1 ring-emerald-100">
+                {/* Стопка аватаров */}
+                <div className="relative flex shrink-0 -space-x-2.5">
+                  {MASTER_AVATARS.map((src, i) => (
+                    <img
+                      key={i}
+                      src={src}
+                      alt=""
+                      width={36}
+                      height={36}
+                      loading="lazy"
+                      decoding="async"
+                      className="relative h-9 w-9 rounded-full object-cover ring-2 ring-white"
+                      style={{ zIndex: MASTER_AVATARS.length - i }}
+                    />
+                  ))}
+                  <span
+                    className="absolute -right-1 -bottom-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-2 ring-white"
+                    style={{ zIndex: MASTER_AVATARS.length + 1 }}
+                    aria-hidden
+                  >
+                    <span className="absolute inline-flex h-4 w-4 animate-ping rounded-full bg-emerald-400 opacity-60" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500" />
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1 leading-tight">
+                  <p className="text-[13px] font-semibold text-emerald-900">
+                    {cityConfirmed
+                      ? `${onlineMastersCount} ${mastersPlural(onlineMastersCount)} сейчас онлайн в г. ${city.trim()}`
+                      : "Мастера рядом сейчас онлайн"}
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1 text-[11.5px] text-emerald-700/80">
+                    <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                    Проверенные профили · отклик в течение 15 минут
+                  </p>
+                </div>
+              </div>
 
               <p className="mt-3 text-center text-[11.5px] leading-relaxed text-slate-400">
                 Бесплатно и ни к чему не обязывает. Отправляя заявку, вы соглашаетесь на

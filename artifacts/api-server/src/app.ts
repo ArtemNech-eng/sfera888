@@ -26,6 +26,7 @@ import { anonIdMiddleware } from "./middlewares/anonIdMiddleware.js";
 import { PROTECTED_NOINDEX_PATTERNS } from "./lib/communitySeo.js";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 
 function getAllowedOrigins(): string[] {
   const raw = [
@@ -1277,6 +1278,217 @@ if (fs.existsSync(partnerLandingDistPath)) {
     res.sendFile(path.join(partnerLandingDistPath, "index.html"));
   });
 }
+
+// ── Счётчик просмотров лендингов и страница /zayavka/stats ───────────────────
+//
+// Требование: видеть, сколько людей зашло на лендинг и сколько заявок оставили,
+// БЕЗ внешних аналитик (Яндекс.Метрика, GA), БЕЗ utm-меток и БЕЗ увеличения
+// длины ссылок. Все считаем на сервере. Заявки с source='avito_landing' уже
+// пишутся в leads — их просто COUNT(*). Просмотры ведём в своей таблице
+// landing_page_views (создаётся выше в миграции). IP и User-Agent хешируем
+// SHA-256 с солью + солью по дню, чтобы не хранить персональные данные.
+//
+// «Уникальность» по лендингу: один visitor = одна запись на landing в сутки
+// (ключ UNIQUE(landing, day, ip_hash, ua_hash)). Повторный F5/обновление в тот
+// же день не засчитывается; следующий день засчитывается как новый визит.
+// Боты (содержат bot|crawler|spider|lighthouse|uptime|monitor в UA или пустой UA)
+// игнорируются.
+
+const _LANDING_VIEW_SALT = process.env.LANDING_STATS_SALT ?? process.env.SESSION_SECRET ?? "sfera888-landing-salt";
+
+function hashFingerprint(...parts: string[]): string {
+  return createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 32);
+}
+
+function isBotUA(ua: string | undefined): boolean {
+  if (!ua || ua.length < 8) return true;
+  return /bot|crawler|spider|slurp|lighthouse|pagespeed|uptime|monitor|curl|wget|python|http(s)?client|check|scan|whatsapp|telegrambot|facebookexternalhit|vkshare/i.test(ua);
+}
+
+function getClientIp(req: import("express").Request): string {
+  // За Railway прокси лежит реальный IP в x-forwarded-for (trust proxy = 1 уже включен).
+  const fwd = req.get("x-forwarded-for");
+  if (fwd) {
+    const first = fwd.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return req.ip || req.socket.remoteAddress || "unknown";
+}
+
+/** Неблокирующая запись просмотра в БД; ошибки не должны ломать страницу. */
+function recordLandingView(landing: string, req: import("express").Request): void {
+  const ua = req.get("user-agent") ?? "";
+  if (isBotUA(ua)) return;
+  const ip = getClientIp(req);
+  const dayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC — достаточно для статистики)
+  const ipHash = hashFingerprint("ip", _LANDING_VIEW_SALT, dayKey, ip);
+  const uaHash = hashFingerprint("ua", _LANDING_VIEW_SALT, dayKey, ua);
+  db.execute(sql`
+    INSERT INTO landing_page_views (landing, ip_hash, ua_hash, day)
+    VALUES (${landing}, ${ipHash}, ${uaHash}, CURRENT_DATE)
+    ON CONFLICT (landing, day, ip_hash, ua_hash) DO NOTHING
+  `).catch((e: Error) => console.error(`[landing-stats] record view failed for ${landing}:`, e.message));
+}
+
+async function getAvitoLandingStats() {
+  // Все просмотры (уники по ip+ua+день)
+  const views = (await db.execute(sql`SELECT COALESCE(COUNT(*)::int, 0) AS n FROM landing_page_views WHERE landing = 'avito'`)) as any;
+  const viewsTotal = views?.rows?.[0]?.n ?? 0;
+
+  // Просмотры за последние 7 дней
+  const views7 = (await db.execute(sql`SELECT COALESCE(COUNT(*)::int, 0) AS n FROM landing_page_views WHERE landing = 'avito' AND day >= CURRENT_DATE - INTERVAL '7 days'`)) as any;
+  const viewsLast7 = views7?.rows?.[0]?.n ?? 0;
+
+  // Просмотры сегодня
+  const viewsToday = (await db.execute(sql`SELECT COALESCE(COUNT(*)::int, 0) AS n FROM landing_page_views WHERE landing = 'avito' AND day = CURRENT_DATE`)) as any;
+  const viewsTodayN = viewsToday?.rows?.[0]?.n ?? 0;
+
+  // Заявки с лендинга (source = 'avito_landing' — уже пишется routes/landing.ts)
+  const leadsTotalR = (await db.execute(sql`SELECT COALESCE(COUNT(*)::int, 0) AS n FROM leads WHERE source = 'avito_landing' AND deleted_at IS NULL`)) as any;
+  const leadsTotal = leadsTotalR?.rows?.[0]?.n ?? 0;
+
+  const leads7R = (await db.execute(sql`SELECT COALESCE(COUNT(*)::int, 0) AS n FROM leads WHERE source = 'avito_landing' AND deleted_at IS NULL AND created_at >= NOW() - INTERVAL '7 days'`)) as any;
+  const leadsLast7 = leads7R?.rows?.[0]?.n ?? 0;
+
+  const leadsTodayR = (await db.execute(sql`SELECT COALESCE(COUNT(*)::int, 0) AS n FROM leads WHERE source = 'avito_landing' AND deleted_at IS NULL AND created_at >= CURRENT_DATE`)) as any;
+  const leadsTodayN = leadsTodayR?.rows?.[0]?.n ?? 0;
+
+  // Конверсия заявок из просмотров: лиды / просмотры.
+  const conv = viewsTotal > 0 ? (leadsTotal / viewsTotal) * 100 : 0;
+  const conv7 = viewsLast7 > 0 ? (leadsLast7 / viewsLast7) * 100 : 0;
+
+  // Почасовая гистограмма за последние 7 дней (просмотры)
+  const histRows = (await db.execute(sql`
+    SELECT to_char(date_trunc('day', viewed_at) AT TIME ZONE 'Europe/Moscow', 'DD.MM') AS day,
+           COUNT(*)::int AS views
+    FROM landing_page_views
+    WHERE landing = 'avito' AND viewed_at >= NOW() - INTERVAL '7 days'
+    GROUP BY 1 ORDER BY MIN(viewed_at) ASC
+  `)) as any;
+  const viewsByDay: Array<{ day: string; views: number; leads: number }> = (histRows?.rows ?? []).map((r: any) => ({
+    day: r.day, views: Number(r.views), leads: 0,
+  }));
+  const leadHistRows = (await db.execute(sql`
+    SELECT to_char(date_trunc('day', created_at) AT TIME ZONE 'Europe/Moscow', 'DD.MM') AS day,
+           COUNT(*)::int AS leads
+    FROM leads
+    WHERE source = 'avito_landing' AND deleted_at IS NULL AND created_at >= NOW() - INTERVAL '7 days'
+    GROUP BY 1 ORDER BY MIN(created_at) ASC
+  `)) as any;
+  const leadByDay = new Map<string, number>();
+  for (const r of (leadHistRows?.rows ?? [])) {
+    leadByDay.set(r.day, Number(r.leads));
+  }
+  for (const row of viewsByDay) {
+    row.leads = leadByDay.get(row.day) ?? 0;
+  }
+
+  return {
+    viewsTotal, viewsLast7, viewsTodayN,
+    leadsTotal, leadsLast7, leadsTodayN,
+    conv, conv7,
+    viewsByDay,
+  };
+}
+
+// Простой HTML с цифрами — без JS, без ссылок откуда-либо, нигде не индексируется
+// (закрыт в robots.txt и X-Robots-Tag noindex по маске /zayavka(/)).
+app.get("/zayavka/stats", async (_req, res) => {
+  try {
+    const s = await getAvitoLandingStats();
+    const fmt = (n: number) => n.toLocaleString("ru-RU");
+    const fmtPct = (n: number) => `${n.toFixed(1).replace(".", ",")}%`;
+
+    const maxBar = Math.max(1, ...s.viewsByDay.map(d => Math.max(d.views, d.leads)));
+    const barsHtml = s.viewsByDay.length > 0
+      ? `<div style="margin-top:18px">
+          <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px">Последние 7 дней</div>
+          <div style="display:flex;gap:10px;align-items:flex-end;height:140px;padding:12px 0;border-bottom:1px solid #e2e8f0">
+            ${s.viewsByDay.map(d => {
+              const vh = Math.round((d.views / maxBar) * 110);
+              const lh = Math.round((d.leads / maxBar) * 110);
+              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0">
+                <div style="font-size:10px;font-weight:600;color:#0f172a">${d.leads > 0 ? d.leads : ""}</div>
+                <div style="width:100%;display:flex;gap:3px;align-items:flex-end;height:110px">
+                  <div style="flex:1;background:linear-gradient(180deg,#10b981,#0d9488);border-radius:4px 4px 0 0;height:${vh}px;min-height:2px" title="просмотры: ${d.views}"></div>
+                  <div style="flex:1;background:#f59e0b;border-radius:4px 4px 0 0;height:${lh}px;min-height:${d.leads > 0 ? 2 : 0}px" title="заявки: ${d.leads}"></div>
+                </div>
+                <div style="font-size:10px;color:#94a3b8">${d.day}</div>
+              </div>`;
+            }).join("")}
+          </div>
+          <div style="display:flex;gap:14px;margin-top:8px;font-size:11px;color:#64748b">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#10b981;vertical-align:middle;margin-right:4px"></span>просмотры</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f59e0b;vertical-align:middle;margin-right:4px"></span>заявки</span>
+          </div>
+        </div>`
+      : `<p style="color:#94a3b8;font-size:13px;margin-top:12px">Данных за последние 7 дней пока нет.</p>`;
+
+    const html = `<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Статистика лендинга Авито</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#f7faf9;color:#0f172a;padding:24px 16px;line-height:1.4}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px}
+  .sub{color:#64748b;font-size:13px;margin-bottom:20px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px}
+  .card .lbl{font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;font-weight:600;margin-bottom:4px}
+  .card .val{font-size:28px;font-weight:800;color:#0f172a;letter-spacing:-0.5px;line-height:1}
+  .card .val.green{color:#059669}
+  .card .val.amber{color:#d97706}
+  .card .hint{font-size:11px;color:#94a3b8;margin-top:4px}
+  .sec{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-top:12px}
+  .sec h2{font-size:13px;font-weight:700;margin-bottom:12px}
+  .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+  .row:last-child{border-bottom:0}
+  .row b{font-weight:700}
+  @media(max-width:560px){.grid{grid-template-columns:1fr 1fr}}
+</style></head><body><div class="wrap">
+<h1>Лендинг Авито (/zayavka)</h1>
+<p class="sub">Данные без учёта ботов. Уникальность просмотра: один посетитель в сутки. Заявки — лиды с source=avito_landing.</p>
+
+<div class="grid">
+  <div class="card"><div class="lbl">Просмотры, всего</div><div class="val">${fmt(s.viewsTotal)}</div><div class="hint">уникальных за всё время</div></div>
+  <div class="card"><div class="lbl">Заявки, всего</div><div class="val green">${fmt(s.leadsTotal)}</div><div class="hint">с учётом дублей</div></div>
+  <div class="card"><div class="lbl">Конверсия</div><div class="val amber">${fmtPct(s.conv)}</div><div class="hint">заявки / просмотры</div></div>
+</div>
+<div class="grid">
+  <div class="card"><div class="lbl">Просмотров сегодня</div><div class="val">${fmt(s.viewsTodayN)}</div></div>
+  <div class="card"><div class="lbl">Заявок сегодня</div><div class="val green">${fmt(s.leadsTodayN)}</div></div>
+  <div class="card"><div class="lbl">Конверсия 7 дней</div><div class="val amber">${fmtPct(s.conv7)}</div></div>
+</div>
+
+<div class="sec">
+  <h2>Сводка</h2>
+  <div class="row"><span>Просмотров за 7 дней</span><b>${fmt(s.viewsLast7)}</b></div>
+  <div class="row"><span>Заявок за 7 дней</span><b>${fmt(s.leadsLast7)}</b></div>
+  <div class="row"><span>Заявок / просмотров (всего)</span><b>${fmtPct(s.conv)}</b></div>
+  <div class="row"><span>Заявок / просмотров (7 дн.)</span><b>${fmtPct(s.conv7)}</b></div>
+</div>
+
+${barsHtml}
+
+<p style="text-align:center;margin-top:24px;font-size:11px;color:#94a3b8">Обновляется в реальном времени · страница закрыта от индексации</p>
+</div></body></html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+    return res.send(html);
+  } catch (err) {
+    console.error("[zayavka/stats]", err);
+    return res.status(500).send("Ошибка статистики");
+  }
+});
+
+// Счётчик просмотров index.html лендинга. Вешаем на GET /zayavka и /zayavka/
+// (не на ассеты — иначе каждый /assets/* давал бы ложный просмотр).
+app.get(["/zayavka", "/zayavka/"], (req, _res, next) => {
+  recordLandingView("avito", req);
+  next();
+});
 
 // ── Serve avito-landing (заявка с Авито) на /zayavka/ ────────────────────────
 // Одноэкранная форма заявки для трафика с Авито. Собирается Vite с base="/zayavka/"
