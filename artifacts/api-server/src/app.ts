@@ -292,6 +292,22 @@ app.get("/api/system-status", async (_req, res) => {
   res.json({ database, maxBotToken, managerBotToken, openAiKey, avitoConfigured });
 });
 
+// ── Auto-migration: landing_page_views (простой счётчик просмотров лендингов) ─
+// Создаём таблицу сразу при старте сервера (ДО регистрации роутов, которые к ней
+// обращаются — в частности /zayavka/stats). Дедупликация по (landing, день, хэш IP/UA).
+db.execute(sql`
+  CREATE TABLE IF NOT EXISTS landing_page_views (
+    id          BIGSERIAL PRIMARY KEY,
+    landing     TEXT NOT NULL,
+    ip_hash     TEXT NOT NULL,
+    ua_hash     TEXT NOT NULL,
+    viewed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    day         DATE NOT NULL DEFAULT CURRENT_DATE,
+    UNIQUE (landing, day, ip_hash, ua_hash)
+  );
+  CREATE INDEX IF NOT EXISTS landing_page_views_day_idx ON landing_page_views(landing, day);
+`).catch((e: Error) => console.error("[migration] landing_page_views:", e.message));
+
 const PgSession = connectPgSimple(session);
 
 const pgPool = new pg.Pool({
